@@ -1,9 +1,12 @@
 name: Deploy Docs
 
+# Deploys the *latest* docs to the Pages root on every push to `main`.
+# Versioned docs (per `v*` tag) are handled by release.yml.
+
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 # Allow this workflow to push to the `docs` branch.
 permissions:
@@ -53,19 +56,4 @@ jobs:
           publish_dir: docs/.vitepress/dist
           destination_dir: .
           keep_files: true
-          commit_message: 'docs: update root to ${{ github.ref_name }}'
-
-      - name: Build docs (versioned, served under /<repo>/<tag>/)
-        # Separate build with a version-scoped base so historical versions never
-        # collide and the version switcher links resolve correctly.
-        run: yarn vitepress build docs --base "/${{ github.event.repository.name }}/${{ github.ref_name }}/"
-
-      - name: Deploy versioned docs to docs branch
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: docs
-          publish_dir: docs/.vitepress/dist
-          destination_dir: ${{ github.ref_name }}
-          keep_files: true
-          commit_message: 'docs: publish ${{ github.ref_name }}'
+          commit_message: 'docs: update root to ${{ github.sha }}'

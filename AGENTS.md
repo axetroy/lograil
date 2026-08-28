@@ -45,5 +45,10 @@ Guidance for AI coding agents working on **lograil** — a high-performance, sec
 
 ## Releasing
 
-- Docs deploy automatically on version tags (`v*`) via `.github/workflows/docs.yml`.
+- A version tag (`v*`) pushed to GitHub triggers `.github/workflows/release.yml`, which runs in order:
+  1. **verify** (lint + test + build) across OS/Node matrix — must pass before anything ships.
+  2. **publish** — builds, asserts `package.json` `version` matches the tag (minus the `v` prefix), then `npm publish --access public` using the `NPM_TOKEN` repo secret.
+  3. **deploy-docs** — builds and pushes both latest (Pages root) and versioned (`/<repo>/<tag>/`) docs to the `docs` branch.
+- You must add an `NPM_TOKEN` secret (npm automation token) to the repo settings for publish to succeed.
+- Latest docs also redeploy on every push to `main` via `.github/workflows/docs.yml`.
 - Do not commit to `dist/` (it is build output and gitignored via `files` in package.json).
