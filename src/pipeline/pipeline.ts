@@ -23,6 +23,13 @@ export class Pipeline {
   private processors: Processor[];
   private formatter: Formatter;
   private cachedFilter: Filter | undefined = undefined;
+  /**
+   * Error sink for a throwing {@link Filter} or {@link Processor}. The logger
+   * wires this to its own global error handler; when unset, the throw is simply
+   * swallowed and the entry proceeds unchanged (for processors) or is dropped
+   * (for filters).
+   */
+  onError?: (err: unknown, info: { phase: 'filter' | 'process'; entry: LogEntry }) => void;
 
   constructor(options: PipelineOptions = {}) {
     this.filters = options.filters ? [...options.filters] : [];
@@ -67,13 +74,25 @@ export class Pipeline {
         this.cachedFilter =
           this.filters.length === 1 ? this.filters[0] : combineFilters(this.filters);
       }
-      if (!this.cachedFilter(entry)) {
+      try {
+        if (!this.cachedFilter(entry)) {
+          return null;
+        }
+      } catch (err) {
+        this.onError?.(err, { phase: 'filter', entry });
         return null;
       }
     }
     let current = entry;
     for (const processor of this.processors) {
-      current = processor(current);
+      try {
+        current = processor(current);
+      } catch (err) {
+        // A broken processor must not crash logging. Keep the last good entry
+        // and continue with the remaining processors.
+        this.onError?.(err, { phase: 'process', entry });
+      }
+      if (!current) return null;
     }
     return current;
   }

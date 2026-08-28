@@ -97,6 +97,15 @@ await logger.destroy(): Promise<void>;
 
 `flush()` 会排空异步写入队列（包含异步传输器）；`destroy()` 会先 flush，再释放插件并关闭传输器。在进程退出前调用它们，可以避免丢失缓冲中的日志。
 
+## 错误处理
+
+`log.*` 调用永远不会抛出。当 `Filter` / `Processor` / `plugin.onEntry` 抛错、`Formatter`
+抛错，或 `Transport.write` 抛错 / 卡住时，错误会通过 `onError` 选项（默认：原生
+`console.error`）上报一次，并携带 `info.phase`（`'filter' | 'process' | 'plugin' |
+'formatter' | 'transport'`），且**绝不**向上抛给调用方。异步 `Transport.write` 若在
+`writeTimeoutMs`（默认 5000ms）内未 settle，会被作为超时错误上报，因此 `flush()` /
+`destroy()` 总会 resolve。详见 [配置](/zh/guide/configuration)。
+
 ## 进程集成
 
 在 Node / Electron **主进程**中，lograil 可以挂载进程生命周期钩子，从而避免在退出时丢失日志，并自动捕获崩溃。

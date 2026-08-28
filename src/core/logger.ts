@@ -12,6 +12,13 @@ import { PluginManager } from '../plugin/index.js';
 import type { ContextStore } from '../context/index.js';
 import { createContextStore, asyncContext, isEmptyRecord } from '../context/index.js';
 
+// Captured at module load — before `redirectConsole` can replace `console.*` —
+// so the logger's own error reporting never recurses into itself.
+const RAW_CONSOLE_ERROR: (...args: unknown[]) => void =
+  typeof console !== 'undefined' && typeof console.error === 'function'
+    ? console.error.bind(console)
+    : () => {};
+
 function pad(n: number, len: number): string {
   let s = String(n);
   while (s.length < len) s = `0${s}`;
@@ -38,9 +45,42 @@ function isoFromMs(ms: number): string {
   )}.${pad(TIME_DATE.getUTCMilliseconds(), 3)}Z`;
 }
 
+/** Where in the pipeline an internal error originated. */
+export type LoggerErrorPhase = 'filter' | 'process' | 'plugin' | 'formatter' | 'transport';
+
+/** Context passed to {@link LoggerErrorHandler} when the logger catches an internal error. */
+export interface LoggerErrorInfo {
+  phase: LoggerErrorPhase;
+  /** The entry being processed when the error occurred, if available. */
+  entry?: LogEntry;
+  /** Name of the offending plugin/transport, when applicable. */
+  source?: string;
+}
+
+/**
+ * Global error handler. The logger never throws from a `log.*` call; when an
+ * internal step (filter, processor, plugin, formatter, transport) fails, the
+ * error is reported here instead of crashing the caller. By default it is
+ * printed to the native `console.error` (which is *not* the redirected one, so
+ * it cannot recurse into the logger).
+ */
+export type LoggerErrorHandler = (error: unknown, info: LoggerErrorInfo) => void;
+
 export interface LoggerOptions {
   /** Minimum level to emit. Default `info`. */
   level?: LogLevelInput;
+  /**
+   * Global handler for internal errors (a throwing filter/processor/plugin, a
+   * failing formatter, or a broken transport). When omitted, errors are printed
+   * to the native `console.error`. The logger never rethrows them.
+   */
+  onError?: LoggerErrorHandler;
+  /**
+   * Maximum time (ms) to wait for an async `Transport.write` before treating it
+   * as failed (reported via the transport's `onError` / the global handler), so
+   * a stalled sink can never hang `flush()`/`destroy()`. Default `5000`.
+   */
+  writeTimeoutMs?: number;
   /** Optional scope / namespace for this logger. */
   scope?: string;
   /** Runtime adapter. Auto-detected when omitted. */
@@ -101,6 +141,8 @@ export class Logger implements LoggerMethods {
   private processHandlersAttached = false;
   private errorHandlersAttached = false;
   private removeProcessHandlers?: () => void;
+  private readonly onLoggerError?: LoggerErrorHandler;
+  private readonly writeTimeoutMs: number;
 
   constructor(options: LoggerOptions = {}) {
     this.runtime = options.runtime ?? detectRuntime();
@@ -122,6 +164,12 @@ export class Logger implements LoggerMethods {
     }
 
     if (options.autoFlushOnExit) this.attachExitHandlers();
+
+    this.onLoggerError = options.onError;
+    this.writeTimeoutMs = options.writeTimeoutMs ?? 5000;
+    // Wire the pipeline/plugin error sinks into the unified handler.
+    this.pipeline.onError = (err, info) => this.reportError(info.phase, err, info.entry);
+    this.plugins.onError = (name, err, entry) => this.reportError('plugin', err, entry, name);
   }
 
   /**
@@ -300,12 +348,28 @@ export class Logger implements LoggerMethods {
       });
       this.writeQueue = this.writeQueue
         .then(() => p)
-        .catch(() => {
-          /* never reject the queue */
-        });
+        .catch((err) => this.reportError('plugin', err));
       return;
     }
     this.writeToTransports(entry);
+  }
+
+  /**
+   * Report an internal error without throwing. Routes to the user-supplied
+   * `onError` handler, falling back to the native `console.error` (deliberately
+   * not the redirected one, to avoid recursion).
+   */
+  private reportError(
+    phase: LoggerErrorPhase,
+    err: unknown,
+    entry?: LogEntry,
+    source?: string,
+  ): void {
+    if (this.onLoggerError) {
+      this.onLoggerError(err, { phase, entry, source });
+      return;
+    }
+    RAW_CONSOLE_ERROR(`[lograil]${source ? ` (${source})` : ''} ${phase} error:`, err);
   }
 
   private buildEntry(
@@ -371,24 +435,47 @@ export class Logger implements LoggerMethods {
       try {
         formatted = formatter(entry);
       } catch (err) {
-        console.error('[lograil] formatter failed:', err);
+        this.reportError('formatter', err, entry);
         formatted = `[formatting failed] ${entry.message}`;
       }
       const onErr = transport.onError;
       try {
         const result = transport.write(entry, String(formatted));
         if (result && typeof (result as Promise<void>).then === 'function') {
+          const guarded = this.guardWrite(result as Promise<void>);
           this.writeQueue = this.writeQueue
-            .then(() => result as Promise<void>)
-            .catch((err) => {
-              // never reject the queue; surface the failure via the hook instead
-              if (onErr) onErr(err, entry);
-            });
+            .then(() => guarded)
+            .catch((err) => this.reportTransportError(err, entry, onErr));
         }
       } catch (err) {
-        if (onErr) onErr(err, entry);
+        this.reportTransportError(err, entry, onErr);
       }
     }
+  }
+
+  /** Await a transport's async `write`, but never let it stall the queue. */
+  private guardWrite(p: Promise<void>): Promise<void> {
+    if (!this.writeTimeoutMs) return p;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`transport write timed out after ${this.writeTimeoutMs}ms`)),
+        this.writeTimeoutMs,
+      );
+    });
+    return Promise.race([p, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
+  /** Surface a transport failure via the transport's hook, else the global handler. */
+  private reportTransportError(
+    err: unknown,
+    entry: LogEntry,
+    onErr?: (err: unknown, entry: LogEntry) => void,
+  ): void {
+    if (onErr) onErr(err, entry);
+    else this.reportError('transport', err, entry);
   }
 
   // ---- Lifecycle ----

@@ -95,6 +95,16 @@ logger.ingestEntry(entry: LogEntry): void;
 Feed an externally produced entry (e.g. received from a renderer over IPC) into
 the pipeline. Subject to the configured level and plugins.
 
+## Error handling
+
+A log call never throws. If a `Filter`/`Processor`/`plugin.onEntry` throws, a
+`Formatter` throws, or a `Transport.write` throws or stalls, the error is reported
+once via the `onError` option (default: native `console.error`) with
+`info.phase` (`'filter' | 'process' | 'plugin' | 'formatter' | 'transport'`) and is
+never propagated to the caller. An async `Transport.write` that does not settle
+within `writeTimeoutMs` (default 5000ms) is reported as a timeout so `flush()` /
+`destroy()` always resolve. See [Configuration](/guide/configuration) for details.
+
 ## Lifecycle
 
 ```ts

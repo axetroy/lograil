@@ -18,8 +18,34 @@ interface LoggerOptions {
   pipeline?: Pipeline | PipelineOptions;
   /** 共享的插件管理器（内部使用，由 scope() 使用）。 */
   plugins?: PluginManager;
+  /**
+   * 内部错误的全局处理器。当 `Filter`/`Processor`/`plugin.onEntry` 抛错、
+   * `Formatter` 抛错，或 `Transport.write` 抛错 / 卡住时触发。未提供时，错误会被
+   * 打印到原生的 `console.error`。logger 永远不会向上抛出这些错误。
+   */
+  onError?: (error: unknown, info: { phase: string; entry?: LogEntry; source?: string }) => void;
+  /**
+   * 等待异步 `Transport.write` 完成的最长时间（毫秒）。超时即视为失败并上报，
+   * 从而避免某个卡住的传输器拖垮 `flush()`/`destroy()`。默认 5000。
+   */
+  writeTimeoutMs?: number;
 }
 ```
+
+## 内部错误处理
+
+logger 的设计目标是 **`log.*` 调用永远不会抛出**。当某个内部环节出错——`Filter` /
+`Processor` / `plugin.onEntry` 抛错、`Formatter` 抛错，或 `Transport.write` 抛错 /
+卡住——错误会：
+
+- 仅通过 `onError` 钩子（未设置时退回原生 `console.error`）上报一次，并携带 `info.phase`
+  （`'filter' | 'process' | 'plugin' | 'formatter' | 'transport'`），以及在适用时携带出错的
+  `source`（插件 / 传输器名称）与 `entry`；
+- **绝不向上抛给调用方**，因此日志不可能拖垮你的应用。
+
+出错的 `Processor` 或 `plugin.onEntry` 会保留上一条有效entry（不会被丢弃）；而出错的
+`Filter` 会丢弃该条目（作为安全默认）。异步 `Transport.write` 若未在 `writeTimeoutMs`
+内 settle，会被作为超时失败上报，队列继续前进，因此 `flush()` / `destroy()` 总会 resolve。
 
 ## 日志级别
 

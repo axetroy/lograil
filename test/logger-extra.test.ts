@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Logger } from '../src/core/index.js';
 import { Pipeline } from '../src/pipeline/pipeline.js';
 import { createRedactProcessor } from '../src/pipeline/processor.js';
@@ -74,7 +74,7 @@ describe('Logger - level & context', () => {
 
 describe('Logger - pipeline control', () => {
   it('runs formatter exceptions without throwing', async () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const errors: string[] = [];
     const broken: Transport = {
       name: 'broken',
       formatter: () => {
@@ -86,11 +86,11 @@ describe('Logger - pipeline control', () => {
       transports: [broken],
       level: 'debug',
       runtime: makeRuntime(),
+      onError: (_err, info) => errors.push(info.phase),
     });
     log.info('safe');
     await log.flush();
-    expect(spy).toHaveBeenCalled();
-    spy.mockRestore();
+    expect(errors).toEqual(['formatter']);
   });
 
   it('adds filters and processors dynamically', async () => {

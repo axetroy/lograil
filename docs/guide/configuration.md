@@ -18,8 +18,36 @@ interface LoggerOptions {
   pipeline?: Pipeline | PipelineOptions;
   /** Shared plugin manager (internal, used by scope()). */
   plugins?: PluginManager;
+  /**
+   * Global handler for internal errors (a throwing filter/processor/plugin, a
+   * failing formatter, or a broken transport). When omitted, errors are printed
+   * to the native `console.error`. The logger never rethrows them.
+   */
+  onError?: (error: unknown, info: { phase: string; entry?: LogEntry; source?: string }) => void;
+  /**
+   * Max time (ms) to wait for an async `Transport.write` before treating it as
+   * failed, so a stalled sink can never hang `flush()`/`destroy()`. Default 5000.
+   */
+  writeTimeoutMs?: number;
 }
 ```
+
+## Internal error handling
+
+The logger is designed to **never throw from a `log.*` call**. If an internal
+step fails — a `Filter`/`Processor`/`plugin.onEntry` throws, a `Formatter`
+throws, or a `Transport.write` throws or stalls — the error is:
+
+- reported exactly once via the `onError` hook (or the native `console.error`
+  when no hook is set), passing `info.phase` (`'filter' | 'process' | 'plugin' |
+  'formatter' | 'transport'`) and, where applicable, the offending `source`
+  (plugin/transport name) and the `entry`;
+- **never propagated to the caller**, so logging can never crash your app.
+
+A broken `Processor` or `plugin.onEntry` keeps the last good entry (it is not
+dropped); a throwing `Filter` drops the entry (as a safe default). An async
+`Transport.write` that does not settle within `writeTimeoutMs` is reported as a
+timeout failure and the queue moves on, so `flush()`/`destroy()` always resolve.
 
 ## Log levels
 

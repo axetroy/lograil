@@ -11,6 +11,12 @@ export class PluginManager {
   private host: PluginContext;
   /** Count of plugins with an `onEntry` hook; gates the async intercept path. */
   private entryInterceptors = 0;
+  /**
+   * Error sink for a plugin's `onEntry` hook. A throwing hook must never drop
+   * the entry silently or crash logging; the error is reported and the entry
+   * proceeds unchanged.
+   */
+  onError?: (pluginName: string, err: unknown, entry: LogEntry) => void;
 
   constructor(host: PluginContext) {
     this.host = host;
@@ -62,7 +68,12 @@ export class PluginManager {
     for (const plugin of this.plugins.values()) {
       if (!current) break;
       if (plugin.onEntry) {
-        current = await plugin.onEntry(current);
+        try {
+          current = await plugin.onEntry(current);
+        } catch (err) {
+          this.onError?.(plugin.name, err, entry);
+          // Keep the entry as-is; a faulty plugin must not drop or mutate it.
+        }
       }
     }
     return current;
