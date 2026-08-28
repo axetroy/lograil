@@ -205,4 +205,73 @@ const webLog = createLogger({ runtime: createWebRuntime() });
 const nodeLog = createLogger({
   runtime: createNodeRuntime({ appName: 'api', disableFile: false }),
 });
+
+## Production patterns
+
+### Built-in sampling (recommended over a custom filter)
+
+`createSampler` is the built-in, allocation-free way to cut volume. It combines
+probabilistic sampling with a token-bucket rate limit (logical AND) and only
+affects the levels you opt in:
+
+```ts
+import { createSampler } from 'lograil';
+
+logger.getPipeline().addFilter(
+  createSampler({ levels: ['debug', 'info'], maxPerSecond: 100, burst: 200 }),
+);
+```
+
+(For a quick manual drop without the sampler, `createLevelFilter` or a custom
+`Filter` also work — see the "Sample high-volume logs" plugin above.)
+
+### Child loggers for request context
+
+`child()` derives a logger that shares transports/pipeline but carries its own
+context (captured at creation) and can override the level:
+
+```ts
+const reqLog = logger.child({ context: { requestId: req.id, tenant } });
+reqLog.info('start'); // every entry carries requestId + tenant
+
+// A noisy subsystem scoped to errors only:
+const quiet = logger.child({ level: 'error' });
+```
+
+### OTLP with trace correlation
+
+When an entry's context carries `traceId` / `spanId` (or `trace_id` / `span_id`),
+`OtlpTransport` lifts them into OTLP's dedicated trace fields so the log joins the
+same distributed trace in your backend:
+
+```ts
+import { OtlpTransport } from 'lograil';
+
+logger.addTransport(
+  new OtlpTransport({
+    endpoint: 'http://localhost:4318/v1/logs',
+    serviceName: 'checkout',
+  }),
+);
+
+// somewhere per request, with your tracer's ids in context:
+logger.child({ context: { traceId: span.spanContext().traceId } }).info('handled');
+```
+
+### Transport error handling
+
+A transport can declare `onError` to be notified when its `write` fails, so a
+broken sink is reported instead of crashing the caller:
+
+```ts
+const sink: Transport = {
+  name: 'flaky',
+  onError(err, entry) {
+    console.error('sink failed for', entry.message, err);
+  },
+  write(entry, formatted) {
+    throw new Error('disk full');
+  },
+};
+```
 ```

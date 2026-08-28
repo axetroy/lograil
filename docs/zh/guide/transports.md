@@ -33,7 +33,8 @@ new ConsoleTransport({
   formatter: createLineFormatter(),
   methodMap: { fatal: (...a) => console.error('FATAL', ...a) },
 });
-```
+
+通过 `methodMap` 可把某个级别路由到不同的 `console` 方法，或为其输出加前缀。默认每个级别映射到同名的 `console` 方法，且 `fatal` 映射到 `console.error`（因此在多数终端里会出现在 `stderr`）。
 
 ### RotatingFileTransport
 
@@ -53,6 +54,20 @@ new RotatingFileTransport({
 
 - **每日模式**（默认）：活动文件为 `app.{YYYY-MM-DD}.{01..maxFiles}.log`。当索引将要超过 `maxFiles` 时回绕到 `01` 并清空该文件——形成一个按天的环形缓冲。
 - **体积模式**（`daily: false`）：经典的分代滚动 `app.log` → `app.1.log` → `app.2.log` …，当活动文件超过 `maxSize` 时触发。
+
+利用 `filter` 选项可以把单个 logger 的输出拆分到多个文件。内置的 Electron 主进程运行时正是用它来把主进程日志（`main.{date}.{idx}.log`）与渲染进程日志（`renderer.{date}.{idx}.log`）分开：
+
+```ts
+import { RotatingFileTransport, createJsonFormatter } from 'lograil';
+
+// 只接收渲染进程条目（由 IPC 桥接在 metadata 中打标）。
+new RotatingFileTransport({
+  path: '/var/log/renderer.log',
+  daily: true,
+  filter: (e) => e.metadata?.renderer === 'renderer',
+  formatter: createJsonFormatter(),
+});
+```
 
 ### ElectronIpcTransport
 

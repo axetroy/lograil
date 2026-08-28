@@ -29,4 +29,10 @@ features:
     details: 插件可在运行时添加传输器、重构管道、拦截日志条目，甚至注册其他插件。
   - title: 轻量且类型完备
     details: 使用 TypeScript 编写，同时提供 ESM 与 CJS 构建，基于 MIT 许可，并通过子路径导出支持按需引入。
+  - title: 按传输器路由
+    details: 每个传输器都可设置自己的级别与格式化器，于是单个 logger 即可分流——例如 error 发往 OTLP，其余写入文件。
+  - title: 内置可观测性
+    details: 通过 OTLP 把日志发往 OpenTelemetry Collector，并自动关联 traceId/spanId；再配合子 logger 与采样实现成本控制。
+  - title: 崩溃安全
+    details: 退出时自动 flush、把未捕获异常以 fatal 记录，并将 console.* 桥接进结构化管道。
 ---

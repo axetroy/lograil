@@ -29,4 +29,10 @@ features:
     details: Plugins can add transports, reshape the pipeline, intercept entries and register other plugins at runtime.
   - title: Tiny & typed
     details: Written in TypeScript, ESM + CJS dual build, MIT licensed, with subpath exports for tree-shaking.
+  - title: Per-transport routing
+    details: Each transport can set its own level and formatter, so one logger fans out — e.g. errors to OTLP, everything to a file.
+  - title: Observability built in
+    details: Ship logs to an OpenTelemetry Collector via OTLP with traceId/spanId correlation, plus child loggers and sampling for cost control.
+  - title: Crash-safe
+    details: Flush on exit, capture uncaught errors as fatal, and bridge console.* into the structured pipeline.
 ---

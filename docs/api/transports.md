@@ -44,6 +44,12 @@ interface RotatingFileTransportOptions {
   now?: () => Date; // clock override (testing)
   formatter?: Formatter;
   name?: string;
+  /**
+   * Optional per-entry predicate. When it returns `false` the entry is dropped
+   * (not written). Handy for splitting one logger's output across multiple files
+   * — e.g. main vs renderer process logs, or an error-only vs full archive.
+   */
+  filter?: (entry: LogEntry) => boolean;
 }
 
 class RotatingFileTransport implements Transport;
@@ -75,6 +81,7 @@ interface OtlpTransportOptions {
   serviceName?: string; // default 'lograil'
   scopeName?: string; // default 'lograil'
   batchSize?: number; // default 100
+  formatter?: Formatter; // interface parity; OTLP serializes the entry itself
   onError?: (err: unknown) => void;
 }
 

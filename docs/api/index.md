@@ -8,10 +8,10 @@ as a **subpath export** for tree-shaking:
 | `lograil`               | Everything: logger, `createLogger`, types, all submodules         |
 | `lograil/core`          | `Logger`, `Pipeline`, level utilities                              |
 | `lograil/pipeline`      | `Filter`, `Processor`, `Formatter`, built-in filters/processors   |
-| `lograil/transport`     | `Transport`, `ConsoleTransport`, `RotatingFileTransport`, `ElectronIpcTransport` |
+| `lograil/transport`     | `Transport`, `ConsoleTransport`, `RotatingFileTransport`, `ElectronIpcTransport`, `OtlpTransport` |
 | `lograil/runtime`       | Runtime adapters, `detectRuntime`, `registerIpcReceiver`          |
 | `lograil/plugin`        | `Plugin`, `PluginManager`, `PluginContext`                        |
-| `lograil/context`       | `ContextStore`, `createContextStore`                             |
+| `lograil/context`       | `ContextStore`, `createContextStore`, `runWithContext`, `asyncContext`, `isEmptyRecord` |
 
 ## Core types
 

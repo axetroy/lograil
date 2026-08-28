@@ -199,4 +199,66 @@ const webLog = createLogger({ runtime: createWebRuntime() });
 const nodeLog = createLogger({
   runtime: createNodeRuntime({ appName: 'api', disableFile: false }),
 });
+
+## 生产模式
+
+### 内置采样（优于手写过滤器）
+
+`createSampler` 是内置、零额外分配的体积控制方式。它将概率采样与令牌桶限速（逻辑"与"）结合，且只影响你指定的级别：
+
+```ts
+import { createSampler } from 'lograil';
+
+logger.getPipeline().addFilter(
+  createSampler({ levels: ['debug', 'info'], maxPerSecond: 100, burst: 200 }),
+);
+```
+
+（若只想快速丢弃、不引入采样器，`createLevelFilter` 或自定义 `Filter` 也可——见上方"采样高量日志"插件。）
+
+### 用子 logger 承载请求上下文
+
+`child()` 派生出一个共享传输器/管道的 logger，但它携带自己的上下文（在创建时捕获），并可覆盖级别：
+
+```ts
+const reqLog = logger.child({ context: { requestId: req.id, tenant } });
+reqLog.info('start'); // 每条日志都携带 requestId + tenant
+
+// 某个嘈杂子系统，只保留 error 及以上：
+const quiet = logger.child({ level: 'error' });
+```
+
+### 带链路关联的 OTLP
+
+当条目的上下文携带 `traceId` / `spanId`（或 `trace_id` / `span_id`）时，`OtlpTransport` 会把它们提升进 OTLP 专用的链路字段，使日志能与其所在的分布式链路在后端关联：
+
+```ts
+import { OtlpTransport } from 'lograil';
+
+logger.addTransport(
+  new OtlpTransport({
+    endpoint: 'http://localhost:4318/v1/logs',
+    serviceName: 'checkout',
+  }),
+);
+
+// 在请求中，把追踪器得到的 id 放进上下文：
+logger.child({ context: { traceId: span.spanContext().traceId } }).info('handled');
+```
+
+### 传输器错误处理
+
+传输器可以声明 `onError`，在其 `write` 失败时收到通知，从而上报故障而非让调用方崩溃：
+
+```ts
+const sink: Transport = {
+  name: 'flaky',
+  onError(err, entry) {
+    console.error('sink failed for', entry.message, err);
+  },
+  write(entry, formatted) {
+    throw new Error('disk full');
+  },
+};
+```
 ```

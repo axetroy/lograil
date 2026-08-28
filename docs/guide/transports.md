@@ -35,7 +35,10 @@ new ConsoleTransport({
   formatter: createLineFormatter(),
   methodMap: { fatal: (...a) => console.error('FATAL', ...a) },
 });
-```
+
+Override `methodMap` to route a level to a different `console` method, or to
+prefix its output. By default each level maps to the like-named `console` method,
+and `fatal` maps to `console.error` (so it appears on `stderr` in most terminals).
 
 ### RotatingFileTransport
 
@@ -59,6 +62,22 @@ new RotatingFileTransport({
 - **Size mode** (`daily: false`): classic generation rotation
   `app.log` → `app.1.log` → `app.2.log` … when the active file exceeds
   `maxSize`.
+
+Use the `filter` option to split one logger's output across multiple files. The
+built-in Electron main runtime already uses it to separate main-process logs
+(`main.{date}.{idx}.log`) from renderer logs (`renderer.{date}.{idx}.log`):
+
+```ts
+import { RotatingFileTransport, createJsonFormatter } from 'lograil';
+
+// Only renderer entries (tagged via metadata by the IPC bridge).
+new RotatingFileTransport({
+  path: '/var/log/renderer.log',
+  daily: true,
+  filter: (e) => e.metadata?.renderer === 'renderer',
+  formatter: createJsonFormatter(),
+});
+```
 
 ### ElectronIpcTransport
 

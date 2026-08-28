@@ -52,3 +52,21 @@ logger.info('handling'); // => context: { requestId: '...' }
 ```
 
 环境上下文会合并到 logger 自身上下文之上（冲突时环境上下文优先）。当没有激活的环境上下文时，日志不受影响且不产生额外分配。
+
+## 导出
+
+```ts
+function runWithContext<T>(fn: () => T, context: Record<string, unknown>): T;
+function isEmptyRecord(o: Record<string, unknown>): boolean;
+
+const asyncContext: {
+  run<T>(fn: () => T, context: Record<string, unknown>): T;
+  runAsync<T>(fn: () => Promise<T>, context: Record<string, unknown>): Promise<T>;
+  get(): Record<string, unknown>;
+  supported(): boolean;
+};
+```
+
+- `runWithContext(fn, ctx)` —— 以 `ctx` 作为环境日志上下文运行 `fn`，其内部（含 `await` 之后）的所有日志都会携带它（见上方示例）。
+- `asyncContext` —— 底层传播原语。`run` / `runAsync` 进入一个上下文作用域（后者用于异步 `fn`）；`get()` 返回当前激活的上下文（无则为 `{}`）；`supported()` 在 Node 上为 `true`（基于 `AsyncLocalStorage`），在浏览器构建上为 `false`（环境上下文为空操作）。
+- `isEmptyRecord(o)` —— 当 `o` 没有自有可枚举键时为 `true`。导出供需要自行构建上下文或采样逻辑的调用方使用。

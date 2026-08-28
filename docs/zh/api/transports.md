@@ -42,6 +42,11 @@ interface RotatingFileTransportOptions {
   now?: () => Date; // 时钟覆盖（用于测试）
   formatter?: Formatter;
   name?: string;
+  /**
+   * 可选的按条目谓词。返回 `false` 时该条目被丢弃（不写入）。便于把单个 logger 的
+   * 输出拆分到多个文件——例如主进程与渲染进程日志，或"仅错误"与"完整归档"。
+   */
+  filter?: (entry: LogEntry) => boolean;
 }
 
 class RotatingFileTransport implements Transport;
@@ -72,6 +77,7 @@ interface OtlpTransportOptions {
   serviceName?: string; // 默认 'lograil'
   scopeName?: string; // 默认 'lograil'
   batchSize?: number; // 默认 100
+  formatter?: Formatter; // 接口对齐用；OTLP 实际自行序列化条目
   onError?: (err: unknown) => void;
 }
 
