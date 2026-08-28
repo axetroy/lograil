@@ -26,26 +26,29 @@ function makeEntry(over: Partial<LogEntry> = {}): LogEntry {
 describe('ConsoleTransport', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('writes a line-formatted message to console.info', () => {
-    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    const t = new ConsoleTransport();
+  it('writes a line-formatted message via the info method', () => {
+    const calls: unknown[] = [];
+    const t = new ConsoleTransport({ methodMap: { info: (s) => void calls.push(s) } });
     t.write(makeEntry(), t.formatter(makeEntry()));
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(String(spy.mock.calls[0][0])).toContain('hello');
+    expect(calls).toHaveLength(1);
+    expect(String(calls[0])).toContain('hello');
   });
 
   it('maps fatal to console.error', () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const t = new ConsoleTransport();
+    const calls: unknown[] = [];
+    const t = new ConsoleTransport({ methodMap: { fatal: (s) => void calls.push(s) } });
     t.write(makeEntry({ levelName: 'fatal', level: LOG_LEVELS.fatal }), 'x');
-    expect(spy).toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
   });
 
   it('honors a custom formatter', () => {
-    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    const t = new ConsoleTransport({ formatter: () => 'CUSTOM' });
+    const calls: unknown[] = [];
+    const t = new ConsoleTransport({
+      formatter: () => 'CUSTOM',
+      methodMap: { info: (s) => void calls.push(s) },
+    });
     t.write(makeEntry(), t.formatter(makeEntry()));
-    expect(spy.mock.calls[0][0]).toBe('CUSTOM');
+    expect(calls[0]).toBe('CUSTOM');
   });
 });
 

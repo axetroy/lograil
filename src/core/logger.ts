@@ -53,6 +53,27 @@ export interface LoggerOptions {
   pipeline?: Pipeline | PipelineOptions;
   /** Shared plugin manager. Internal: used by {@link scope}. */
   plugins?: PluginManager;
+  /**
+   * Register `beforeExit` / `SIGINT` / `SIGTERM` handlers that flush the logger
+   * before the process exits (`SIGINT`/`SIGTERM` then terminate the process).
+   * Only effective in Node; ignored elsewhere. See {@link attachExitHandlers}.
+   */
+  autoFlushOnExit?: boolean;
+}
+
+/** Minimal structural view of the Node `process` used for lifecycle hooks. */
+type NodeProcess = {
+  on(event: string, cb: (...args: unknown[]) => void): void;
+  once(event: string, cb: (...args: unknown[]) => void): void;
+  removeListener(event: string, cb: (...args: unknown[]) => void): void;
+  exit(code: number): void;
+};
+
+function getNodeProcess(): NodeProcess | undefined {
+  if (typeof process === 'undefined' || typeof (process as { on?: unknown }).on !== 'function') {
+    return undefined;
+  }
+  return process as unknown as NodeProcess;
 }
 
 /**
@@ -74,6 +95,9 @@ export class Logger implements LoggerMethods {
   private writeQueue: Promise<void> = Promise.resolve();
   private destroyed = false;
   private detachReceiver?: () => void;
+  private processHandlersAttached = false;
+  private errorHandlersAttached = false;
+  private removeProcessHandlers?: () => void;
 
   constructor(options: LoggerOptions = {}) {
     this.runtime = options.runtime ?? detectRuntime();
@@ -93,6 +117,8 @@ export class Logger implements LoggerMethods {
     if (this.runtime.attachReceiver) {
       this.detachReceiver = this.runtime.attachReceiver((entry) => this.ingestEntry(entry));
     }
+
+    if (options.autoFlushOnExit) this.attachExitHandlers();
   }
 
   /**
@@ -327,8 +353,108 @@ export class Logger implements LoggerMethods {
     }
   }
 
+  // ---- Process integration ----
+
+  /**
+   * Register `beforeExit` / `SIGINT` / `SIGTERM` handlers that flush the logger
+   * before the process leaves. On `SIGINT` / `SIGTERM` the process exits (130 /
+   * 143) after the flush completes. No-op outside Node. Idempotent.
+   */
+  attachExitHandlers(): void {
+    if (this.processHandlersAttached) return;
+    const proc = getNodeProcess();
+    if (!proc) return;
+    const onBeforeExit = (): void => {
+      void this.flush();
+    };
+    const onSignal = (code: number): void => {
+      void this.flush().finally(() => proc.exit(code));
+    };
+    const onSigInt = (): void => onSignal(130);
+    const onSigTerm = (): void => onSignal(143);
+    proc.on('beforeExit', onBeforeExit);
+    proc.once('SIGINT', onSigInt);
+    proc.once('SIGTERM', onSigTerm);
+    this.processHandlersAttached = true;
+    const prev = this.removeProcessHandlers;
+    this.removeProcessHandlers = () => {
+      prev?.();
+      proc.removeListener('beforeExit', onBeforeExit);
+      proc.removeListener('SIGINT', onSigInt);
+      proc.removeListener('SIGTERM', onSigTerm);
+    };
+  }
+
+  /**
+   * Forward `uncaughtException` and `unhandledRejection` to the logger (at
+   * `fatal` level) and exit afterwards, so crashes are recorded before the
+   * process dies. No-op outside Node. Idempotent.
+   */
+  watchUncaughtErrors(): void {
+    if (this.errorHandlersAttached) return;
+    const proc = getNodeProcess();
+    if (!proc) return;
+    const onUncaught = (err: unknown): void => {
+      this.fatal(err);
+      void this.flush().finally(() => proc.exit(1));
+    };
+    const onRejection = (reason: unknown): void => {
+      this.fatal(reason);
+      void this.flush().finally(() => proc.exit(1));
+    };
+    proc.on('uncaughtException', onUncaught);
+    proc.on('unhandledRejection', onRejection);
+    this.errorHandlersAttached = true;
+    const prev = this.removeProcessHandlers;
+    this.removeProcessHandlers = () => {
+      prev?.();
+      proc.removeListener('uncaughtException', onUncaught);
+      proc.removeListener('unhandledRejection', onRejection);
+    };
+  }
+
+  /**
+   * Route `console.*` calls through this logger, so third-party `console.log`
+   * output is captured into the structured pipeline. The native console output
+   * is suppressed for those calls (the logger's own transports produce the
+   * visible output); if logging throws, the native console is used as a
+   * fallback. Returns a function that restores the original `console`.
+   */
+  redirectConsole(): () => void {
+    if (typeof console === 'undefined') return () => {};
+    const routes: Array<[keyof Console, 'trace' | 'debug' | 'info' | 'warn' | 'error']> = [
+      ['log', 'info'],
+      ['info', 'info'],
+      ['debug', 'debug'],
+      ['warn', 'warn'],
+      ['error', 'error'],
+      ['trace', 'trace'],
+    ];
+    const originals: Partial<Record<keyof Console, (...args: unknown[]) => void>> = {};
+    for (const [method, level] of routes) {
+      const original = (console[method] as ((...args: unknown[]) => void) | undefined)?.bind(
+        console,
+      );
+      if (!original) continue;
+      originals[method] = original;
+      (console as unknown as Record<string, unknown>)[method] = (...args: unknown[]): void => {
+        try {
+          (this[level] as (...a: unknown[]) => void)(...args);
+        } catch {
+          original(...args);
+        }
+      };
+    }
+    return () => {
+      for (const key of Object.keys(originals) as (keyof Console)[]) {
+        (console as unknown as Record<string, unknown>)[key] = originals[key];
+      }
+    };
+  }
+
   async destroy(): Promise<void> {
     this.destroyed = true;
+    this.removeProcessHandlers?.();
     await this.flush();
     await this.plugins.destroy();
     this.detachReceiver?.();

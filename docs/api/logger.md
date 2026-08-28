@@ -83,3 +83,28 @@ await logger.destroy(): Promise<void>;
 `flush()` drains the async write queue (including async transports);
 `destroy()` flushes, tears down plugins and closes transports. Call them before
 your process exits to avoid losing buffered logs.
+
+## Process integration
+
+In a Node/Electron **main** process, lograil can hook the process lifecycle so
+logs are never lost on shutdown and crashes are captured automatically.
+
+```ts
+// Flush pending logs on SIGINT/SIGTERM/beforeExit (default off).
+logger.attachExitHandlers(); // or new Logger({ autoFlushOnExit: true })
+
+// Capture uncaught exceptions / unhandled rejections as fatal logs, then exit(1).
+logger.watchUncaughtErrors();
+
+// Bridge console.* (console.log/info/warn/error/debug/trace) into the logger.
+const restore = logger.redirectConsole(); // returns a function that restores console
+```
+
+- `attachExitHandlers()` registers `beforeExit`, `SIGINT` and `SIGTERM`
+  listeners that flush before the event loop empties (exit codes `130`/`143`).
+  It is a no-op in the browser and is idempotent.
+- `watchUncaughtErrors()` logs the error at `fatal` and then exits with code `1`.
+- `redirectConsole()` routes the captured `console` methods through the logger
+  and suppresses the native output. The console bridge is recursion-safe even
+  when a `ConsoleTransport` is attached.
+- `destroy()` also removes any process handlers registered above.
