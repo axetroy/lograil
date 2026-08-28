@@ -30,6 +30,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Enable Corepack
         run: corepack enable
@@ -46,6 +48,9 @@ jobs:
 
       - name: Build
         run: yarn build
+
+      - name: Regenerate CHANGELOG from git history
+        run: yarn changelog
 
       - name: Verify tag matches package.json version
         run: |

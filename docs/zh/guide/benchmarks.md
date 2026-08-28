@@ -28,6 +28,40 @@ npm run bench          # 或： npx vitest bench --run
 | 行格式化器（单独调用） | ~1.96M ops/s |
 | JSON 格式化器（单独调用） | ~1.23M ops/s |
 
+## 与 `pino` 的对比
+
+`pino` 是**纯 Node.js** 场景下极快的标杆日志库。`lograil` 面向不同场景——Electron
+（主进程 + 渲染进程）与 Web——因此单纯的纯 Node 吞吐比拼只是故事的一半。下表是**能力**
+对比；要拿原始 ops/s 对比，请在本机运行 `npm run bench` 并与 `pino` 比较。
+
+| 维度 | `lograil` | `pino` |
+| --- | --- | --- |
+| 运行时 | Electron 主进程、Electron 渲染进程、Web、Node | 仅 Node |
+| 跨进程日志 | 一等公民（`ElectronIpcTransport`，零拷贝转移） | 需自行 IPC |
+| 结构化 `context`/`metadata` + `args` | 内置，冻结不可变条目 | 绑定对象 / `child` 绑定 |
+| 处理器 / 插件管道 | 内置（`Filter`/`Processor`/`Plugin`） | 经 transports / 自定义 |
+| 内置脱敏与序列化器 | `createRedactProcessor` / `createDefaultSerializers` | `pino-secret` / 自定义 |
+| OTel trace 关联 | `createOtelTracePlugin` | 外部方案 |
+| 格式 | JSON（`flatten` 选项）+ 行格式 | JSON、pretty、自定义 |
+| 纯 Node 吞吐 | 很快（见上表） | 通常更快（C 层缓冲） |
+| 浏览器 / 打包安全 | 是（electron binding 可替换为 stub） | 否 |
+
+### 如何选型
+
+- **选 `pino`：** 仅从 Node 服务端打日志，绝不碰 Electron/浏览器，且要绝对最大的原始吞吐、
+  最少机制。
+- **选 `lograil`：** 只要你需要以下任意一项——Electron 主↔渲染日志转发、Web 运行时支持、
+  结构化 `context`/`metadata` 模型、插件/处理器管道、内置脱敏与序列化器、OTel trace 关联，
+  或带冻结不可变条目契约的异步每-transport 队列。
+
+也可以混用：热路径的 Node 服务用 `pino`，与其通信的 Electron 外壳用 `lograil`。
+
+## 这些结果的发布位置
+
+上面的数字已写入本页，并**随文档一同发布**——每次 `yarn docs:build`（以及每次发版部署的
+版本化文档）都包含它们。要更新，运行 `npm run bench`，把 `hz`/延迟输出贴回本表即可。它们
+刻意做成**示意值**：请在本机重跑以获得权威数字。
+
 ## 我们做了哪些优化
 
 库内置了若干热路径优化，且**全部保持行为不变**，仅提升性能。

@@ -15,7 +15,10 @@ function themeConfig(locale: 'en' | 'zh') {
         {
           text: locale === 'zh' ? '指南' : 'Guide',
           items: [
-            { text: locale === 'zh' ? '快速开始' : 'Getting Started', link: `${p}/guide/getting-started` },
+            {
+              text: locale === 'zh' ? '快速开始' : 'Getting Started',
+              link: `${p}/guide/getting-started`,
+            },
             { text: locale === 'zh' ? '配置' : 'Configuration', link: `${p}/guide/configuration` },
             { text: locale === 'zh' ? '传输器' : 'Transports', link: `${p}/guide/transports` },
             { text: locale === 'zh' ? '插件' : 'Plugins', link: `${p}/guide/plugins` },
@@ -23,6 +26,11 @@ function themeConfig(locale: 'en' | 'zh') {
             { text: 'Electron', link: `${p}/guide/electron` },
             { text: locale === 'zh' ? '架构' : 'Architecture', link: `${p}/guide/architecture` },
             { text: locale === 'zh' ? '基准测试' : 'Benchmarks', link: `${p}/guide/benchmarks` },
+            { text: locale === 'zh' ? '迁移指南' : 'Migrating', link: `${p}/guide/migrating` },
+            {
+              text: locale === 'zh' ? '故障排查' : 'Troubleshooting',
+              link: `${p}/guide/troubleshooting`,
+            },
           ],
         },
       ],
@@ -94,10 +102,7 @@ export default defineConfig({
   themeConfig: themeConfig('en'),
   transformHead: (ctx: { site?: { base?: string }; head: unknown[] }) => {
     const base = ctx.site?.base || '/';
-    (ctx.head as unknown[]).push([
-      'script',
-      { innerHTML: localeRedirectScript(base) },
-    ]);
+    (ctx.head as unknown[]).push(['script', { innerHTML: localeRedirectScript(base) }]);
     return ctx.head;
   },
 });

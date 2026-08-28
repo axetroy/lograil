@@ -274,4 +274,111 @@ const sink: Transport = {
   },
 };
 ```
+
+## More recipes
+
+### Split stdout / stderr
+
+A single `ConsoleTransport` already routes `error`/`fatal` to `console.error`
+(stderr) and everything else to `console.log` (stdout) by default. To take
+explicit control of which levels go to stderr, use `stderrLevels`:
+
+```ts
+import { ConsoleTransport, createLineFormatter } from 'lograil';
+
+// error + fatal → stderr, everything else → stdout
+logger.addTransport(
+  new ConsoleTransport({ formatter: createLineFormatter(), stderrLevels: ['error', 'fatal'] }),
+);
+```
+
+For a hard split into two sinks (e.g. to pipe stdout/stderr separately), use two
+transports with per-transport `level`:
+
+```ts
+import { ConsoleTransport, createLevelFilter } from 'lograil';
+
+logger.addTransport(new ConsoleTransport({ name: 'out', level: 'warn' })); // <= warn → stdout
+logger.addTransport(
+  new ConsoleTransport({ name: 'err', stderrLevels: ['error', 'fatal'] }), // error/fatal → stderr
+);
+```
+
+### Override the level from an environment variable
+
+Point `levelEnvVar` at an env var (default `LOG_LEVEL`) so ops can change verbosity
+without a redeploy. `LOGRAIL_DEBUG` (configurable via `namespaceEnvVar`) filters by
+scope instead:
+
+```ts
+import { createLogger } from 'lograil';
+
+const logger = createLogger({
+  level: 'info',
+  levelEnvVar: 'LOG_LEVEL', // reads process.env.LOG_LEVEL when set
+  namespaceEnvVar: 'LOGRAIL_DEBUG', // e.g. LOGRAIL_DEBUG='app:*' shows only app.* scopes
+});
+
+// $ LOG_LEVEL=debug node app.js      → debug and above
+// $ LOGRAIL_DEBUG='app:*' node app.js → only scopes matching app.*
+```
+
+### Automatic OTel trace injection
+
+With `@opentelemetry/api` installed, `createOtelTracePlugin` injects the active
+span's `traceId`/`spanId` into each entry's `metadata`. Pair it with
+`OtlpTransport` to correlate logs with traces automatically:
+
+```ts
+import { createLogger, OtlpTransport, createOtelTracePlugin } from 'lograil';
+
+const logger = createLogger({
+  transports: [new OtlpTransport({ endpoint: 'http://localhost:4318/v1/logs' })],
+});
+await logger.use(createOtelTracePlugin());
+
+// inside a traced operation the active span is picked up automatically:
+logger.info('handling request'); // metadata: { traceId, spanId }
+```
+
+(The plugin is a no-op and costs nothing when `@opentelemetry/api` isn't installed.)
+
+### Transport failover (primary → secondary)
+
+Wrap a primary transport so that if it fails, entries are routed to a secondary
+sink instead. The wrapper flips to the secondary the first time the primary
+reports an error:
+
+```ts
+import { type Transport, type LogEntry } from 'lograil';
+
+function withFailover(primary: Transport, secondary: Transport): Transport {
+  let useSecondary = false;
+  // Primary reports failures via its onError; on first failure, switch.
+  const primaryWrapped: Transport = {
+    ...primary,
+    onError(err, entry) {
+      useSecondary = true;
+      secondary.write(entry, JSON.stringify(entry)); // best-effort to secondary
+      primary.onError?.(err, entry);
+    },
+  };
+  return {
+    name: `failover(${primary.name}→${secondary.name})`,
+    write(entry: LogEntry, formatted: string) {
+      const sink = useSecondary ? secondary : primaryWrapped;
+      return sink.write(entry, formatted);
+    },
+    flush: () => (useSecondary ? secondary.flush?.() : primary.flush?.()),
+    close: () => (useSecondary ? secondary.close?.() : primary.close?.()),
+  };
+}
+
+logger.addTransport(
+  withFailover(
+    new OtlpTransport({ endpoint: 'http://primary:4318/v1/logs' }),
+    new ConsoleTransport(), // fallback when the remote is down
+  ),
+);
+```
 ```

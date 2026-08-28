@@ -32,6 +32,45 @@ guarantees. Rerun `npm run bench` on your own hardware for authoritative figures
 | line formatter (standalone call) | ~1.96M ops/s |
 | JSON formatter (standalone call) | ~1.23M ops/s |
 
+## Comparison with `pino`
+
+`pino` is the go-to ultra-fast logger for **pure Node.js**. `lograil` targets a
+different envelope — Electron (main + renderer) and the Web — so a raw Node
+throughput race is only half the story. The table is a **capability** comparison;
+for raw ops/sec rerun `npm run bench` and compare against `pino` on your hardware.
+
+| Dimension | `lograil` | `pino` |
+| --- | --- | --- |
+| Runtime | Electron main, Electron renderer, Web, Node | Node only |
+| Cross-process logs | first-class (`ElectronIpcTransport`, zero-copy transfer) | needs manual IPC |
+| Structured `context`/`metadata` + `args` | built-in, frozen immutable entry | bound objects / `child` bindings |
+| Processor / plugin pipeline | built-in (`Filter`/`Processor`/`Plugin`) | via transports / custom |
+| Built-in redaction & serializers | `createRedactProcessor` / `createDefaultSerializers` | `pino-secret` / custom |
+| OTel trace correlation | `createOtelTracePlugin` | external |
+| Formats | JSON (`flatten` option) + line | JSON, pretty, custom |
+| Raw Node throughput | very fast (see table above) | typically faster (C-level buffering) |
+| Browser / bundle-safe | yes (electron binding swapped for a stub) | no |
+
+### When to choose which
+
+- **Use `pino`** if you log only from a Node server, never touch Electron or the
+  browser, and want the absolute maximum raw throughput with minimal machinery.
+- **Use `lograil`** if you need any of: Electron main↔renderer log forwarding,
+  Web runtime support, a structured `context`/`metadata` model, a plugin/processor
+  pipeline, built-in redaction/serializers, OTel trace correlation, or async
+  per-transport queues with a frozen immutable entry contract.
+
+You can also mix: keep `pino` for a hot Node service and use `lograil` in the
+Electron shell that talks to it.
+
+## Where these results are published
+
+The numbers above are committed to this page and **shipped with the docs** — every
+`yarn docs:build` (and the versioned docs deployed on each release) includes them.
+To refresh them, run `npm run bench` and paste the `hz`/latency output into this
+table. They are intentionally *indicative*: rerun on your own hardware for
+authoritative figures.
+
 ## What we optimized
 
 The library ships with several hot-path optimizations. None change observable

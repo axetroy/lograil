@@ -261,4 +261,106 @@ const sink: Transport = {
   },
 };
 ```
+
+## 更多示例
+
+### 分离 stdout / stderr
+
+单个 `ConsoleTransport` 默认就把 `error`/`fatal` 路由到 `console.error`（stderr），
+其余级别路由到 `console.log`（stdout）。要显式控制哪些级别进 stderr，用 `stderrLevels`：
+
+```ts
+import { ConsoleTransport, createLineFormatter } from 'lograil';
+
+// error + fatal → stderr，其余 → stdout
+logger.addTransport(
+  new ConsoleTransport({ formatter: createLineFormatter(), stderrLevels: ['error', 'fatal'] }),
+);
+```
+
+若要硬性拆成两个 sink（例如分别管道 stdout/stderr），用两个 transport 各自配 `level`：
+
+```ts
+import { ConsoleTransport } from 'lograil';
+
+logger.addTransport(new ConsoleTransport({ name: 'out', level: 'warn' })); // <= warn → stdout
+logger.addTransport(
+  new ConsoleTransport({ name: 'err', stderrLevels: ['error', 'fatal'] }), // error/fatal → stderr
+);
+```
+
+### 用环境变量覆盖级别
+
+将 `levelEnvVar` 指向某个环境变量（默认 `LOG_LEVEL`），运维无需重新部署即可调整详细度。
+`LOGRAIL_DEBUG`（可用 `namespaceEnvVar` 配置）则按 scope 过滤：
+
+```ts
+import { createLogger } from 'lograil';
+
+const logger = createLogger({
+  level: 'info',
+  levelEnvVar: 'LOG_LEVEL', // 设置了就读取 process.env.LOG_LEVEL
+  namespaceEnvVar: 'LOGRAIL_DEBUG', // 例如 LOGRAIL_DEBUG='app:*' 仅显示 app.* scope
+});
+
+// $ LOG_LEVEL=debug node app.js        → debug 及以上
+// $ LOGRAIL_DEBUG='app:*' node app.js  → 仅匹配 app.* 的 scope
+```
+
+### 自动 OTel trace 注入
+
+安装 `@opentelemetry/api` 后，`createOtelTracePlugin` 会把当前活跃 span 的 `traceId`/`spanId`
+注入到每条条目的 `metadata`。配合 `OtlpTransport` 即可自动把日志与 trace 关联：
+
+```ts
+import { createLogger, OtlpTransport, createOtelTracePlugin } from 'lograil';
+
+const logger = createLogger({
+  transports: [new OtlpTransport({ endpoint: 'http://localhost:4318/v1/logs' })],
+});
+await logger.use(createOtelTracePlugin());
+
+// 在已追踪的操作内部，活跃 span 会被自动拾取：
+logger.info('handling request'); // metadata: { traceId, spanId }
+```
+
+（未安装 `@opentelemetry/api` 时该插件为空操作，零开销。）
+
+### 传输器故障回退（primary → secondary）
+
+包装一个主 transport，当它失败时把条目改投到备用 sink。包装器在首次收到主 transport
+错误时切换到备用：
+
+```ts
+import { type Transport, type LogEntry } from 'lograil';
+
+function withFailover(primary: Transport, secondary: Transport): Transport {
+  let useSecondary = false;
+  // 主 transport 通过 onError 上报失败；首次失败时切换。
+  const primaryWrapped: Transport = {
+    ...primary,
+    onError(err, entry) {
+      useSecondary = true;
+      secondary.write(entry, JSON.stringify(entry)); // 尽力转发到备用
+      primary.onError?.(err, entry);
+    },
+  };
+  return {
+    name: `failover(${primary.name}→${secondary.name})`,
+    write(entry: LogEntry, formatted: string) {
+      const sink = useSecondary ? secondary : primaryWrapped;
+      return sink.write(entry, formatted);
+    },
+    flush: () => (useSecondary ? secondary.flush?.() : primary.flush?.()),
+    close: () => (useSecondary ? secondary.close?.() : primary.close?.()),
+  };
+}
+
+logger.addTransport(
+  withFailover(
+    new OtlpTransport({ endpoint: 'http://primary:4318/v1/logs' }),
+    new ConsoleTransport(), // 远端不可用时回退
+  ),
+);
+```
 ```

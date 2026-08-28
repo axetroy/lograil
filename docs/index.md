@@ -36,3 +36,15 @@ features:
   - title: Crash-safe
     details: Flush on exit, capture uncaught errors as fatal, and bridge console.* into the structured pipeline.
 ---
+
+## Project resources
+
+- **Contributing** — setup, test/lint gates and conventions:
+  [CONTRIBUTING.md](https://github.com/axetroy/lograil/blob/main/CONTRIBUTING.md)
+- **Security** — how to report vulnerabilities privately:
+  [SECURITY.md](https://github.com/axetroy/lograil/blob/main/SECURITY.md)
+- **Changelog** — generated from git history on each release:
+  [CHANGELOG.md](https://github.com/axetroy/lograil/blob/main/CHANGELOG.md)
+- **Migrating** from `electron-log` / `winston` / `pino`: [guide](/guide/migrating)
+- **Troubleshooting & FAQ**: [guide](/guide/troubleshooting)
+

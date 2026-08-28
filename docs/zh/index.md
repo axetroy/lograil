@@ -36,3 +36,15 @@ features:
   - title: 崩溃安全
     details: 退出时自动 flush、把未捕获异常以 fatal 记录，并将 console.* 桥接进结构化管道。
 ---
+
+## 项目资源
+
+- **贡献指南** — 本地环境、测试/lint 门禁与规范：
+  [CONTRIBUTING.md](https://github.com/axetroy/lograil/blob/main/CONTRIBUTING.md)
+- **安全策略** — 如何 privately 上报安全漏洞：
+  [SECURITY.md](https://github.com/axetroy/lograil/blob/main/SECURITY.md)
+- **更新日志** — 每次发版由 git 历史自动生成：
+  [CHANGELOG.md](https://github.com/axetroy/lograil/blob/main/CHANGELOG.md)
+- **迁移指南**（来自 `electron-log` / `winston` / `pino`）：[指南](/zh/guide/migrating)
+- **故障排查与 FAQ**：[指南](/zh/guide/troubleshooting)
+

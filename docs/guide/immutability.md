@@ -57,7 +57,8 @@ unavailable.
 // renderer
 logger.addTransport(new ElectronIpcTransport());
 
-// main
+// main — with the default Electron runtime this receiver is already registered for
+// you; call registerIpcReceiver only when you opt out of, or customize, the runtime.
 import { registerIpcReceiver } from 'lograil';
 registerIpcReceiver((entry) => logger.ingestEntry(entry));
 ```

@@ -50,7 +50,8 @@ logger.ingestEntry(frozen);
 // 渲染进程
 logger.addTransport(new ElectronIpcTransport());
 
-// 主进程
+// 主进程——在默认的 Electron runtime 下这个接收器已自动注册；
+// 只有当你主动退出或自定义 runtime 时才需要调用 registerIpcReceiver。
 import { registerIpcReceiver } from 'lograil';
 registerIpcReceiver((entry) => logger.ingestEntry(entry));
 ```
