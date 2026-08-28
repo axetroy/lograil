@@ -48,6 +48,16 @@ function isLogLevelName(value: unknown): value is LogLevelName;
 function isLevelEnabled(configured: LogLevelInput, candidate: LogLevelInput): boolean;
 function levelNameFromValue(value: number): LogLevelName;
 function compareLevel(a: LogLevelInput, b: LogLevelInput): number; // <0 | 0 | >0
+
+function freezeEntry<T extends LogEntry>(entry: T): T & FrozenLogEntry;
+type FrozenLogEntry = Readonly<LogEntry> & {
+  readonly context: Readonly<Record<string, unknown>>;
+  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly args: readonly unknown[];
+};
+// Freeze an entry at its transport boundary (idempotent). Entries are frozen for
+// you automatically; use this when you build entries yourself. See
+// [Immutability & zero-copy](../guide/immutability.md).
 ```
 
 Related types: `LogLevelValue` (= `number`), `LogLevelInput` (= `LogLevelName | number`),

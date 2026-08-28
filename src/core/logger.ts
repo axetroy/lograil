@@ -11,6 +11,7 @@ import type { Plugin, PluginContext } from '../plugin/index.js';
 import { PluginManager } from '../plugin/index.js';
 import type { ContextStore } from '../context/index.js';
 import { createContextStore, asyncContext, isEmptyRecord } from '../context/index.js';
+import { freezeEntry } from './entry.js';
 
 // Captured at module load — before `redirectConsole` can replace `console.*` —
 // so the logger's own error reporting never recurses into itself.
@@ -528,20 +529,24 @@ export class Logger implements LoggerMethods {
   }
 
   private writeToTransports(entry: LogEntry): void {
+    // Freeze at the single fan-out choke point so every transport, formatter and
+    // plugin reads an immutable entry and can safely share it by reference
+    // (zero-copy within the process). Idempotent.
+    const frozen = freezeEntry(entry);
     for (const transport of this.transports) {
       const tl = transport.level;
-      if (tl !== undefined && entry.level < normalizeLevel(tl)) continue;
+      if (tl !== undefined && frozen.level < normalizeLevel(tl)) continue;
       const formatter: Formatter = transport.formatter ?? this.pipeline.getFormatter();
       let formatted: unknown;
       try {
-        formatted = formatter(entry);
+        formatted = formatter(frozen);
       } catch (err) {
-        this.reportError('formatter', err, entry);
-        formatted = `[formatting failed] ${entry.message}`;
+        this.reportError('formatter', err, frozen);
+        formatted = `[formatting failed] ${frozen.message}`;
       }
       const onErr = transport.onError;
       try {
-        const result = transport.write(entry, String(formatted));
+        const result = transport.write(frozen, String(formatted));
         if (result && typeof (result as Promise<void>).then === 'function') {
           const guarded = this.guardWrite(result as Promise<void>);
           // Chain onto THIS transport's own queue, not a shared one, so a stalled
@@ -549,11 +554,11 @@ export class Logger implements LoggerMethods {
           const prev = this.transportQueues.get(transport) ?? Promise.resolve();
           const next = prev
             .then(() => guarded)
-            .catch((err) => this.reportTransportError(err, entry, onErr));
+            .catch((err) => this.reportTransportError(err, frozen, onErr));
           this.transportQueues.set(transport, next);
         }
       } catch (err) {
-        this.reportTransportError(err, entry, onErr);
+        this.reportTransportError(err, frozen, onErr);
       }
     }
   }

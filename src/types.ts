@@ -29,6 +29,17 @@ export function isLogLevelName(value: unknown): value is LogLevelName {
 
 /**
  * A single structured log record produced by the Logger.
+ *
+ * **Immutability contract.** Once an entry is handed to the transports it is
+ * frozen (see {@link freezeEntry}): the entry itself and its `context`,
+ * `metadata` and `args` containers become read-only, and the entry is shared by
+ * reference (zero-copy) across every transport, formatter and plugin. Treat
+ * nested values as immutable too — they are intentionally NOT deep-frozen so we
+ * never pay a serialization/clone cost on the hot path.
+ *
+ * Across a process boundary (Electron IPC) the entry is serialised once into a
+ * transferable `ArrayBuffer` and moved (not copied) to the other process; the
+ * receiver deserialises a fresh, independent entry.
  */
 export interface LogEntry {
   /** Numeric severity, see {@link LOG_LEVELS}. */

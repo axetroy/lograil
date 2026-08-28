@@ -70,6 +70,11 @@ class ElectronIpcTransport implements Transport;
 
 渲染进程侧：通过 IPC 将每条条目转发到主进程。在 Electron 之外导入也是安全的。
 
+当 `ipcRenderer.postMessage` 可用时，传输器会把条目一次性序列化为 `ArrayBuffer`，
+并**转移**其所有权跨进程（零拷贝），而非让 Electron 对整棵对象图做结构化克隆。
+旧版 `send` 路径作为回退保留。主进程侧用 `registerIpcReceiver` 解码（并标记为
+渲染进程来源）。参见[不可变性与零拷贝](../guide/immutability.md)。
+
 ## OtlpTransport
 
 ```ts

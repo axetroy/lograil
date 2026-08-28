@@ -47,6 +47,15 @@ function isLogLevelName(value: unknown): value is LogLevelName;
 function isLevelEnabled(configured: LogLevelInput, candidate: LogLevelInput): boolean;
 function levelNameFromValue(value: number): LogLevelName;
 function compareLevel(a: LogLevelInput, b: LogLevelInput): number; // <0 | 0 | >0
+
+function freezeEntry<T extends LogEntry>(entry: T): T & FrozenLogEntry;
+type FrozenLogEntry = Readonly<LogEntry> & {
+  readonly context: Readonly<Record<string, unknown>>;
+  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly args: readonly unknown[];
+};
+// 在条目抵达传输器边界时将其冻结（幂等）。条目会被自动冻结；
+// 当你自行构建条目时使用此函数。参见[不可变性与零拷贝](../guide/immutability.md)。
 ```
 
 相关类型：`LogLevelValue`（= `number`）、`LogLevelInput`（= `LogLevelName | number`），
