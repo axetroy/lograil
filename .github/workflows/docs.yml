@@ -1,0 +1,71 @@
+name: Deploy Docs
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Allow this workflow to push to the `docs` branch.
+permissions:
+  contents: write
+
+# Never run two doc deploys concurrently.
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history for tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Generate versions.json
+        # List every released tag so the version switcher can link to old docs.
+        run: |
+          node -e "const cp=require('child_process');const fs=require('fs');const tags=cp.execSync('git tag -l v*').toString().trim().split('\n').filter(Boolean).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));fs.writeFileSync('docs/public/versions.json',JSON.stringify(tags));console.log('versions:',tags.join(', '));"
+
+      - name: Build docs (latest, served at root)
+        # Root copy uses base "/<repo>/" so links/assets resolve when served at the
+        # Pages root. This is the "latest" entry point.
+        run: yarn vitepress build docs --base "/${{ github.event.repository.name }}/"
+
+      - name: Deploy latest to docs branch root
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: docs
+          publish_dir: docs/.vitepress/dist
+          destination_dir: .
+          keep_files: true
+          commit_message: 'docs: update root to ${{ github.ref_name }}'
+
+      - name: Build docs (versioned, served under /<repo>/<tag>/)
+        # Separate build with a version-scoped base so historical versions never
+        # collide and the version switcher links resolve correctly.
+        run: yarn vitepress build docs --base "/${{ github.event.repository.name }}/${{ github.ref_name }}/"
+
+      - name: Deploy versioned docs to docs branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: docs
+          publish_dir: docs/.vitepress/dist
+          destination_dir: ${{ github.ref_name }}
+          keep_files: true
+          commit_message: 'docs: publish ${{ github.ref_name }}'

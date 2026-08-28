@@ -1,0 +1,99 @@
+{
+  "name": "lograil",
+  "version": "0.1.0",
+  "packageManager": "yarn@1.22.22",
+  "description": "High-performance, secure logging library for Electron and Web runtimes",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./core": {
+      "types": "./dist/esm/core/index.d.ts",
+      "import": "./dist/esm/core/index.js",
+      "require": "./dist/cjs/core/index.js"
+    },
+    "./pipeline": {
+      "types": "./dist/esm/pipeline/index.d.ts",
+      "import": "./dist/esm/pipeline/index.js",
+      "require": "./dist/cjs/pipeline/index.js"
+    },
+    "./transport": {
+      "types": "./dist/esm/transport/index.d.ts",
+      "import": "./dist/esm/transport/index.js",
+      "require": "./dist/cjs/transport/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/esm/runtime/index.d.ts",
+      "import": "./dist/esm/runtime/index.js",
+      "require": "./dist/cjs/runtime/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/esm/plugin/index.d.ts",
+      "import": "./dist/esm/plugin/index.js",
+      "require": "./dist/cjs/plugin/index.js"
+    },
+    "./context": {
+      "types": "./dist/esm/context/index.d.ts",
+      "import": "./dist/esm/context/index.js",
+      "require": "./dist/cjs/context/index.js"
+    }
+  },
+  "browser": {
+    "./dist/cjs/runtime/electron-binding.js": "./dist/cjs/runtime/electron-binding.browser.js",
+    "./dist/esm/runtime/electron-binding.js": "./dist/esm/runtime/electron-binding.browser.js",
+    "electron": false
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json && node -e \"require('fs').writeFileSync('dist/cjs/package.json', JSON.stringify({ type: 'commonjs' }))\"",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json && node -e \"require('fs').writeFileSync('dist/cjs/package.json', JSON.stringify({ type: 'commonjs' }))\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "bench": "vitest bench",
+    "test:watch": "vitest",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "keywords": [
+    "electron",
+    "logger",
+    "logging",
+    "web",
+    "transport",
+    "pipeline"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.20.1",
+    "@vitest/coverage-v8": "2.1.9",
+    "electron": "^44.0.0",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "prettier": "^3.9.6",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.68.0",
+    "vitepress": "^1.6.4",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

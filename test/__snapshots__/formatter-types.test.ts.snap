@@ -1,0 +1,197 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`formatter: combined (snapshot) > renders a mix of types together 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"mixed","args":["hello",42,"10n","Symbol(sym)","[Function: namedFn]",{"a":1},{"__type":"Map","entries":[["k","v"]]},{"__type":"Set","values":[1,2]},{"name":"Error","message":"boom","stack":"Error: boom\\n    at <snapshot>"}],"context":{},"metadata":{},"error":{"name":"Error","message":"boom","stack":"Error: boom\\n    at <snapshot>"}}",
+  "line": "2023-11-14T22:13:20.000Z INFO: mixed hello 42 10n Symbol(sym) [Function: namedFn] {"a":1} Map(1) [["k","v"]] Set(2) [1,2] Error: boom
+Error: boom
+    at <snapshot>",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > array 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[[1,2,3]],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  [1,2,3]",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > bigint 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":["10n"],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  10n",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > boolean-false 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[false],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  false",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > boolean-true 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[true],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  true",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > circular 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[{"name":"circ","self":"[Circular]"}],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  {"name":"circ","self":"[Circular]"}",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > date 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":["2023-11-14T22:13:20.000Z"],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  "2023-11-14T22:13:20.000Z"",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > empty-string 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO: ",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > error 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"boom","args":[],"context":{},"metadata":{},"error":{"name":"Error","message":"boom","stack":"Error: boom\\n    at <snapshot>"}}",
+  "line": "2023-11-14T22:13:20.000Z INFO: boom
+Error: boom
+    at <snapshot>",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > error-circular-cause 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"outer","args":[],"context":{},"metadata":{},"error":{"name":"Error","message":"outer","stack":"Error: outer\\n    at <snapshot>","cause":{"name":"Error","message":"outer","circular":true}}}",
+  "line": "2023-11-14T22:13:20.000Z INFO: outer
+Error: outer
+    at <snapshot>
+caused by: [Circular cause]",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > error-with-cause-error 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"wrap","args":[],"context":{},"metadata":{},"error":{"name":"Error","message":"wrap","stack":"Error: wrap\\n    at <snapshot>","cause":{"name":"Error","message":"root cause","stack":"Error: root cause\\n    at <snapshot>"}}}",
+  "line": "2023-11-14T22:13:20.000Z INFO: wrap
+Error: wrap
+    at <snapshot>
+caused by: Error: root cause
+    at <snapshot>",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > error-with-cause-value 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"with cause value","args":[],"context":{},"metadata":{},"error":{"name":"Error","message":"with cause value","stack":"Error: with cause value\\n    at <snapshot>","cause":"{\\"code\\":\\"E_TEST\\",\\"detail\\":\\"boom\\"}"}}",
+  "line": "2023-11-14T22:13:20.000Z INFO: with cause value
+Error: with cause value
+    at <snapshot>
+caused by: {"code":"E_TEST","detail":"boom"}",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > float 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[3.14],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  3.14",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > function 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":["[Function: namedFn]"],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  [Function: namedFn]",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > infinity 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[null],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  Infinity",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > integer 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[42],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  42",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > map 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[{"__type":"Map","entries":[["k","v"]]}],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  Map(1) [["k","v"]]",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > nan 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[null],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  NaN",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > negative-infinity 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[null],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  -Infinity",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > null 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[null],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  null",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > plain-object 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[{"a":1,"b":{"c":2}}],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  {"a":1,"b":{"c":2}}",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > regexp 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[{}],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  {}",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > set 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[{"__type":"Set","values":[1,2]}],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  Set(2) [1,2]",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > string 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"hello","args":[],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO: hello",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > symbol 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":["Symbol(sym)"],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  Symbol(sym)",
+}
+`;
+
+exports[`formatter: per-type rendering (snapshot) > undefined 1`] = `
+{
+  "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[null],"context":{},"metadata":{}}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  undefined",
+}
+`;

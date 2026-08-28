@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-本项目旨在构建一个同时适配 **Electron 与 Web 环境**的生产级日志库，为桌面应用与浏览器应用提供统一、高性能、可靠且可扩展的日志基础设施。
+本项目旨在构建一个同时适配 **Web、Node.js 与 Electron（主进程 / 渲染进程）环境**的生产级日志库，为桌面应用、浏览器应用与 Node.js 服务端 / CLI 提供统一、高性能、可靠且可扩展的日志基础设施。
 
 核心目标不是简单提供 `console.log` 的封装，而是建立一套具备以下能力的日志系统：
 
@@ -53,16 +53,17 @@ Core 负责稳定的日志模型与生命周期；Runtime Adapter 屏蔽 Electro
                   ┌──────────┴──────────┐
                   │                     │
                   ▼                     ▼
-        ┌──────────────────┐   ┌──────────────────┐
-        │ Electron Runtime │   │   Web Runtime    │
-        │ Adapter           │   │   Adapter        │
-        └────────┬─────────┘   └────────┬─────────┘
-                 │                      │
-                 ▼                      ▼
-        ┌──────────────────┐   ┌──────────────────┐
-        │ File / IPC /     │   │ Console / HTTP / │
-        │ Main Process      │   │ Remote Transport │
-        └────────┬─────────┘   └────────┬─────────┘
+         ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+         │ Electron Runtime │   │   Web Runtime    │   │   Node Runtime   │
+         │ Adapter (main /  │   │   Adapter        │   │   Adapter        │
+         │ renderer)        │   │                  │   │                  │
+         └────────┬─────────┘   └────────┬─────────┘   └────────┬─────────┘
+                  │                      │                      │
+                  ▼                      ▼                      ▼
+         ┌──────────────────┐   ┌──────────────────┐   ┌──────────────────┐
+         │ File / IPC /     │   │ Console / HTTP / │   │ File / Console / │
+         │ Main Process      │   │ Remote Transport │   │ Server Transport │
+         └────────┬─────────┘   └────────┬─────────┘   └────────┬─────────┘
                  │                      │
                  └──────────┬───────────┘
                             ▼
@@ -148,7 +149,7 @@ architecture/
 
 ### Runtime
 
-负责 Electron 与 Web 环境差异隔离。
+负责 Web、Node.js 与 Electron（主进程 / 渲染进程）环境差异隔离。
 
 详细设计：
 

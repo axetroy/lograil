@@ -1,0 +1,108 @@
+# Transports
+
+A **transport** is the final sink of a log entry — console, file, IPC, or your
+own destination. The `Transport` interface is intentionally tiny:
+
+```ts
+interface Transport {
+  /** Unique name, used for diagnostics and removal. */
+  readonly name: string;
+  /** Optional per-transport formatter that overrides the pipeline default. */
+  readonly formatter?: Formatter;
+  /** Emit a processed entry (sync or async). */
+  write(entry: LogEntry, formatted: string): void | Promise<void>;
+  /** Optional flush; awaited by `logger.flush()`. */
+  flush?(): void | Promise<void>;
+  /** Optional teardown. */
+  close?(): void | Promise<void>;
+}
+```
+
+## Built-in transports
+
+### ConsoleTransport
+
+Writes to the global `console`, mapping each level to the matching method
+(`warn` → `console.warn`, `error`/`fatal` → `console.error`, …).
+
+```ts
+import { ConsoleTransport, createLineFormatter } from 'lograil';
+
+new ConsoleTransport({
+  name: 'console',
+  formatter: createLineFormatter(),
+  methodMap: { fatal: (...a) => console.error('FATAL', ...a) },
+});
+```
+
+### RotatingFileTransport
+
+File transport with rotation, for Node.js and the Electron main process.
+
+```ts
+import { RotatingFileTransport, createJsonFormatter } from 'lograil';
+
+new RotatingFileTransport({
+  path: '/var/log/app.log',
+  daily: true, // default: one dated file per day
+  maxFiles: 99, // daily ring buffer size (default 99 / size 5)
+  maxSize: 10 * 1024 * 1024, // size-mode threshold (size mode only)
+  formatter: createJsonFormatter(),
+});
+```
+
+- **Daily mode** (default): active file is `app.{YYYY-MM-DD}.{01..maxFiles}.log`.
+  When the index would exceed `maxFiles` it wraps back to `01` and clears it — a
+  per-day ring buffer.
+- **Size mode** (`daily: false`): classic generation rotation
+  `app.log` → `app.1.log` → `app.2.log` … when the active file exceeds
+  `maxSize`.
+
+### ElectronIpcTransport
+
+Renderer-side transport that forwards each entry to the main process over IPC.
+The `electron` module is required lazily, so this is safe to import outside
+Electron.
+
+```ts
+import { ElectronIpcTransport } from 'lograil';
+
+const log = createLogger({
+  runtime: createWebRuntime(), // renderers have no filesystem
+  transports: [new ElectronIpcTransport()],
+});
+```
+
+On the main process, enable IPC ingestion so renderer entries are persisted:
+
+```ts
+import { createElectronMainRuntime, registerIpcReceiver } from 'lograil';
+
+const log = createLogger({ runtime: createElectronMainRuntime() });
+// or simply: logger (default main runtime already attaches the receiver)
+```
+
+## Custom transports
+
+Implement the `Transport` interface — that's all:
+
+```ts
+import type { Transport, LogEntry } from 'lograil';
+
+const httpTransport: Transport = {
+  name: 'http',
+  write(entry: LogEntry, formatted: string) {
+    fetch('https://logs.example.com', {
+      method: 'POST',
+      body: formatted,
+    });
+  },
+};
+```
+
+Add or remove transports at runtime:
+
+```ts
+log.addTransport(httpTransport);
+log.removeTransport('http');
+```

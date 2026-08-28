@@ -1,0 +1,50 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`snapshot: formatter rendering > json formatter 1`] = `"{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"user logged in","args":[{"userId":42},{"name":"Error","message":"boom","stack":"Error: boom\\n    at <snapshot>"}],"context":{"app":"demo"},"metadata":{},"error":{"name":"Error","message":"boom","stack":"Error: boom\\n    at <snapshot>"}}"`;
+
+exports[`snapshot: formatter rendering > line formatter 1`] = `
+"2023-11-14T22:13:20.000Z INFO: user logged in {"userId":42} Error: boom {"app":"demo"}
+Error: boom
+    at <snapshot>"
+`;
+
+exports[`snapshot: structured LogEntry > info entry with object arg, context and error 1`] = `
+{
+  "args": [
+    {
+      "userId": 42,
+    },
+    [Error: boom],
+  ],
+  "context": {
+    "app": "demo",
+  },
+  "error": [Error: boom],
+  "level": 30,
+  "levelName": "info",
+  "message": "user logged in",
+  "metadata": {},
+  "pid": 1234,
+  "scope": undefined,
+  "time": "2023-11-14T22:13:20.000Z",
+  "timestamp": 1700000000000,
+}
+`;
+
+exports[`snapshot: structured LogEntry > scoped child entry inherits context 1`] = `
+{
+  "args": [],
+  "context": {
+    "requestId": "r1",
+  },
+  "error": undefined,
+  "level": 40,
+  "levelName": "warn",
+  "message": "token expired",
+  "metadata": {},
+  "pid": 1234,
+  "scope": "auth",
+  "time": "2023-11-14T22:13:20.000Z",
+  "timestamp": 1700000000000,
+}
+`;
