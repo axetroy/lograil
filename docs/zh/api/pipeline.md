@@ -35,7 +35,9 @@ type Processor = (entry: LogEntry) => LogEntry;
 
 const identityProcessor: Processor;
 
-function createRedactProcessor(keys: string[], replacement?: unknown): Processor;
+function createRedactProcessor(keys?: string[], replacement?: unknown): Processor;
+const DEFAULT_SENSITIVE_KEYS: string[];
+function createDefaultSerializers(): Record<string, Serializer>;
 function createSerializeProcessor(serializers: Record<string, Serializer>): Processor;
 ```
 
@@ -46,6 +48,8 @@ function createSerializeProcessor(serializers: Record<string, Serializer>): Proc
 - `*` 匹配任意单个键/下标：`'*.password'` 脱敏所有 `password`，`'user.*'` 脱敏 `user` 下的全部直接子字段。
 
 原始对象永不会被修改；仅真正包含匹配项的分支会被克隆，因此无匹配时条目会被原样返回。
+
+`createRedactProcessor` 不传 `keys` 时，会对一组内置的常见机密 / PII 键脱敏——即 `DEFAULT_SENSITIVE_KEYS`（密码、token、API key、`authorization`、`cookie`、私钥、`sessionId`、`csrf`、`otp`、`ssn` 等）。传入显式列表会覆盖默认值。
 
 ### 序列化器（Serializers）
 
@@ -58,6 +62,14 @@ type Serializer = (value: unknown, entry: LogEntry) => unknown;
 - 按属性名在**任意深度**匹配——任何带有 `req` 属性的对象都会触发 `req` 序列化器。
 - 第二个参数会传入 `entry`，便于做带上下文的序列化。
 - 转换是结构性的：仅包含匹配键的分支会被克隆；无匹配时条目原样返回。
+
+`createDefaultSerializers()` 返回一组开箱即用的 `Serializer`，按所匹配的属性名命名（`error`、`date`、`buffer`、`url`、`req`、`res`）——例如错误变为 `{name,message,stack}`，`Date` → ISO 字符串，`Buffer` → `Buffer(n)`，URL → `href`，`req`/`res` 裁剪为 method/url/headers（或 status/headers）。可将其展开进你自己的映射：
+
+```ts
+logger.getPipeline().addProcessor(
+  createSerializeProcessor({ ...createDefaultSerializers(), user: (u) => ({ id: u.id }) }),
+);
+```
 
 ```ts
 import { createSerializeProcessor, createRedactProcessor } from 'lograil';
@@ -119,11 +131,11 @@ log.info('request handled', { req, user, err });
 type Formatter<T = string> = (entry: LogEntry) => T;
 
 function createLineFormatter(): Formatter<string>;
-function createJsonFormatter(): Formatter<string>;
+function createJsonFormatter(options?: { flatten?: boolean }): Formatter<string>;
 ```
 
 - `createLineFormatter` —— 一行可读文本，包含完整的 `Error` 因果链。
-- `createJsonFormatter` —— 结构化 JSON，其中 `error` 通过 `errorToJson` 序列化（对循环 `cause` 安全）。
+- `createJsonFormatter` —— 结构化 JSON，其中 `error` 通过 `errorToJson` 序列化（对循环 `cause` 安全）。传入 `{ flatten: true }` 时，`context` 与 `metadata` 会被**拍平到对象顶层**（而非嵌套），便于 Loki、Elasticsearch 这类期望扁平字段的后端。
 
 ## Pipeline API
 

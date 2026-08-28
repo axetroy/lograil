@@ -1,5 +1,5 @@
 import type { LogEntry, LogFn, LoggerMethods, LogLevelInput, LogLevelName } from '../types.js';
-import { LOG_LEVELS, normalizeLevel } from '../types.js';
+import { LOG_LEVELS, normalizeLevel, isLogLevelName } from '../types.js';
 import type { RuntimeAdapter } from '../runtime/index.js';
 import { detectRuntime } from '../runtime/index.js';
 import type { PipelineOptions } from '../pipeline/pipeline.js';
@@ -66,6 +66,66 @@ export interface LoggerErrorInfo {
  */
 export type LoggerErrorHandler = (error: unknown, info: LoggerErrorInfo) => void;
 
+// ---- Namespace (scope) filtering ----
+
+interface NamespacePattern {
+  re: RegExp;
+}
+
+interface NamespaceFilter {
+  includes: NamespacePattern[];
+  excludes: NamespacePattern[];
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function toPattern(token: string): NamespacePattern {
+  const body = token
+    .split('*')
+    .map((part) => escapeRegex(part))
+    .join('.*');
+  return { re: new RegExp(`^${body}$`) };
+}
+
+/**
+ * Compile a namespace filter. `input` is a comma/space-separated list of glob
+ * patterns (with `*` wildcards); a leading `-` excludes. An empty input yields
+ * `undefined` (no filtering).
+ */
+function compileNamespaceFilter(input?: string | string[]): NamespaceFilter | undefined {
+  if (!input || (Array.isArray(input) && input.length === 0)) return undefined;
+  const tokens = (Array.isArray(input) ? input : input.split(/[ ,]+/))
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) return undefined;
+  const includes: NamespacePattern[] = [];
+  const excludes: NamespacePattern[] = [];
+  for (const token of tokens) {
+    if (token.startsWith('-')) excludes.push(toPattern(token.slice(1)));
+    else includes.push(toPattern(token));
+  }
+  return { includes, excludes };
+}
+
+function matchesNamespace(scope: string | undefined, filter: NamespaceFilter | undefined): boolean {
+  if (!filter) return true;
+  const s = scope ?? '';
+  for (const ex of filter.excludes) {
+    if (ex.re.test(s)) return false;
+  }
+  if (filter.includes.length === 0) return true;
+  return filter.includes.some((inc) => inc.re.test(s));
+}
+
+/** Read an environment variable, returning `undefined` when unavailable/empty. */
+function readEnvVar(name: string): string | undefined {
+  if (typeof process === 'undefined' || !process.env) return undefined;
+  const v = process.env[name];
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
 export interface LoggerOptions {
   /** Minimum level to emit. Default `info`. */
   level?: LogLevelInput;
@@ -99,6 +159,23 @@ export interface LoggerOptions {
    * Only effective in Node; ignored elsewhere. See {@link attachExitHandlers}.
    */
   autoFlushOnExit?: boolean;
+  /**
+   * Environment variable (name) whose value, if set to a valid level name,
+   * overrides `level`. Defaults to `"LOG_LEVEL"`. Set to `null` to disable.
+   */
+  levelEnvVar?: string | null;
+  /**
+   * Scope/namespace filter. A comma- or space-separated list of glob patterns
+   * (with `*` wildcards); a leading `-` excludes. Only entries whose `scope`
+   * matches are emitted. Read automatically from `namespaceEnvVar` when omitted.
+   */
+  namespaceFilter?: string | string[];
+  /**
+   * Environment variable whose value supplies the namespace filter when
+   * `namespaceFilter` is not set. Defaults to `"LOGRAIL_DEBUG"`. Set to `null`
+   * to disable.
+   */
+  namespaceEnvVar?: string | null;
 }
 
 /** Minimal structural view of the Node `process` used for lifecycle hooks. */
@@ -143,6 +220,7 @@ export class Logger implements LoggerMethods {
   private removeProcessHandlers?: () => void;
   private readonly onLoggerError?: LoggerErrorHandler;
   private readonly writeTimeoutMs: number;
+  private namespaceFilter?: NamespaceFilter;
 
   constructor(options: LoggerOptions = {}) {
     this.runtime = options.runtime ?? detectRuntime();
@@ -155,8 +233,19 @@ export class Logger implements LoggerMethods {
     this.plugins = options.plugins ?? new PluginManager(this.buildPluginContext());
     this.transports = options.transports ?? this.runtime.defaultTransports();
     this.context = options.context ?? createContextStore();
-    this.level = normalizeLevel(options.level ?? 'info');
+    const envLevelName =
+      options.levelEnvVar === null ? undefined : readEnvVar(options.levelEnvVar ?? 'LOG_LEVEL');
+    const levelInput: LogLevelInput =
+      envLevelName && isLogLevelName(envLevelName) ? envLevelName : (options.level ?? 'info');
+    this.level = normalizeLevel(levelInput);
     this.scopeName = options.scope;
+
+    const nsInput =
+      options.namespaceFilter ??
+      (options.namespaceEnvVar === null
+        ? undefined
+        : readEnvVar(options.namespaceEnvVar ?? 'LOGRAIL_DEBUG'));
+    this.namespaceFilter = compileNamespaceFilter(nsInput);
 
     // On the Electron main process, receive renderer logs over IPC.
     if (this.runtime.attachReceiver) {
@@ -180,6 +269,7 @@ export class Logger implements LoggerMethods {
   ingestEntry(entry: LogEntry): void {
     if (this.destroyed) return;
     if (entry.level < this.getLevel()) return;
+    if (!matchesNamespace(entry.scope, this.namespaceFilter)) return;
     this.dispatch(entry);
   }
 
@@ -279,6 +369,7 @@ export class Logger implements LoggerMethods {
       plugins: this.plugins,
     });
     child.parent = this;
+    child.namespaceFilter = this.namespaceFilter;
     return child;
   }
 
@@ -308,6 +399,7 @@ export class Logger implements LoggerMethods {
       plugins: this.plugins,
     });
     child.parent = this;
+    child.namespaceFilter = this.namespaceFilter;
     if (options.level !== undefined) {
       child.levelOverride = normalizeLevel(options.level);
     }
@@ -327,6 +419,7 @@ export class Logger implements LoggerMethods {
     if (this.destroyed) return;
     const levelValue = LOG_LEVELS[levelName];
     if (levelValue < this.getLevel()) return;
+    if (!matchesNamespace(this.scopeName, this.namespaceFilter)) return;
 
     const entry = this.buildEntry(levelName, levelValue, message, args);
     const processed = this.pipeline.process(entry);

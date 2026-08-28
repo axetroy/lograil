@@ -1,4 +1,4 @@
-import type { LogEntry } from '../types.js';
+import type { LogEntry, LogLevelName } from '../types.js';
 import type { Formatter } from '../pipeline/formatter.js';
 import { createLineFormatter } from '../pipeline/formatter.js';
 import type { Transport } from './transport.js';
@@ -20,6 +20,13 @@ export interface ConsoleTransportOptions {
   formatter?: Formatter;
   /** Map a level to the console method used. */
   methodMap?: Partial<Record<string, (...args: unknown[]) => void>>;
+  /**
+   * Levels that should be written to `stderr` (via `console.error`). Any level
+   * listed here is routed to `console.error` even if `methodMap` maps it
+   * elsewhere. Defaults to `['error', 'fatal']` (matching the previous
+   * behaviour); add `'warn'` to also send warnings to stderr.
+   */
+  stderrLevels?: LogLevelName[];
 }
 
 /**
@@ -44,6 +51,14 @@ export class ConsoleTransport implements Transport {
       fatal: realConsole.error,
       ...options.methodMap,
     };
+    // Route the requested levels to stderr (console.error). Applied after
+    // `methodMap` so an explicitly provided method for a level is not silently
+    // overridden. Defaults to empty — the default `methodMap` already sends
+    // `error`/`fatal` to stderr, so opt in with e.g. `stderrLevels: ['warn']`.
+    const stderrLevels = options.stderrLevels ?? [];
+    for (const level of stderrLevels) {
+      this.methodMap[level] = realConsole.error;
+    }
   }
 
   write(entry: LogEntry, formatted: string): void {

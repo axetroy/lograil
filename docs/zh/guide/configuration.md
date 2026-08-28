@@ -29,6 +29,22 @@ interface LoggerOptions {
    * 从而避免某个卡住的传输器拖垮 `flush()`/`destroy()`。默认 5000。
    */
   writeTimeoutMs?: number;
+  /**
+   * 环境变量（名称），若其值被设为合法级别名，则覆盖 `level`。默认为
+   * `"LOG_LEVEL"`。设为 `null` 可禁用。
+   */
+  levelEnvVar?: string | null;
+  /**
+   * 作用域 / 命名空间过滤器：以逗号或空格分隔的 glob 模式（支持 `*` 通配）；以
+   * `-` 前缀表示排除。仅 `scope` 匹配的条目会被输出。当未显式提供时，自动从
+   * `namespaceEnvVar` 读取。
+   */
+  namespaceFilter?: string | string[];
+  /**
+   * 当未设置 `namespaceFilter` 时，用于提供命名空间过滤器的环境变量。默认为
+   * `"LOGRAIL_DEBUG"`。设为 `null` 可禁用。
+   */
+  namespaceEnvVar?: string | null;
 }
 ```
 
@@ -78,6 +94,37 @@ log.info('handling request'); // 包含 requestId/tenant/env
 ```
 
 作用域 logger 会获得隔离的子上下文，因此在子 logger 上设置上下文不会泄漏到父 logger。
+
+## 环境变量与命名空间过滤
+
+无需改代码，即可通过两个零配置开关进行运维控制。
+
+### LOG_LEVEL
+
+设置 `LOG_LEVEL` 环境变量为某个级别名，即可在启动时覆盖配置的级别（便于在生产环境临时调高日志量，无需重新部署）：
+
+```bash
+LOG_LEVEL=debug node server.js
+```
+
+可通过 `levelEnvVar` 指向其它变量名，或设为 `null` 关闭。
+
+### 命名空间（scope）过滤
+
+当你使用了作用域 logger（`logger.scope('http')`）时，可通过 `LOGRAIL_DEBUG` 环境变量或
+`namespaceFilter` 选项限制哪些 scope 真正输出。语法与流行的 `debug` 包一致：
+
+```bash
+# 启用 http 与 db 两个作用域（支持通配），并排除嘈杂的 http:noise
+LOGRAIL_DEBUG='http*,db*,-http:noise' node server.js
+```
+
+```ts
+const log = createLogger({ namespaceFilter: ['http*', 'db*', '-http:noise'] });
+```
+
+以 `-` 前缀表示排除；`*` 匹配任意一段字符。`scope` 为完整的点分层级名（如 `http:server`），因此
+`http*` 可匹配它。
 
 ## 运行时选项
 

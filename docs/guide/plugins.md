@@ -84,3 +84,22 @@ log.hasPlugin('secure'); // false
 Plugins are intercepted **asynchronously** in registration order, so `onEntry`
 may be sync or async. Call `await log.flush()` / `await log.destroy()` to ensure
 all plugin work completes before your process exits.
+
+## Built-in plugin: OTel trace correlation
+
+`createOtelTracePlugin()` automatically injects the active OpenTelemetry trace and
+span identifiers into each entry's `metadata` (`traceId` / `spanId`), so an
+`OtlpTransport` (or any backend that reads those fields) can correlate logs with
+their span — without you threading the context manually.
+
+`@opentelemetry/api` is an **optional** peer dependency. If it isn't installed, or
+no span is active, the plugin is a no-op and entries are unaffected.
+
+```ts
+import { createOtelTracePlugin } from 'lograil';
+
+await log.use(createOtelTracePlugin());
+
+// inside a traced operation, the active span is picked up automatically:
+logger.info('handling request'); // => metadata: { traceId, spanId }
+```

@@ -83,6 +83,14 @@
     "lograil"
   ],
   "license": "MIT",
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@types/node": "^22.20.1",

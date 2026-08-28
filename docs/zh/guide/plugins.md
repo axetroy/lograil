@@ -79,3 +79,18 @@ log.hasPlugin('secure'); // false
 ```
 
 插件的拦截是 **异步** 的，且按注册顺序执行，因此 `onEntry` 既可以为同步也可以为异步。在进程退出前调用 `await log.flush()` / `await log.destroy()`，以确保所有插件工作都已完成。
+
+## 内置插件：OTel trace 关联
+
+`createOtelTracePlugin()` 会自动把当前活跃的 OpenTelemetry trace 与 span 标识注入到每条条目的 `metadata`（`traceId` / `spanId`）中，这样 `OtlpTransport`（或任何读取这两个字段的后端）就能把日志与其 span 关联起来——而无需你手动透传上下文。
+
+`@opentelemetry/api` 是**可选的**对等依赖。若未安装，或当前没有活跃 span，该插件即为空操作，条目不受影响。
+
+```ts
+import { createOtelTracePlugin } from 'lograil';
+
+await log.use(createOtelTracePlugin());
+
+// 在已追踪的操作内部，活跃 span 会被自动拾取：
+logger.info('handling request'); // => metadata: { traceId, spanId }
+```

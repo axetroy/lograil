@@ -29,6 +29,23 @@ interface LoggerOptions {
    * failed, so a stalled sink can never hang `flush()`/`destroy()`. Default 5000.
    */
   writeTimeoutMs?: number;
+  /**
+   * Environment variable (name) whose value — if set to a valid level name —
+   * overrides `level`. Defaults to `"LOG_LEVEL"`. Set to `null` to disable.
+   */
+  levelEnvVar?: string | null;
+  /**
+   * Scope/namespace filter: a comma/space-separated list of glob patterns (with
+   * `*` wildcards); a leading `-` excludes. Only entries whose `scope` matches are
+   * emitted. Read automatically from `namespaceEnvVar` when omitted.
+   */
+  namespaceFilter?: string | string[];
+  /**
+   * Environment variable whose value supplies the namespace filter when
+   * `namespaceFilter` is not set. Defaults to `"LOGRAIL_DEBUG"`. Set to `null`
+   * to disable.
+   */
+  namespaceEnvVar?: string | null;
 }
 ```
 
@@ -83,6 +100,39 @@ log.info('handling request'); // includes requestId/tenant/env
 
 Scoped loggers get an isolated child context, so setting context on a child
 never leaks to the parent.
+
+## Environment variables & namespace filtering
+
+Two zero-config controls are available for operations without code changes.
+
+### LOG_LEVEL
+
+Set the `LOG_LEVEL` environment variable to a level name to override the configured
+level at startup (useful for turning up verbosity in prod without a redeploy):
+
+```bash
+LOG_LEVEL=debug node server.js
+```
+
+Point it at a different variable with `levelEnvVar`, or disable with `levelEnvVar: null`.
+
+### Namespace (scope) filtering
+
+When you use scoped loggers (`logger.scope('http')`), you can restrict which scopes
+actually emit via the `LOGRAIL_DEBUG` environment variable or the `namespaceFilter`
+option. Syntax mirrors the popular `debug` package:
+
+```bash
+# enable http & db scopes (wildcards allowed), disable noisy http:noise
+LOGRAIL_DEBUG='http*,db*,-http:noise' node server.js
+```
+
+```ts
+const log = createLogger({ namespaceFilter: ['http*', 'db*', '-http:noise'] });
+```
+
+A leading `-` excludes a pattern; `*` matches any run of characters. `scope` is the
+full dotted name (e.g. `http:server`), so `http*` matches it.
 
 ## Runtime options
 

@@ -41,7 +41,9 @@ type Processor = (entry: LogEntry) => LogEntry;
 
 const identityProcessor: Processor;
 
-function createRedactProcessor(keys: string[], replacement?: unknown): Processor;
+function createRedactProcessor(keys?: string[], replacement?: unknown): Processor;
+const DEFAULT_SENSITIVE_KEYS: string[];
+function createDefaultSerializers(): Record<string, Serializer>;
 function createSerializeProcessor(serializers: Record<string, Serializer>): Processor;
 ```
 
@@ -56,6 +58,11 @@ matches one of `keys` with `replacement` (default `"[REDACTED]"`; may be any val
 
 The original objects are never mutated; only the branches that actually contain a
 match are cloned, so when nothing matches the entry is returned unchanged.
+
+When called with no `keys`, `createRedactProcessor` redacts a built-in list of
+common secret / PII keys — `DEFAULT_SENSITIVE_KEYS` (passwords, tokens, API keys,
+`authorization`, `cookie`, private keys, `sessionId`, `csrf`, `otp`, `ssn`, …). Pass
+an explicit list to override the default.
 
 ### Serializers
 
@@ -75,6 +82,18 @@ DB rows) consistently.
 - The `entry` is passed as the second argument for contextual serialization.
 - Transformation is structural: only the branches that contain a matching key are
   cloned; when no serializer fires the entry is returned unchanged.
+
+`createDefaultSerializers()` returns a ready-made set of `Serializer`s keyed by the
+property names they match (`error`, `date`, `buffer`, `url`, `req`, `res`) — e.g.
+errors become `{name,message,stack}`, `Date` → ISO string, `Buffer` → `Buffer(n)`,
+URLs → `href`, and `req`/`res` are trimmed to method/url/headers (or
+status/headers). Spread it into your own map:
+
+```ts
+logger.getPipeline().addProcessor(
+  createSerializeProcessor({ ...createDefaultSerializers(), user: (u) => ({ id: u.id }) }),
+);
+```
 
 ```ts
 import { createSerializeProcessor, createRedactProcessor } from 'lograil';
@@ -139,13 +158,15 @@ The emitted JSON line stays useful while avoiding secret leakage:
 type Formatter<T = string> = (entry: LogEntry) => T;
 
 function createLineFormatter(): Formatter<string>;
-function createJsonFormatter(): Formatter<string>;
+function createJsonFormatter(options?: { flatten?: boolean }): Formatter<string>;
 ```
 
 - `createLineFormatter` — one human-readable line including the full `Error`
   cause chain.
-- `createJsonFormatter` — structured JSON with `error` serialized via
-  `errorToJson` (circular `cause` safe).
+- `createJsonFormatter` — structured JSON with `error` serialized via `errorToJson`
+  (circular `cause` safe). With `{ flatten: true }`, `context` and `metadata` are
+  spread into the **top level** of the object (instead of being nested), which is
+  convenient for backends like Loki or Elasticsearch that expect flat fields.
 
 ## Pipeline API
 

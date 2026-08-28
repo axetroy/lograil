@@ -97,8 +97,41 @@ function redactNode(
  * createRedactProcessor(['user.password'])       // only `user.password`
  * createRedactProcessor(['*.token', 'user.*'])   // wildcards
  */
+/**
+ * Common secret / PII key names redacted by {@link createRedactProcessor} when
+ * no explicit key list is supplied. Covers passwords, tokens, API keys, auth
+ * headers, cookies, private keys and a few PII fields.
+ */
+export const DEFAULT_SENSITIVE_KEYS: string[] = [
+  'password',
+  'passwd',
+  'pwd',
+  'secret',
+  'token',
+  'accessToken',
+  'refreshToken',
+  'apiKey',
+  'api_key',
+  'authorization',
+  'auth',
+  'cookie',
+  'setCookie',
+  'set-cookie',
+  'privateKey',
+  'private_key',
+  'credentials',
+  'credential',
+  'sessionId',
+  'session',
+  'csrfToken',
+  'csrf',
+  'otp',
+  'ssn',
+  'x-api-key',
+];
+
 export function createRedactProcessor(
-  keys: string[],
+  keys: string[] = DEFAULT_SENSITIVE_KEYS,
   replacement: unknown = '[REDACTED]',
 ): Processor {
   if (keys.length === 0) return identityProcessor;
@@ -209,5 +242,60 @@ export function createSerializeProcessor(serializers: Record<string, Serializer>
       args: argsChanged ? args : entry.args,
       ...(errorChanged ? { error } : {}),
     };
+  };
+}
+
+function serializeErrorValue(v: unknown): unknown {
+  return v instanceof Error ? { name: v.name, message: v.message, stack: v.stack } : v;
+}
+
+function serializeBufferValue(v: unknown): unknown {
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(v)) return `Buffer(${v.length})`;
+  if (v instanceof ArrayBuffer) return `ArrayBuffer(${v.byteLength})`;
+  if (ArrayBuffer.isView(v)) {
+    return `${v.constructor.name}(${(v as { byteLength: number }).byteLength})`;
+  }
+  return v;
+}
+
+function serializeUrlValue(v: unknown): unknown {
+  return v instanceof URL ? v.href : v;
+}
+
+function serializeDateValue(v: unknown): unknown {
+  return v instanceof Date ? v.toISOString() : v;
+}
+
+function serializeRequestValue(v: unknown): unknown {
+  if (!v || typeof v !== 'object') return v;
+  const r = v as Record<string, unknown>;
+  if (!('method' in r) && !('url' in r)) return v;
+  return { method: r.method, url: r.url, headers: r.headers };
+}
+
+function serializeResponseValue(v: unknown): unknown {
+  if (!v || typeof v !== 'object') return v;
+  const r = v as Record<string, unknown>;
+  if (!('status' in r) && !('statusCode' in r)) return v;
+  return { status: r.status ?? r.statusCode, headers: r.headers };
+}
+
+/**
+ * A preset of common {@link Serializer}s keyed by the property names they match
+ * (`error`, `date`, `buffer`, `url`, `req`, `res`). Spread it into your own
+ * serializer map to get safe, compact representations of these types out of the
+ * box, e.g. `createSerializeProcessor({ ...createDefaultSerializers(), user })`.
+ *
+ * Matching is by property name at any depth (see {@link createSerializeProcessor}),
+ * so any object with a `req`/`res`/`url`/`error` property is normalized.
+ */
+export function createDefaultSerializers(): Record<string, Serializer> {
+  return {
+    error: serializeErrorValue,
+    date: serializeDateValue,
+    buffer: serializeBufferValue,
+    url: serializeUrlValue,
+    req: serializeRequestValue,
+    res: serializeResponseValue,
   };
 }

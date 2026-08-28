@@ -24,12 +24,15 @@ interface ConsoleTransportOptions {
   name?: string;
   formatter?: Formatter;
   methodMap?: Partial<Record<string, (...args: unknown[]) => void>>;
+  /** 路由到 `console.error`（stderr）的级别。默认为空——内置 `methodMap` 已把
+   * `error`/`fatal` 发往 stderr；可在此追加 `'warn'` 等。 */
+  stderrLevels?: LogLevelName[];
 }
 
 class ConsoleTransport implements Transport;
 ```
 
-将每个级别映射到某个 `console` 方法（可通过 `methodMap` 覆盖）。
+将每个级别映射到某个 `console` 方法（可通过 `methodMap` 覆盖）。列在 `stderrLevels` 中的级别会被额外路由到 `console.error`（stderr）——便于把 warning/error 引到单独的流。
 
 ## RotatingFileTransport
 

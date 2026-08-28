@@ -154,17 +154,32 @@ export function createLineFormatter(): Formatter<string> {
   };
 }
 
-export function createJsonFormatter(): Formatter<string> {
-  return (entry) =>
-    safeStringify({
+/** Options for {@link createJsonFormatter}. */
+export interface JsonFormatterOptions {
+  /**
+   * When `true`, `context` and `metadata` fields are spread into the top level
+   * of the JSON object instead of being nested. Useful for backends (Loki,
+   * Elasticsearch) that expect flat labels. Top-level fields (`message`,
+   * `level`, …) are emitted first, so a colliding context key overrides them.
+   */
+  flatten?: boolean;
+}
+
+export function createJsonFormatter(options: JsonFormatterOptions = {}): Formatter<string> {
+  const flatten = options.flatten ?? false;
+  return (entry) => {
+    const error = entry.error ? errorToJson(entry.error) : undefined;
+    const base = {
       time: entry.time,
       level: entry.levelName,
       scope: entry.scope,
       pid: entry.pid,
       message: entry.message,
       args: entry.args,
-      context: entry.context,
-      metadata: entry.metadata,
-      error: entry.error ? errorToJson(entry.error) : undefined,
-    });
+    };
+    const obj = flatten
+      ? { ...base, ...entry.context, ...entry.metadata, error }
+      : { ...base, context: entry.context, metadata: entry.metadata, error };
+    return safeStringify(obj);
+  };
 }

@@ -26,12 +26,17 @@ interface ConsoleTransportOptions {
   name?: string;
   formatter?: Formatter;
   methodMap?: Partial<Record<string, (...args: unknown[]) => void>>;
+  /** Levels routed to `console.error` (stderr). Defaults to empty — the built-in
+   * `methodMap` already sends `error`/`fatal` to stderr; add `'warn'` etc. here. */
+  stderrLevels?: LogLevelName[];
 }
 
 class ConsoleTransport implements Transport;
 ```
 
-Maps each level to a `console` method (override via `methodMap`).
+Maps each level to a `console` method (override via `methodMap`). Levels listed in
+`stderrLevels` are additionally routed to `console.error` (stderr) — useful for
+piping warnings/errors to a separate stream.
 
 ## RotatingFileTransport
 
