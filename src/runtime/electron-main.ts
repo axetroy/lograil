@@ -3,26 +3,21 @@ import type { Transport } from '../transport/transport.js';
 import { ConsoleTransport } from '../transport/console.js';
 import type { RotatingFileTransportOptions } from '../transport/rotating-file.js';
 import { RotatingFileTransport } from '../transport/rotating-file.js';
-import { registerIpcReceiver } from '../transport/electron-ipc.js';
+import { registerIpcReceiver, RENDERER_PROCESS_MARKER } from '../transport/electron-ipc.js';
 import { getElectron, isElectronProcess } from './electron-binding.js';
 import type { App } from 'electron';
 import { tmpdir } from 'node:os';
-import { join, basename } from 'node:path';
+import { join } from 'node:path';
 
 export interface ElectronMainRuntimeOptions {
-  /**
-   * Explicit log file path. When omitted, a rotating file inside
-   * `<appData>/Lograil` (Electron `app.getPath('appData')`, falling
-   * back to the temp dir) is used — the library writes logs by default.
-   */
-  logFile?: string;
-  /** Application name used to derive the default log path. */
-  appName?: string;
   fileTransportOptions?: Partial<RotatingFileTransportOptions>;
   /** Disable the file transport entirely (console only). */
   disableFile?: boolean;
   /**
-   * Listen for renderer entries over IPC and write them here (default `true`).
+   * Listen for renderer entries over IPC and write them to the dedicated
+   * `renderer.{date}.{index}.log` file (default `true`). Main-process entries
+   * go to `main.{date}.{index}.log`. Both paths are fixed under
+   * `<appData>/Lograil` and cannot be customized.
    */
   receiveFromRenderer?: boolean;
 }
@@ -37,17 +32,10 @@ function getElectronApp(): App | undefined {
   }
 }
 
-function defaultElectronLogPath(appName?: string): string {
-  const app = getElectronApp();
-  let name = appName;
-  if (!name && app?.getName) {
-    try {
-      name = app.getName();
-    } catch {
-      /* ignore */
-    }
-  }
+/** Log directory: `<appData>/Lograil`, or the temp dir when Electron is absent. */
+function defaultElectronLogDir(): string {
   let dir = tmpdir();
+  const app = getElectronApp();
   if (app?.getPath) {
     try {
       // Store logs under `<appData>/Lograil` (e.g.
@@ -57,15 +45,7 @@ function defaultElectronLogPath(appName?: string): string {
       /* ignore */
     }
   }
-  if (!name) {
-    try {
-      const p = process.argv[1];
-      if (p) name = basename(p).replace(/\.[^.]+$/, '');
-    } catch {
-      /* ignore */
-    }
-  }
-  return join(dir, `${name ?? 'app'}.log`);
+  return dir;
 }
 
 /**
@@ -89,14 +69,31 @@ export function createElectronMainRuntime(
     defaultTransports: () => {
       const transports: Transport[] = [new ConsoleTransport()];
       if (!options.disableFile) {
-        const filePath = options.logFile ?? defaultElectronLogPath(options.appName);
+        const dir = defaultElectronLogDir();
+        const mainPath = join(dir, 'main.log');
         transports.push(
           new RotatingFileTransport({
-            path: filePath,
+            path: mainPath,
             daily: true,
+            // Main-process entries only: renderer entries are routed to the
+            // dedicated renderer log file below.
+            filter: (entry) => entry.metadata?.[RENDERER_PROCESS_MARKER] !== 'renderer',
             ...options.fileTransportOptions,
           }),
         );
+
+        if (receiveFromRenderer) {
+          const rendererPath = join(dir, 'renderer.log');
+          transports.push(
+            new RotatingFileTransport({
+              path: rendererPath,
+              daily: true,
+              // Renderer entries only.
+              filter: (entry) => entry.metadata?.[RENDERER_PROCESS_MARKER] === 'renderer',
+              ...options.fileTransportOptions,
+            }),
+          );
+        }
       }
       return transports;
     },

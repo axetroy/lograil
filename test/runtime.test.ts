@@ -47,25 +47,24 @@ describe('Node runtime', () => {
 });
 
 describe('Electron main runtime', () => {
-  it('exposes pid, filesystem and a file transport when logFile is set', () => {
-    const rt = createElectronMainRuntime({ logFile: '/tmp/app.log' });
+  it('exposes pid, filesystem and a fixed main file transport', () => {
+    const rt = createElectronMainRuntime();
     expect(rt.name).toBe('electron');
     expect(rt.processType).toBe('main');
     expect(rt.pid()).toBe(process.pid);
     expect(rt.hasFileSystem()).toBe(true);
-    expect(rt.defaultTransports().map((t) => t.name)).toContain('rotating-file:/tmp/app.log');
+    const names = rt.defaultTransports().map((t) => t.name);
+    // Fixed path: <dir>/main.log (plus the renderer file when receiving).
+    expect(names.some((n) => n.startsWith('rotating-file:') && n.includes('main.log'))).toBe(true);
   });
 
   it('can disable the file transport explicitly', () => {
-    const rt = createElectronMainRuntime({
-      logFile: '/tmp/x.log',
-      disableFile: true,
-    });
+    const rt = createElectronMainRuntime({ disableFile: true });
     expect(rt.defaultTransports().map((t) => t.name)).toEqual(['console']);
   });
 
   it('exposes a receiver that is safe when electron is absent', () => {
-    const rt = createElectronMainRuntime({ logFile: '/tmp/app.log' });
+    const rt = createElectronMainRuntime();
     expect(typeof rt.attachReceiver).toBe('function');
     // electron module is not installed in the test env; must not throw.
     const detach = rt.attachReceiver?.(() => {});
@@ -126,9 +125,10 @@ describe('Electron runtime (auto-detect)', () => {
 
   it('detects main when process.type is browser', () => {
     (process as unknown as { type?: string }).type = 'browser';
-    const rt = createElectronRuntime({ logFile: '/tmp/app.log' });
+    const rt = createElectronRuntime();
     expect(rt.processType).toBe('main');
-    expect(rt.defaultTransports().map((t) => t.name)).toContain('rotating-file:/tmp/app.log');
+    const names = rt.defaultTransports().map((t) => t.name);
+    expect(names.some((n) => n.startsWith('rotating-file:') && n.includes('main.log'))).toBe(true);
   });
 
   it('treats an Electron process without an explicit renderer type as main', () => {
@@ -173,13 +173,12 @@ describe('detectRuntime', () => {
     expect(detectRuntime().name).toBe('web');
   });
 
-  it('forwards logFile to the detected electron main adapter', () => {
+  it('uses a fixed main.log path on the detected electron main adapter', () => {
     stubVersions({ electron: '28.0.0', node: '20.0.0' });
     (process as unknown as { type?: string }).type = 'browser';
-    const rt: RuntimeAdapter = detectRuntime({ logFile: '/tmp/e.log' });
+    const rt: RuntimeAdapter = detectRuntime();
     expect(rt.processType).toBe('main');
-    expect(rt.defaultTransports().map((t: Transport) => t.name)).toContain(
-      'rotating-file:/tmp/e.log',
-    );
+    const names = rt.defaultTransports().map((t: Transport) => t.name);
+    expect(names.some((n) => n.startsWith('rotating-file:') && n.includes('main.log'))).toBe(true);
   });
 });

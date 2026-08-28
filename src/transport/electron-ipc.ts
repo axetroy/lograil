@@ -8,6 +8,13 @@ type IpcSender = Pick<IpcRenderer, 'send'>;
 
 export const LOGRAIL_CHANNEL = 'lograil:log';
 
+/**
+ * Metadata key (on `LogEntry.metadata`) used to mark entries that originated
+ * in a renderer process and arrived over IPC. The main runtime uses it to
+ * route those entries to a dedicated renderer log file.
+ */
+export const RENDERER_PROCESS_MARKER = '__lograilProcess';
+
 export interface ElectronIpcTransportOptions {
   /** IPC channel used to reach the main process. */
   channel?: string;
@@ -78,7 +85,14 @@ export function registerIpcReceiver(
   const channel = options.channel ?? LOGRAIL_CHANNEL;
   // `electron` is only present in a main process; resolve it lazily.
   const ipcMain = getElectron().ipcMain;
-  const handler = (_event: unknown, entry: LogEntry): void => ingest(entry);
+  const handler = (_event: unknown, entry: LogEntry): void => {
+    // Mark renderer-originated entries so the main runtime can route them to
+    // a dedicated renderer log file instead of mixing them into main's log.
+    if (entry && entry.metadata) {
+      entry.metadata[RENDERER_PROCESS_MARKER] = 'renderer';
+    }
+    ingest(entry);
+  };
   ipcMain.on(channel, handler);
   return () => ipcMain.removeListener(channel, handler);
 }

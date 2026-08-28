@@ -16,6 +16,8 @@ vi.mock('../src/runtime/electron-binding.js', () => ({
 import { createElectronMainRuntime } from '../src/runtime/electron-main.js';
 import { ConsoleTransport } from '../src/transport/console.js';
 import { RotatingFileTransport } from '../src/transport/rotating-file.js';
+import { RENDERER_PROCESS_MARKER } from '../src/transport/electron-ipc.js';
+import type { LogEntry } from '../src/types.js';
 
 describe('createElectronMainRuntime', () => {
   beforeEach(() => {
@@ -33,18 +35,20 @@ describe('createElectronMainRuntime', () => {
   });
 
   it('defaults to console + rotating file transports', () => {
-    const rt = createElectronMainRuntime({ appName: 'demo' });
+    const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
     expect(ts.some((t) => t instanceof ConsoleTransport)).toBe(true);
     expect(ts.some((t) => t instanceof RotatingFileTransport)).toBe(true);
   });
 
-  it('derives the default log path from app.getName / app.getPath', () => {
+  it('derives the default log path from app.getPath("appData")', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
     const file = ts.find((t) => t instanceof RotatingFileTransport) as RotatingFileTransport;
-    expect(file.name).toContain('MyApp');
+    // Fixed `main.log` base under `<appData>/Lograil`, no appName involved.
+    expect(getPath).toHaveBeenCalledWith('appData');
     expect(file.name).toContain('Lograil');
+    expect(file.name).toContain('main.log');
   });
 
   it('disableFile yields console only', () => {
@@ -67,13 +71,54 @@ describe('createElectronMainRuntime', () => {
     expect(ipcRemove).toHaveBeenCalled();
   });
 
-  it('falls back to process.argv when app.getName throws', () => {
-    getName.mockImplementation(() => {
-      throw new Error('no name');
-    });
+  it('uses fixed main.log / renderer.log base names under <appData>/Lograil', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
-    const file = ts.find((t) => t instanceof RotatingFileTransport) as RotatingFileTransport;
-    expect(file).toBeDefined();
+    const files = ts.filter((t): t is RotatingFileTransport => t instanceof RotatingFileTransport);
+    expect(files[0].name).toContain('Lograil/main.log');
+    expect(files[1].name).toContain('Lograil/renderer.log');
+  });
+
+  it('emits separate main + renderer log files when receiving from renderer', () => {
+    const rt = createElectronMainRuntime();
+    const ts = rt.defaultTransports();
+    const files = ts.filter((t): t is RotatingFileTransport => t instanceof RotatingFileTransport);
+    // main.log + renderer.log (formatted as main.{date}.{index}.log etc.)
+    expect(files).toHaveLength(2);
+    expect(files[0].name).toContain('main.log');
+    expect(files[1].name).toContain('renderer.log');
+  });
+
+  it('renderer entries route to the renderer file and are excluded from main', () => {
+    const rt = createElectronMainRuntime({ appName: 'demo' });
+    const ts = rt.defaultTransports();
+    const files = ts.filter((t): t is RotatingFileTransport => t instanceof RotatingFileTransport);
+    const [mainFile, rendererFile] = files;
+    const mainEntry: LogEntry = {
+      level: 30,
+      levelName: 'info',
+      message: 'from main',
+      args: [],
+      timestamp: 1,
+      time: '',
+      context: undefined,
+      metadata: {},
+    };
+    const rendererEntry: LogEntry = {
+      ...mainEntry,
+      message: 'from renderer',
+      metadata: { [RENDERER_PROCESS_MARKER]: 'renderer' },
+    };
+
+    expect(mainFile.filter?.(mainEntry)).toBe(true);
+    expect(mainFile.filter?.(rendererEntry)).toBe(false);
+    expect(rendererFile.filter?.(mainEntry)).toBe(false);
+    expect(rendererFile.filter?.(rendererEntry)).toBe(true);
+  });
+
+  it('disableFile still omits the renderer file', () => {
+    const rt = createElectronMainRuntime({ disableFile: true });
+    const ts = rt.defaultTransports();
+    expect(ts.some((t) => t instanceof RotatingFileTransport)).toBe(false);
   });
 });

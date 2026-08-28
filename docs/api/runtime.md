@@ -61,8 +61,7 @@ interface NodeRuntimeOptions {
 }
 
 interface ElectronMainRuntimeOptions {
-  logFile?: string;
-  appName?: string;
+  // logFile paths are fixed: <appData>/Lograil/{main,renderer}.{date}.{index}.log
   fileTransportOptions?: Partial<RotatingFileTransportOptions>;
   disableFile?: boolean;
   receiveFromRenderer?: boolean; // default true

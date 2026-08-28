@@ -28,6 +28,12 @@ export interface RotatingFileTransportOptions {
   now?: () => Date;
   formatter?: Formatter;
   name?: string;
+  /**
+   * Optional predicate. When provided and it returns `false` for an entry, the
+   * entry is dropped (not written). Useful for splitting one logger's output
+   * across multiple files — e.g. main vs renderer process logs.
+   */
+  filter?: (entry: LogEntry) => boolean;
 }
 
 const DEFAULT_MAX_SIZE = 10 * 1024 * 1024;
@@ -59,6 +65,8 @@ export class RotatingFileTransport implements Transport {
   private readonly maxFiles: number;
   private readonly daily: boolean;
   private readonly now: () => Date;
+  /** Optional per-entry predicate; entries returning `false` are dropped. */
+  readonly filter?: (entry: LogEntry) => boolean;
   private handle: Awaited<ReturnType<typeof open>> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private size = 0;
@@ -80,6 +88,7 @@ export class RotatingFileTransport implements Transport {
       this.maxFiles = Math.max(1, this.maxFiles);
     }
     this.now = options.now ?? (() => new Date());
+    this.filter = options.filter;
     this.name = options.name ?? `rotating-file:${options.path}`;
     this.formatter = options.formatter ?? createJsonFormatter();
   }
@@ -161,7 +170,8 @@ export class RotatingFileTransport implements Transport {
     }
   }
 
-  write(_entry: LogEntry, formatted: string): void | Promise<void> {
+  write(entry: LogEntry, formatted: string): void | Promise<void> {
+    if (this.filter && !this.filter(entry)) return; // dropped by filter
     const line = formatted + '\n';
     const bytes = Buffer.byteLength(line, 'utf8');
     const task = this.queue

@@ -60,8 +60,7 @@ interface NodeRuntimeOptions {
 }
 
 interface ElectronMainRuntimeOptions {
-  logFile?: string;
-  appName?: string;
+  // 日志文件路径固定：<appData>/Lograil/{main,renderer}.{date}.{index}.log
   fileTransportOptions?: Partial<RotatingFileTransportOptions>;
   disableFile?: boolean;
   receiveFromRenderer?: boolean; // 默认 true

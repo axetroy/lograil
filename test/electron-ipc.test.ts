@@ -16,6 +16,7 @@ import {
   ElectronIpcTransport,
   registerIpcReceiver,
   LOGRAIL_CHANNEL,
+  RENDERER_PROCESS_MARKER,
 } from '../src/transport/electron-ipc.js';
 import type { LogEntry } from '../src/types.js';
 import { LOG_LEVELS } from '../src/types.js';
@@ -51,8 +52,12 @@ describe('ElectronIpcTransport (electron present)', () => {
     const unregister = registerIpcReceiver(ingest);
     expect(on).toHaveBeenCalledWith(LOGRAIL_CHANNEL, expect.any(Function));
     const handler = on.mock.calls[0][1] as (event: unknown, entry: LogEntry) => void;
-    handler({}, entry());
-    expect(ingest).toHaveBeenCalledWith(entry());
+    const received = entry();
+    handler({}, received);
+    expect(ingest).toHaveBeenCalledTimes(1);
+    // Renderer entries are marked so the main runtime can route them to a
+    // dedicated renderer log file.
+    expect(ingest.mock.calls[0][0].metadata[RENDERER_PROCESS_MARKER]).toBe('renderer');
     unregister();
     expect(removeListener).toHaveBeenCalledWith(LOGRAIL_CHANNEL, handler);
   });

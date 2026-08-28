@@ -23,8 +23,14 @@ app.whenReady().then(() => {
 ```
 
 That's all. The main process logs to the console **and** a daily rotating file
-under `<appData>/Lograil/`, and automatically receives logs sent by
-renderer processes over IPC.
+under `<appData>/Lograil/`. Renderer logs arrive over IPC and are written to a
+**separate** daily rotating file so the two processes never mix:
+
+- `main.{YYYY-MM-DD}.{01-99}.log` — entries from the **main** process
+- `renderer.{YYYY-MM-DD}.{01-99}.log` — entries from **renderer** processes
+
+The filenames are fixed (no `appName` needed); the files live under
+`<appData>/Lograil/` so they stay isolated per installed app.
 
 ### Renderer process
 
@@ -37,8 +43,9 @@ logger.warn('something happened in the UI');
 ```
 
 The default renderer logger writes to the local console (visible in DevTools) and
-forwards entries to the main process, where they land in the **same** rotating
-file as the main process's own logs.
+forwards entries to the main process, where they land in a **dedicated**
+`renderer.{YYYY-MM-DD}.{01-99}.log` file — separate from the main process's
+`main.{YYYY-MM-DD}.{01-99}.log`.
 
 No setup, no `createLogger`, no wiring required.
 
@@ -164,14 +171,12 @@ Only reach for `createLogger` + an explicit runtime when you want to change the
 log path, disable the file, or stop receiving renderer logs.
 
 ```ts
-// main.ts — custom log path / disable file
+// main.ts — disable file or stop receiving renderer logs
 import { createLogger, createElectronMainRuntime } from 'lograil';
 
 const log = createLogger({
   runtime: createElectronMainRuntime({
-    appName: 'my-app', // derives the default log path
-    // logFile: '/custom/path/app.log',
-    // disableFile: false,
+    // logFile paths are fixed: <appData>/Lograil/{main,renderer}.log
     receiveFromRenderer: true, // default — receive renderer logs over IPC
   }),
 });
@@ -191,8 +196,6 @@ const log = createLogger({
 
 | Factory                       | Option               | Effect                                         |
 | ----------------------------- | -------------------- | ---------------------------------------------- |
-| `createElectronMainRuntime`   | `appName`            | Derives the default log path                   |
-| `createElectronMainRuntime`   | `logFile`            | Explicit rotating log file path                |
 | `createElectronMainRuntime`   | `fileTransportOptions` | Forwarded to `RotatingFileTransport`         |
 | `createElectronMainRuntime`   | `disableFile`        | Console only (no file)                         |
 | `createElectronMainRuntime`   | `receiveFromRenderer` | Receive renderer logs over IPC (default `true`)| |

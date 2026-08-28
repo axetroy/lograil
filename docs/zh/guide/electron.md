@@ -19,7 +19,7 @@ app.whenReady().then(() => {
 });
 ```
 
-仅此而已。主进程会输出到控制台 **和** `<appData>/Lograil/` 下的每日滚动文件，并自动通过 IPC 接收渲染进程发来的日志。
+仅此而已。主进程会输出到控制台 **和** `<appData>/Lograil/` 下的每日滚动文件（分别为 `main.{YYYY-MM-DD}.{01-99}.log` 与 `renderer.{YYYY-MM-DD}.{01-99}.log`），并自动通过 IPC 接收渲染进程发来的日志。
 
 ### 渲染进程
 
@@ -31,7 +31,7 @@ logger.warn('UI 中发生了一些事');
 // → 本地控制台，并经由 IPC 转发到主进程
 ```
 
-默认的渲染进程 logger 会写入本地控制台（在 DevTools 中可见），并把条目转发到主进程，最终落到与主进程 **同一个** 滚动文件中。
+默认的渲染进程 logger 会写入本地控制台（在 DevTools 中可见），并把条目转发到主进程，最终落到 **独立** 的 `renderer.{YYYY-MM-DD}.{01-99}.log` 文件中——与主进程的 `main.{YYYY-MM-DD}.{01-99}.log` 相互分离。
 
 无需配置，无需 `createLogger`，无需任何接线。
 
@@ -137,14 +137,12 @@ if (bridge) {
 只有当你想修改日志路径、关闭文件，或停止接收渲染进程日志时，才需要使用 `createLogger` + 显式运行时。
 
 ```ts
-// main.ts —— 自定义日志路径 / 关闭文件
+// main.ts —— 关闭文件 / 停止接收渲染进程日志
 import { createLogger, createElectronMainRuntime } from 'lograil';
 
 const log = createLogger({
   runtime: createElectronMainRuntime({
-    appName: 'my-app', // 用于推导默认日志路径
-    // logFile: '/custom/path/app.log',
-    // disableFile: false,
+    // 日志文件路径固定：<appData>/Lograil/{main,renderer}.log
     receiveFromRenderer: true, // 默认 —— 通过 IPC 接收渲染进程日志
   }),
 });
@@ -164,8 +162,6 @@ const log = createLogger({
 
 | 工厂                            | 选项                  | 作用                                           |
 | ------------------------------- | --------------------- | ---------------------------------------------- |
-| `createElectronMainRuntime`     | `appName`             | 推导默认日志路径                               |
-| `createElectronMainRuntime`     | `logFile`             | 显式的滚动日志文件路径                         |
 | `createElectronMainRuntime`     | `fileTransportOptions` | 透传给 `RotatingFileTransport`                 |
 | `createElectronMainRuntime`     | `disableFile`         | 仅控制台（不写文件）                           |
 | `createElectronMainRuntime`     | `receiveFromRenderer` | 通过 IPC 接收渲染进程日志（默认 `true`）       |

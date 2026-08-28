@@ -72,7 +72,7 @@ const log = createLogger({
 | Runtime                 | Option              | Effect                                            |
 | ----------------------- | ------------------- | ------------------------------------------------- |
 | Node / Electron main    | `logFile`           | Explicit rotating log file path                   |
-| Node / Electron main    | `appName`           | Derives the default log path                      |
+| Node                     | `appName`           | Derives the default log path (Node only)          |
 | Node / Electron main    | `fileTransportOptions` | Forwarded to `RotatingFileTransport`           |
 | Node / Electron main    | `disableFile`       | Console-only (no file)                            |
 | Electron main           | `receiveFromRenderer` | Receive renderer logs over IPC (default `true`) |
