@@ -65,7 +65,7 @@ await logger.destroy(); // 先 flush，再释放插件、关闭传输器
 有三道相互独立的闸门：
 
 1. **logger 级别闸门**：`setLevel` 在条目进入管道前丢弃低于阈值的条目，因此被廉价丢弃的条目不会消耗处理成本。
-2. **管道过滤器**：任意谓词（`createLevelFilter`、`createScopeFilter`、`combineFilters`、自定义）在管道内运行。
+2. **管道过滤器**：任意谓词（`createLevelFilter`、`createScopeFilter`、`createSampler`、`combineFilters`、自定义）在管道内运行。
 3. **按传输器级别**：每个传输器可声明自己的 `level`；低于它的条目仅被该传输器跳过，从而让一个 logger 分流（例如 `error` 及以上发往远端，其余写入文件）。
 
 ## 为何如此分层

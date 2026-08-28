@@ -89,7 +89,7 @@ There are three independent gates:
 1. **Logger-level gate** — `setLevel` drops entries below a threshold before they
    enter the pipeline, so cheaply-discarded entries never cost processing.
 2. **Pipeline filters** — arbitrary predicates (`createLevelFilter`,
-   `createScopeFilter`, `combineFilters`, custom) run inside the pipeline.
+   `createScopeFilter`, `createSampler`, `combineFilters`, custom) run inside the pipeline.
 3. **Per-transport level** — each transport may declare its own `level`; entries
    below it are skipped by that transport only, so one logger can fan out (e.g.
    `error`+ to a remote sink while writing everything to a file).

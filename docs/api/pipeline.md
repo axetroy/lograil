@@ -10,7 +10,28 @@ type Filter = (entry: LogEntry) => boolean;
 
 function createLevelFilter(minLevel: number): Filter;
 function createScopeFilter(allowed: string[]): Filter;
+function createSampler(options?: SamplingOptions): Filter;
 function combineFilters(filters: Filter[]): Filter;
+```
+
+### Sampling
+
+`createSampler` drops entries to cut volume, with two orthogonal strategies combined
+by logical AND:
+
+- **probabilistic** (`rate`, 0..1): keep each entry with probability `rate`;
+- **rate limiting** (`maxPerSecond` + `burst`): a token bucket caps throughput per
+  second, tolerating short bursts.
+
+Entries outside `levels` (or when `levels` is omitted, every level) are always kept.
+Because it is a filter, sampled entries never reach processors, formatters or
+transports — the cheapest way to reduce cost under load. Sampling is intentionally
+lossy; enable it only for high-volume, low-value levels.
+
+```ts
+logger.getPipeline().addFilter(
+  createSampler({ levels: ['debug', 'info'], maxPerSecond: 100, burst: 200 }),
+);
 ```
 
 ## Processor

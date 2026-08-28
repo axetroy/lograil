@@ -9,7 +9,23 @@ type Filter = (entry: LogEntry) => boolean;
 
 function createLevelFilter(minLevel: number): Filter;
 function createScopeFilter(allowed: string[]): Filter;
+function createSampler(options?: SamplingOptions): Filter;
 function combineFilters(filters: Filter[]): Filter;
+```
+
+### 采样（Sampling）
+
+`createSampler` 通过丢弃条目来降低日志量，提供两种正交策略（按逻辑"与"组合）：
+
+- **概率采样**（`rate`，0~1）：以 `rate` 的概率保留每条条目；
+- **限速**（`maxPerSecond` + `burst`）：令牌桶限制每秒保留条数，允许短时突发。
+
+不在 `levels` 内（或省略 `levels` 时对所有级别）的条目始终保留。由于它是过滤器，被采样的条目不会进入处理器、格式化器或传输器——这是高负载下降低成本最省力的方式。采样是有损的，请仅用于高量、低价值级别。
+
+```ts
+logger.getPipeline().addFilter(
+  createSampler({ levels: ['debug', 'info'], maxPerSecond: 100, burst: 200 }),
+);
 ```
 
 ## Processor
