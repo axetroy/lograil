@@ -125,7 +125,7 @@ jobs:
       - name: Deploy latest to docs branch root
         uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_TOKEN }}
           publish_branch: docs
           publish_dir: docs/.vitepress/dist
           destination_dir: .
@@ -138,7 +138,7 @@ jobs:
       - name: Deploy versioned docs to docs branch
         uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_TOKEN }}
           publish_branch: docs
           publish_dir: docs/.vitepress/dist
           destination_dir: ${{ github.ref_name }}
