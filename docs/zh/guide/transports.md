@@ -92,6 +92,9 @@ new OtlpTransport({
 });
 ```
 
+上下文中的 `traceId` / `spanId`（或 `trace_id` / `span_id`）会自动映射进 OTLP 的
+链路关联字段，使日志能与其所在的分布式链路在后端关联。
+
 借助按传输器 `level`，可以让一个 logger 分流——例如把 `OtlpTransport` 设为
 `error`，文件传输器设为 `info`。
 

@@ -64,6 +64,28 @@ logger.scope(scope: string, context?: Record<string, unknown>): Logger;
 Returns a child that shares the parent's transports, pipeline and plugins, with
 its own `:`-joined scope and an isolated context store.
 
+## Child loggers
+
+```ts
+logger.child(options?: { context?: Record<string, unknown>; level?: LogLevelInput }): Logger;
+```
+
+Derives a child logger that shares the parent's transports, pipeline, plugins and
+runtime. The child:
+
+- merges `options.context` on top of the parent's context (captured at creation),
+- inherits the parent's scope,
+- inherits the **parent's level live** unless `options.level` overrides it (the
+  override also applies to any further descendants).
+
+This is the canonical "child logger" (à la `pino.child`), ideal for per-request
+context:
+
+```ts
+const reqLog = logger.child({ context: { requestId: req.id } });
+reqLog.info('start'); // => context: { requestId: '...' }
+```
+
 ## Ingesting external entries
 
 ```ts

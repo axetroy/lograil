@@ -81,8 +81,9 @@ function getNodeProcess(): NodeProcess | undefined {
  * the {@link Pipeline} (filter + processors), lets {@link Plugin}s intercept,
  * formats and writes them to {@link Transport}s.
  *
- * Instances are cheap to derive via {@link scope}; all children share the same
- * transports, pipeline and plugins, but carry their own scope and context.
+ * Instances are cheap to derive via {@link scope} or {@link child}; all
+ * children share the same transports, pipeline and plugins, but carry their own
+ * scope and context (captured from the parent at creation).
  */
 export class Logger implements LoggerMethods {
   private runtime: RuntimeAdapter;
@@ -92,6 +93,8 @@ export class Logger implements LoggerMethods {
   private context: ContextStore;
   private level: number;
   private scopeName?: string;
+  private parent?: Logger;
+  private levelOverride?: number;
   private writeQueue: Promise<void> = Promise.resolve();
   private destroyed = false;
   private detachReceiver?: () => void;
@@ -128,18 +131,22 @@ export class Logger implements LoggerMethods {
    */
   ingestEntry(entry: LogEntry): void {
     if (this.destroyed) return;
-    if (entry.level < this.level) return;
+    if (entry.level < this.getLevel()) return;
     this.dispatch(entry);
   }
 
   // ---- Level ----
 
   getLevel(): number {
+    if (this.levelOverride !== undefined) return this.levelOverride;
+    if (this.parent) return this.parent.getLevel();
     return this.level;
   }
 
   setLevel(level: LogLevelInput): void {
-    this.level = normalizeLevel(level);
+    const v = normalizeLevel(level);
+    if (this.parent) this.levelOverride = v;
+    else this.level = v;
   }
 
   // ---- Context ----
@@ -203,9 +210,11 @@ export class Logger implements LoggerMethods {
   // ---- Scoped loggers ----
 
   /**
-   * Derive a scoped child logger. The new logger shares this one's transports,
-   * pipeline and plugins, but carries its own scope (joined with the parent's
-   * via `:`) and an isolated context store.
+   * Derive a scoped child logger. The child shares this logger's transports,
+   * pipeline, plugins and runtime, inherits its scope (joined with `:`) and
+   * context (captured from the parent at creation), and may carry extra
+   * context. The level is inherited live from the parent (see {@link child})
+   * unless overridden via `setLevel`.
    */
   scope(scope: string, context?: Record<string, unknown>): Logger {
     const childScope = this.scopeName ? `${this.scopeName}:${scope}` : scope;
@@ -214,7 +223,6 @@ export class Logger implements LoggerMethods {
       childContext.merge(context);
     }
     const child = new Logger({
-      level: this.level,
       scope: childScope,
       runtime: this.runtime,
       context: childContext,
@@ -222,6 +230,39 @@ export class Logger implements LoggerMethods {
       pipeline: this.pipeline,
       plugins: this.plugins,
     });
+    child.parent = this;
+    return child;
+  }
+
+  /**
+   * Derive a child logger that shares this logger's transports, pipeline,
+   * plugins and runtime. The child:
+   * - merges `options.context` on top of the parent's context (captured at
+   *   creation),
+   * - inherits the parent's scope,
+   * - inherits the parent's level live, unless `options.level` overrides it
+   *   (the override also applies to any further descendants).
+   *
+   * This is the canonical "child logger" (à la `pino.child`), ideal for
+   * per-request context such as `logger.child({ requestId: id })`.
+   */
+  child(options: { context?: Record<string, unknown>; level?: LogLevelInput } = {}): Logger {
+    const childContext = this.context.child();
+    if (options.context) {
+      childContext.merge(options.context);
+    }
+    const child = new Logger({
+      scope: this.scopeName,
+      runtime: this.runtime,
+      context: childContext,
+      transports: this.transports,
+      pipeline: this.pipeline,
+      plugins: this.plugins,
+    });
+    child.parent = this;
+    if (options.level !== undefined) {
+      child.levelOverride = normalizeLevel(options.level);
+    }
     return child;
   }
 
@@ -237,7 +278,7 @@ export class Logger implements LoggerMethods {
   private emit(levelName: LogLevelName, message: unknown, args: unknown[]): void {
     if (this.destroyed) return;
     const levelValue = LOG_LEVELS[levelName];
-    if (levelValue < this.level) return;
+    if (levelValue < this.getLevel()) return;
 
     const entry = this.buildEntry(levelName, levelValue, message, args);
     const processed = this.pipeline.process(entry);

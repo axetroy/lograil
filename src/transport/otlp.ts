@@ -49,6 +49,16 @@ interface OtlpLogRecord {
   body: { stringValue: string };
   /** Structured attributes derived from context / metadata / scope / pid. */
   attributes: OtlpAttribute[];
+  /**
+   * 16-byte trace id (hex string) lifted from `context.traceId` /
+   * `context.trace_id`, so the log joins a distributed trace in the backend.
+   */
+  traceId?: string;
+  /**
+   * 8-byte span id (hex string) lifted from `context.spanId` /
+   * `context.span_id`.
+   */
+  spanId?: string;
 }
 
 /**
@@ -78,28 +88,52 @@ function toAttributes(record: Record<string, unknown>): OtlpAttribute[] {
   return out;
 }
 
+/** Context/metadata keys (any casing / underscore form) mapped to OTLP trace fields. */
+const TRACE_KEYS = new Set(['traceid', 'trace_id', 'spanid', 'span_id']);
+
+/** Read a non-empty string value for one of several candidate key names. */
+function pickString(record: Record<string, unknown>, ...names: string[]): string | undefined {
+  for (const n of names) {
+    const v = record[n];
+    if (typeof v === 'string' && v.length > 0) return v;
+  }
+  return undefined;
+}
+
 /**
  * Map a lograil {@link LogEntry} to an OTLP `LogRecord`.
  * Context and metadata become attributes; `scope` and `pid` are added when
- * present. The timestamp is converted from millisecond epoch to nanosecond
- * string; the message becomes the record body.
+ * present. `traceId` / `spanId` (also accepted as `trace_id` / `span_id`) are
+ * lifted out of the attributes into OTLP's dedicated `traceId` / `spanId`
+ * fields so the log correlates with distributed traces. The timestamp is
+ * converted from millisecond epoch to nanosecond string; the message becomes
+ * the record body.
  */
 function toLogRecord(entry: LogEntry): OtlpLogRecord {
   const attributes: OtlpAttribute[] = [
-    ...toAttributes(entry.context),
-    ...toAttributes(entry.metadata),
+    ...toAttributes(entry.context).filter((a) => !TRACE_KEYS.has(a.key.toLowerCase())),
+    ...toAttributes(entry.metadata).filter((a) => !TRACE_KEYS.has(a.key.toLowerCase())),
   ];
   if (entry.scope) attributes.push({ key: 'scope', value: { stringValue: entry.scope } });
   if (typeof entry.pid === 'number') {
     attributes.push({ key: 'pid', value: { intValue: String(entry.pid) } });
   }
-  return {
+  const record: OtlpLogRecord = {
     timeUnixNano: String(entry.timestamp * 1_000_000),
     severityNumber: SEVERITY[entry.levelName],
     severityText: entry.levelName.toUpperCase(),
     body: { stringValue: entry.message },
     attributes,
   };
+  const traceId =
+    pickString(entry.context, 'traceId', 'trace_id') ??
+    pickString(entry.metadata, 'traceId', 'trace_id');
+  const spanId =
+    pickString(entry.context, 'spanId', 'span_id') ??
+    pickString(entry.metadata, 'spanId', 'span_id');
+  if (traceId) record.traceId = traceId;
+  if (spanId) record.spanId = spanId;
+  return record;
 }
 
 /** Configuration for {@link OtlpTransport}. */
@@ -160,7 +194,9 @@ export interface OtlpTransportOptions {
  * enable `autoFlushOnExit` on the logger) to drain them before the process
  * exits. It uses the global `fetch`, so it requires Node >= 18, a modern
  * browser, or Electron. Nothing is transmitted synchronously — `write` only
- * enqueues, so it is always safe to call from hot paths.
+ * enqueues, so it is always safe to call from hot paths. Context fields
+ * `traceId` / `spanId` (or `trace_id` / `span_id`) are mapped to OTLP's trace
+ * correlation fields automatically.
  */
 export class OtlpTransport implements Transport {
   /** Transport name, fixed to `'otlp'`. */

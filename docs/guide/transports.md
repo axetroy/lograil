@@ -101,6 +101,10 @@ new OtlpTransport({
 });
 ```
 
+Context fields `traceId` / `spanId` (or `trace_id` / `span_id`) are mapped
+automatically to OTLP's dedicated trace-correlation fields, so logs join the same
+distributed trace in your backend.
+
 Per-transport `level` lets one logger fan out — combine an `OtlpTransport` at
 `error` with a file transport at `info`, for example.
 

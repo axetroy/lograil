@@ -61,6 +61,25 @@ logger.scope(scope: string, context?: Record<string, unknown>): Logger;
 
 返回一个子 logger，它与父 logger 共享传输器、管道与插件，但拥有自己的（以 `:` 拼接的）作用域与隔离的上下文存储。
 
+## 子 Logger（child）
+
+```ts
+logger.child(options?: { context?: Record<string, unknown>; level?: LogLevelInput }): Logger;
+```
+
+派生出一个子 logger，与父 logger 共享传输器、管道、插件与运行时。子 logger：
+
+- 把 `options.context` 合并到父 logger 上下文之上（在创建时捕获）；
+- 继承父 logger 的作用域；
+- **实时继承父 logger 的级别**，除非通过 `options.level` 覆盖（该覆盖同样对更深层子 logger 生效）。
+
+这是成熟日志库标配的"子 logger"（类似 `pino.child`），非常适合用于请求级上下文：
+
+```ts
+const reqLog = logger.child({ context: { requestId: req.id } });
+reqLog.info('start'); // => context: { requestId: '...' }
+```
+
 ## 接收外部条目
 
 ```ts

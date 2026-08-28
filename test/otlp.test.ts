@@ -71,4 +71,28 @@ describe('OtlpTransport', () => {
     expect(errors).toHaveLength(1);
     expect(String((errors[0] as Error).message)).toContain('500');
   });
+
+  it('maps traceId/spanId context into OTLP trace fields', async () => {
+    const t = new OtlpTransport();
+    t.write(makeEntry({ context: { tenant: 'acme', traceId: 'abc123', spanId: 'def456' } }), 'hi');
+    await t.flush();
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    const rec = body.resourceLogs[0].scopeLogs[0].logRecords[0];
+    expect(rec.traceId).toBe('abc123');
+    expect(rec.spanId).toBe('def456');
+    // trace fields must NOT also appear as plain attributes
+    expect(rec.attributes.find((a: { key: string }) => a.key === 'traceId')).toBeUndefined();
+    expect(rec.attributes.find((a: { key: string }) => a.key === 'spanId')).toBeUndefined();
+    expect(rec.attributes).toContainEqual({ key: 'tenant', value: { stringValue: 'acme' } });
+  });
+
+  it('accepts trace_id/span_id underscore form', async () => {
+    const t = new OtlpTransport();
+    t.write(makeEntry({ context: { trace_id: 'aa', span_id: 'bb' } }), 'hi');
+    await t.flush();
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    const rec = body.resourceLogs[0].scopeLogs[0].logRecords[0];
+    expect(rec.traceId).toBe('aa');
+    expect(rec.spanId).toBe('bb');
+  });
 });
