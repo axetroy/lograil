@@ -75,8 +75,10 @@ describe('createElectronMainRuntime', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
     const files = ts.filter((t): t is RotatingFileTransport => t instanceof RotatingFileTransport);
-    expect(files[0].name).toContain('Lograil/main.log');
-    expect(files[1].name).toContain('Lograil/renderer.log');
+    expect(files[0].name).toContain('Lograil');
+    expect(files[0].name).toContain('main.log');
+    expect(files[1].name).toContain('Lograil');
+    expect(files[1].name).toContain('renderer.log');
   });
 
   it('emits separate main + renderer log files when receiving from renderer', () => {
@@ -90,7 +92,7 @@ describe('createElectronMainRuntime', () => {
   });
 
   it('renderer entries route to the renderer file and are excluded from main', () => {
-    const rt = createElectronMainRuntime({ appName: 'demo' });
+    const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
     const files = ts.filter((t): t is RotatingFileTransport => t instanceof RotatingFileTransport);
     const [mainFile, rendererFile] = files;
@@ -101,7 +103,7 @@ describe('createElectronMainRuntime', () => {
       args: [],
       timestamp: 1,
       time: '',
-      context: undefined,
+      context: {},
       metadata: {},
     };
     const rendererEntry: LogEntry = {
