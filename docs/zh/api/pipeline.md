@@ -19,10 +19,16 @@ type Processor = (entry: LogEntry) => LogEntry;
 
 const identityProcessor: Processor;
 
-function createRedactProcessor(keys: string[], replacement?: string): Processor;
+function createRedactProcessor(keys: string[], replacement?: unknown): Processor;
 ```
 
-`createRedactProcessor` 会递归地对 `context` 与 `metadata` 中匹配的键进行脱敏。
+`createRedactProcessor` 在**格式化之前**对敏感数据脱敏——它会遍历 `context`、`metadata` 以及 `args` 的每个元素，将路径匹配 `keys` 中任一项的值替换为 `replacement`（默认 `"[REDACTED]"`，可为任意值）。
+
+- 裸键名（如 `'password'`）匹配任意深度下该名称的属性。
+- 点路径（如 `'user.password'`）只匹配确切路径。
+- `*` 匹配任意单个键/下标：`'*.password'` 脱敏所有 `password`，`'user.*'` 脱敏 `user` 下的全部直接子字段。
+
+原始对象永不会被修改；仅真正包含匹配项的分支会被克隆，因此无匹配时条目会被原样返回。
 
 ## Formatter
 

@@ -20,11 +20,20 @@ type Processor = (entry: LogEntry) => LogEntry;
 
 const identityProcessor: Processor;
 
-function createRedactProcessor(keys: string[], replacement?: string): Processor;
+function createRedactProcessor(keys: string[], replacement?: unknown): Processor;
 ```
 
-`createRedactProcessor` recursively redacts matching keys in `context` and
-`metadata`.
+`createRedactProcessor` redacts sensitive data **before** formatting — it walks
+`context`, `metadata` and each element of `args`, replacing any value whose path
+matches one of `keys` with `replacement` (default `"[REDACTED]"`; may be any value).
+
+- A bare key, e.g. `'password'`, matches any property of that name at any depth.
+- A dotted spec, e.g. `'user.password'`, matches only that exact path.
+- `*` matches any single key/index: `'*.password'` redacts every `password`,
+  `'user.*'` redacts everything directly under `user`.
+
+The original objects are never mutated; only the branches that actually contain a
+match are cloned, so when nothing matches the entry is returned unchanged.
 
 ## Formatter
 

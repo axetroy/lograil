@@ -1,4 +1,5 @@
 import type { LogEntry } from '../types.js';
+import { isEmptyRecord } from '../context/context.js';
 
 /**
  * A Formatter converts a structured {@link LogEntry} into a string (or any
@@ -88,12 +89,6 @@ function isPlainJsonable(v: unknown, seen: WeakSet<object>): boolean {
     default:
       return false; // bigint / symbol / function
   }
-}
-
-/** True when the record has no own enumerable keys (no array allocation). */
-function isEmptyRecord(o: Record<string, unknown>): boolean {
-  for (const _k in o) return false;
-  return true;
 }
 
 function safeStringify(value: unknown): string {

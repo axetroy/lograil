@@ -24,6 +24,12 @@ export interface ContextStore {
 
 const EMPTY_CONTEXT = Object.freeze({}) as Record<string, unknown>;
 
+/** True when the record has no own enumerable keys. */
+export function isEmptyRecord(o: Record<string, unknown>): boolean {
+  for (const _k in o) return false;
+  return true;
+}
+
 export function createContextStore(initial?: Record<string, unknown>): ContextStore {
   let data: Record<string, unknown> = { ...(initial ?? {}) };
 
