@@ -121,3 +121,93 @@ export function createRedactProcessor(
     return { ...entry, context, metadata, args: argsChanged ? args : entry.args };
   };
 }
+
+/**
+ * A Serializer transforms a single value keyed by `name` before formatting.
+ * `entry` is passed for contextual serialization (e.g. capturing the level).
+ */
+export type Serializer = (value: unknown, entry: LogEntry) => unknown;
+
+function serializeNode(
+  node: unknown,
+  serializers: Record<string, Serializer>,
+  entry: LogEntry,
+): unknown {
+  if (Array.isArray(node)) {
+    let changed = false;
+    const out: unknown[] = new Array(node.length);
+    for (let i = 0; i < node.length; i++) {
+      const r = serializeNode(node[i], serializers, entry);
+      out[i] = r;
+      if (r !== node[i]) changed = true;
+    }
+    return changed ? out : node;
+  }
+  if (node !== null && typeof node === 'object') {
+    let changed = false;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(node as Record<string, unknown>)) {
+      const v = (node as Record<string, unknown>)[k];
+      if (serializers[k]) {
+        out[k] = serializers[k](v, entry);
+        changed = true;
+      } else {
+        const r = serializeNode(v, serializers, entry);
+        out[k] = r;
+        if (r !== v) changed = true;
+      }
+    }
+    return changed ? out : node;
+  }
+  return node;
+}
+
+/**
+ * Create a processor that normalizes values by key name before formatting. For
+ * every property named `key` found in `context`, `metadata`, each element of
+ * `args` (and the entry's `error`), the matching serializer replaces the value.
+ * Matching is by property name at **any depth** (e.g. a `req` serializer runs on
+ * any object that has a `req` property).
+ *
+ * Transformation is **structural** — only the branches that contain a matching
+ * key are cloned; when no serializer fires the entry is returned unchanged (same
+ * reference), so the common "no serializer matched" case adds no allocation.
+ *
+ * @example
+ * createSerializeProcessor({
+ *   err: (e) => ({ name: e.name, message: e.message, stack: e.stack }),
+ *   user: (u) => ({ id: u.id }), // drop the rest of the user object
+ * })
+ */
+export function createSerializeProcessor(serializers: Record<string, Serializer>): Processor {
+  if (!serializers || Object.keys(serializers).length === 0) return identityProcessor;
+  return (entry) => {
+    const context = serializeNode(entry.context, serializers, entry) as Record<string, unknown>;
+    const metadata = serializeNode(entry.metadata, serializers, entry) as Record<string, unknown>;
+    let argsChanged = false;
+    const args = entry.args.map((a) => {
+      const r = serializeNode(a, serializers, entry);
+      if (r !== a) argsChanged = true;
+      return r;
+    });
+    let error = entry.error;
+    let errorChanged = false;
+    if (error !== undefined && serializers['error']) {
+      const r = serializers['error'](error, entry);
+      if (r !== error) {
+        error = r as Error;
+        errorChanged = true;
+      }
+    }
+    if (context === entry.context && metadata === entry.metadata && !argsChanged && !errorChanged) {
+      return entry;
+    }
+    return {
+      ...entry,
+      context,
+      metadata,
+      args: argsChanged ? args : entry.args,
+      ...(errorChanged ? { error } : {}),
+    };
+  };
+}

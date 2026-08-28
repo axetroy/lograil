@@ -21,6 +21,7 @@ type Processor = (entry: LogEntry) => LogEntry;
 const identityProcessor: Processor;
 
 function createRedactProcessor(keys: string[], replacement?: unknown): Processor;
+function createSerializeProcessor(serializers: Record<string, Serializer>): Processor;
 ```
 
 `createRedactProcessor` redacts sensitive data **before** formatting — it walks
@@ -34,6 +35,82 @@ matches one of `keys` with `replacement` (default `"[REDACTED]"`; may be any val
 
 The original objects are never mutated; only the branches that actually contain a
 match are cloned, so when nothing matches the entry is returned unchanged.
+
+### Serializers
+
+```ts
+type Serializer = (value: unknown, entry: LogEntry) => unknown;
+```
+
+`createSerializeProcessor` **normalizes** values by key name **before** formatting.
+For every property named `key` found in `context`, `metadata`, each element of
+`args` (and the entry's `error`), the matching serializer replaces the value. This
+is the structured-log equivalent of pino's `serializers` — use it to redact
+sensitive fields, flatten large objects, or render framework objects (requests,
+DB rows) consistently.
+
+- Matching is by property name at **any depth** — a `req` serializer runs on any
+  object that has a `req` property.
+- The `entry` is passed as the second argument for contextual serialization.
+- Transformation is structural: only the branches that contain a matching key are
+  cloned; when no serializer fires the entry is returned unchanged.
+
+```ts
+import { createSerializeProcessor, createRedactProcessor } from 'lograil';
+
+logger.getPipeline().addProcessor(
+  createSerializeProcessor({
+    err: (e) => ({ name: e.name, message: e.message, stack: e.stack }),
+    user: (u) => ({ id: u.id }), // keep only the id
+  }),
+);
+```
+
+Run serializers **before** `createRedactProcessor` so redaction can mask the
+already-normalized output.
+
+#### Real-world example
+
+A web server that logs every request. The raw `req`/`user` objects are huge and
+leaky (headers, cookies, sockets, password hashes) — serializers keep only what
+you need and pair with redaction as a safety net:
+
+```ts
+const log = createLogger({
+  pipeline: {
+    processors: [
+      createSerializeProcessor({
+        // keep only safe fields; drop headers/cookies/socket
+        req: (r: any) => ({ method: r.method, url: r.url, ip: r.ip }),
+        // user carries a passwordHash — expose id + role only
+        user: (u: any) => ({ id: u.id, role: u.role }),
+        // expand errors into a readable shape
+        err: (e: any) => ({ name: e.name, message: e.message, stack: e.stack }),
+      }),
+      // redact anything sensitive that slipped through
+      createRedactProcessor(['token', 'authorization', 'cookie']),
+    ],
+  },
+});
+
+// later, inside a request handler:
+log.info('request handled', { req, user, err });
+```
+
+The emitted JSON line stays useful while avoiding secret leakage:
+
+```json
+{
+  "level": "info",
+  "message": "request handled",
+  "args": [
+    {
+      "req": { "method": "GET", "url": "/api/me", "ip": "203.0.113.7" },
+      "user": { "id": 42, "role": "admin" }
+    }
+  ]
+}
+```
 
 ## Formatter
 
