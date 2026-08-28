@@ -72,7 +72,7 @@ console 的 transport。
   目录会自动创建（`mkdir -p`）。
 - 轮转在"单次写入将超过 `maxSize`（size 模式）或推进每日索引"时触发。把 `maxSize` 设小、
   日志量大时轮转会很快；确认 `maxFiles` 不是 `1`（size 模式最低为 2）。
-- 文件句柄在**首次**写入时惰性打开。若从未打过日志，就不会创建文件——这是预期行为。
+- 文件句柄会在**第一次**真正写入日志时才打开。若从未打过日志，就不会创建文件——这是预期行为。
 
 ## 5. 日志乱序 / 在多个 transport 间重复
 
@@ -82,8 +82,8 @@ console 的 transport。
 重复行通常是同一 transport 被加了两次，或 `redirectConsole()` 重复发出——用 `getTransports()`
 核对。
 
-## 6. `structuredClone` / IPC 边界的意外
+## 6. 跨进程（IPC）传递时的注意事项
 
-条目经 Electron IPC 发送时会被结构化克隆（渲染 transport 使用 `postMessage` 配合转移的
-`ArrayBuffer`——零拷贝）。条目越过边界后，在另一端是**全新的独立对象**。不要依赖对象同一性；
+条目经 Electron IPC 发送时会做结构化克隆（渲染端 transport 用 `postMessage` 并转移
+`ArrayBuffer`，也就是不复制数据）。条目越过边界后，在另一端是**全新的独立对象**。不要依赖对象同一性；
 依赖字段值。详见[不可变性与零拷贝](./immutability.md)。

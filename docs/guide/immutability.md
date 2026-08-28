@@ -1,57 +1,62 @@
 # Immutability & zero-copy
 
-`lograil` is built for high throughput. A core design choice is to **never copy
-a log entry on its way to the transports** — within a process the same object is
-shared by reference, and the cross-process hop serialises it exactly once.
+`lograil` is built for speed. The core idea is simple: **we never copy your log
+data as it flows through the pipeline** — within one process every transport shares
+the same object, and across processes we pack it only once.
 
-## The immutable entry contract
+## A log entry becomes read-only once it reaches a transport
 
-An entry (`LogEntry`) is mutable only while it is being built and while plugins
-run. The moment it reaches the transports it is **frozen** via `freezeEntry`:
+A log entry (`LogEntry`) can only be changed while it is being built and while
+plugins run. The moment it is about to be written by the transports, we call
+`freezeEntry` to **freeze** it (i.e. make it read-only):
 
-- the `LogEntry` object itself is frozen;
-- its `context`, `metadata` and `args` containers are frozen;
-- nested values are *not* deep-frozen (that would reintroduce a copy on every
-  log call).
+- the entry object itself can no longer be changed;
+- its `context`, `metadata` and `args` fields can no longer be changed;
+- however, deeply nested values are *not* locked down (a full deep-freeze would
+  re-introduce a copy for every log line, which would hurt performance).
 
-From that point on, every transport, formatter and plugin reads the **same**
-object. Because it is frozen, no transport can accidentally corrupt the entry
-for the others, and you can safely hand it around without cloning.
+After freezing, every transport, formatter and plugin reads the **same** object.
+Because it is read-only, no transport can accidentally corrupt the entry another
+transport is using, and you can pass it around by reference (without copying) safely.
 
 ```ts
 import { createLogger, freezeEntry } from 'lograil';
 
 const logger = createLogger({ transports: [/* … */] });
-// Entries are frozen for you automatically before reaching a transport.
+// Entries are frozen for you automatically just before transports run — you
+// normally never call freezeEntry yourself.
 ```
 
-If you build entries yourself (e.g. to feed `ingestEntry`), freeze them to opt
-into the same guarantees:
+If you build entries yourself (for example feeding them via `ingestEntry`), freeze
+them too, to get the same "can't be corrupted" guarantee:
 
 ```ts
 const frozen = freezeEntry(entry);
 logger.ingestEntry(frozen);
 ```
 
-Plugins and processors follow a **copy-on-write** discipline: instead of
-mutating the entry in place they return a new object (`{ ...entry, … }`). That
-keeps the original immutable and lets the next stage share it by reference.
+Plugins and processors follow a **"copy before mutating"** rule: they never edit
+the original entry in place; instead they copy it first and return the copy
+(`{ ...entry, … }`). This keeps the original read-only while letting the next stage
+share the same data by reference.
 
-## Zero-copy across the process boundary (Electron IPC)
+## Zero-copy across processes (Electron renderer → main)
 
 `ElectronIpcTransport` forwards renderer logs to the main process. Electron's
-`ipcRenderer.send(channel, entry)` would **structured-clone the whole entry
-object graph** on every call — a real cost for large contexts.
+`ipcRenderer.send(channel, entry)` makes a **full copy of the whole entry object**
+every time it sends (technically a "structured clone"). When `context` is large,
+that copy is expensive.
 
-To avoid that, when `postMessage` is available the transport:
+To avoid copying over and over, when `postMessage` is available the transport:
 
-1. serialises the entry once into a UTF-8 `ArrayBuffer` (`encodeEntry`), then
-2. transfers the buffer's ownership with `postMessage(channel, buffer, [buffer])`.
+1. packs the entry once into a UTF-8 binary buffer (`encodeEntry`), then
+2. hands the buffer's **ownership** to the main process via
+   `postMessage(channel, buffer, [buffer])` (this is called a *transfer*).
 
-Transferring moves the memory instead of copying it, so the only work on the
-hot path is a single encode in the renderer and a single decode in the main
-process. The legacy `send` path is kept as a fallback when `postMessage` is
-unavailable.
+A *transfer* means "give the memory to the other side" rather than "copy it for the
+other side". So the only extra work on the hot path is a single encode on the
+renderer and a single decode on the main process. When `postMessage` is unavailable,
+it falls back to the old `send` behavior.
 
 ```ts
 // renderer
@@ -63,5 +68,5 @@ import { registerIpcReceiver } from 'lograil';
 registerIpcReceiver((entry) => logger.ingestEntry(entry));
 ```
 
-> The `ArrayBuffer` is a transferable. Treat it as moved once sent — do not read
-> or reuse it afterwards.
+> That binary buffer (`ArrayBuffer`) is owned by the receiver once *transferred* —
+> after sending, do not read or reuse it.

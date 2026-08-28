@@ -6,7 +6,7 @@
 
 和 `electron-log` 一样，`lograil` 在 Electron 下是**零配置**的——单个 `createLogger()`
 （或默认的 `logger`）会自动探测自己运行在主进程还是渲染进程，并替你接好一切。
-**不需要**配置 `transports`，也**不需要**写 IPC 胶水代码：
+**不需要**配置 `transports`，也**不需要**写 IPC 对接代码：
 
 - 在**渲染进程**中，日志既写本地 console，又自动经 IPC 转发到主进程。
 - 在**主进程**中，日志写 console 和 `<appData>/Lograil/` 下的按日轮转文件；渲染进程
@@ -32,7 +32,7 @@ logger.info('在两个进程都能直接用');
 
 **差异**
 - `electron-log` 把 IPC 这一跳藏在一组固定 transport 后面；`lograil` 通过自身的 Electron
-  runtime 执行同样的跳转，且只在你选择自定义 runtime 时才把它**显式化**。两者都是零拷贝，
+  runtime 执行同样的跳转，且只在你选择自定义 runtime 时才把它**显式化**。两者都不复制数据（零拷贝），
   参见[不可变性与零拷贝](../guide/immutability.md)。
 - 级别固定为 `trace…fatal`，不像 electron-log 那样是可自定义的字符串映射。用 `setLevel` 映射旧名称。
 - `lograil` 区分 `context`（持久）与 `metadata`（一次性），并在条目抵达 transport 前**冻结**，
@@ -90,7 +90,7 @@ registerIpcReceiver((entry) => logger.ingestEntry(entry));
 **差异**
 - `pino` 仅运行于 Node；`lograil` 可运行在 Electron 主进程、Electron 渲染进程（经 `ElectronIpcTransport` 到主进程）以及 Web。
 - `pino` 在纯 Node 吞吐上更快（C 层缓冲）。若你只在服务端日志且不涉及 Electron/浏览器，`pino` 也是好选择。
-- `lograil` 额外提供：processor/插件管道、内置脱敏与序列化器、OTel trace 关联（`createOtelTracePlugin`）、命名空间过滤，以及冻结的不可变条目契约。
+- `lograil` 额外提供：processor/插件管道、内置脱敏与序列化器、OTel trace 关联（`createOtelTracePlugin`）、按命名空间（模块名）过滤，以及冻结的不可变条目契约。
 
 ## 通用映射
 

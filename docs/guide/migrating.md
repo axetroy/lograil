@@ -8,7 +8,7 @@ This page maps common patterns from `electron-log`, `winston` and `pino` to
 Like `electron-log`, `lograil` is **zero-config in Electron** — a single
 `createLogger()` (or the default `logger`) auto-detects whether it runs in the
 main or renderer process and wires everything for you. There is **no** `transports`
-to configure and **no** IPC glue to write:
+to configure and **no** IPC wiring to write:
 
 - In the **renderer**, logs go to the local console *and* are forwarded to the
   main process over IPC automatically.
@@ -37,7 +37,7 @@ logger.info('just works in both processes');
 **Differences**
 - `electron-log` hides the IPC hop behind fixed transports; `lograil` performs the
   same hop automatically via its Electron runtime, and only *surfaces* it when you
-  opt into a custom runtime (see below). Both are zero-copy — see
+  opt into a custom runtime (see below). Both avoid copying (zero-copy) — see
   [Immutability & zero-copy](../guide/immutability.md).
 - Levels are fixed (`trace…fatal`), not a configurable string map like electron-log.
   Map old names with `setLevel`.
@@ -108,7 +108,7 @@ context/metadata, a plugin pipeline, and zero-copy IPC.
 - `pino` is faster for pure Node throughput (C-level buffering). If you only log
   server-side and never touch Electron/browsers, `pino` is a fine choice.
 - `lograil` adds: a processor/plugin pipeline, built-in redaction + serializers,
-  OTel trace correlation (`createOtelTracePlugin`), namespace filtering, and a
+  OTel trace correlation (`createOtelTracePlugin`), namespace (module) filtering, and a
   frozen immutable entry contract.
 
 ## General mapping

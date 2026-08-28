@@ -20,7 +20,7 @@ Report security issues privately so we can ship a fix before disclosure:
 Please include:
 
 - a description of the vulnerability and its impact,
-- steps to reproduce (a minimal PoC is ideal),
+- steps to reproduce (a minimal PoC / reproduction sample is ideal),
 - affected version(s),
 - any suggested mitigation if you have one.
 
@@ -37,8 +37,8 @@ disclosure with you.
   caller. See the [immutability & zero-copy](../guide/immutability.md) guide.
 - Sensitive fields (`password`, `token`, `authorization`, `cookie`, `secret`,
   …) are redacted by `createRedactProcessor()` out of the box.
-- Cross-process (Electron IPC) entries are serialized once and transferred, not
-  structured-cloned repeatedly.
+- When logs cross processes (Electron IPC), the entry is packaged once and handed
+  to the other side (transferred), rather than being fully copied every time.
 - No outbound network traffic is initiated unless you add `OtlpTransport` or your
   own HTTP transport.
 

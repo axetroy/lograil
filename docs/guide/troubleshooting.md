@@ -87,7 +87,7 @@ See the [Electron guide](./electron.md).
 - Rotation triggers when a write would exceed `maxSize` (size mode) or advance the
   daily index. A tiny `maxSize` / high volume makes rotation happen fast; verify
   `maxFiles` isn't `1` (size mode enforces a minimum of 2).
-- The file handle opens lazily on the **first** write. If nothing is logged, no
+- The file handle opens on the **first actual** write. If nothing is logged, no
   file is created — that's expected.
 
 ## 5. Logs appear out of order / duplicated across transports
@@ -99,10 +99,10 @@ transports. If you need strict global order, use a single transport or make all
 writes synchronous. Duplicate lines usually mean the same transport was added
 twice, or `redirectConsole()` is double-emitting — check `getTransports()`.
 
-## 6. `structuredClone` / IPC boundary surprises
+## 6. Notes when passing entries across processes (IPC)
 
 Entries are structured-cloned when sent over Electron IPC (the renderer transport
-uses `postMessage` with a transferred `ArrayBuffer` — zero-copy). After an entry
+uses `postMessage` with a transferred `ArrayBuffer`, i.e. no copying). After an entry
 crosses the boundary it is a **new, independent object** on the other side. Don't
 rely on identity; rely on the field values. See
 [Immutability & zero-copy](./immutability.md).

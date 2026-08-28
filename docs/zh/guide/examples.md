@@ -204,7 +204,7 @@ const nodeLog = createLogger({
 
 ### 内置采样（优于手写过滤器）
 
-`createSampler` 是内置、零额外分配的体积控制方式。它将概率采样与令牌桶限速（逻辑"与"）结合，且只影响你指定的级别：
+`createSampler` 是内置的采样器，几乎不额外占用内存，用来控制日志量。它把「按概率随机采样」和「令牌桶限速（一种常见的限流算法）」两种方式结合在一起（两个条件都满足时才采样），并且只对你指定的级别生效：
 
 ```ts
 import { createSampler } from 'lograil';
@@ -228,9 +228,9 @@ reqLog.info('start'); // 每条日志都携带 requestId + tenant
 const quiet = logger.child({ level: 'error' });
 ```
 
-### 带链路关联的 OTLP
+### 用 OTLP 关联调用链（trace）
 
-当条目的上下文携带 `traceId` / `spanId`（或 `trace_id` / `span_id`）时，`OtlpTransport` 会把它们提升进 OTLP 专用的链路字段，使日志能与其所在的分布式链路在后端关联：
+当条目的上下文里带有 `traceId` / `spanId`（或 `trace_id` / `span_id`）时，`OtlpTransport` 会把它们填进 OTLP 专用的追踪字段，这样在后端的监控系统中，这条日志就能和同一次请求的调用链（trace）关联起来：
 
 ```ts
 import { OtlpTransport } from 'lograil';

@@ -210,9 +210,10 @@ const nodeLog = createLogger({
 
 ### Built-in sampling (recommended over a custom filter)
 
-`createSampler` is the built-in, allocation-free way to cut volume. It combines
-probabilistic sampling with a token-bucket rate limit (logical AND) and only
-affects the levels you opt in:
+`createSampler` is the built-in sampler. It uses almost no extra memory and helps
+cut down log volume. It combines probabilistic sampling with a token-bucket rate
+limit (a common throttling algorithm) — both conditions must hold (a logical AND)
+— and only affects the levels you opt in:
 
 ```ts
 import { createSampler } from 'lograil';
@@ -241,8 +242,8 @@ const quiet = logger.child({ level: 'error' });
 ### OTLP with trace correlation
 
 When an entry's context carries `traceId` / `spanId` (or `trace_id` / `span_id`),
-`OtlpTransport` lifts them into OTLP's dedicated trace fields so the log joins the
-same distributed trace in your backend:
+`OtlpTransport` copies them into OTLP's dedicated trace fields, so the log is linked
+to the same distributed trace (request path) in your backend:
 
 ```ts
 import { OtlpTransport } from 'lograil';
