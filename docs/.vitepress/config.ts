@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitepress';
 
-const REPO = 'axetroy/electron-logger';
+const REPO = 'axetroy/lograil';
 
 function themeConfig(locale: 'en' | 'zh') {
   const p = locale === 'zh' ? '/zh' : '';

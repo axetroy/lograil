@@ -14,7 +14,7 @@ hero:
       link: /zh/api/
     - theme: alt
       text: GitHub
-      link: https://github.com/axetroy/electron-logger
+      link: https://github.com/axetroy/lograil
 
 features:
   - title: 运行时不限

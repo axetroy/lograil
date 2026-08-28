@@ -26,7 +26,7 @@ Need custom behavior? Use `createLogger({ level, pipeline, transports, runtime }
 
 Full guides, API reference, and examples are on the **docs site**:
 
-**https://axetroy.github.io/electron-logger/**
+**https://axetroy.github.io/lograil/**
 
 - Getting started · Configuration · Transports · Plugins
 - Electron (incl. secure `contextIsolation` + preload setup)
