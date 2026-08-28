@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="./logo.svg" alt="lograil" width="128" height="128" />
+</div>
+
 # lograil
 
 Structured, secure logging for **Electron** (main + renderer), **Node.js**, and the **Web** — with one zero-config `logger`, pluggable transports, filters, processors, formatters, and plugins.

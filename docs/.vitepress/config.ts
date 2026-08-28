@@ -74,6 +74,12 @@ function localeRedirectScript(base: string): string {
 export default defineConfig({
   title: 'lograil',
   description: 'High-performance, secure logging library for Electron and Web runtimes',
+  logo: '/logo.svg',
+  // Favicon for the browser tab. Note: VitePress does NOT rewrite `head` hrefs
+  // with `base`, so the path must be base-prefixed explicitly. `/lograil/logo.svg`
+  // is where public/logo.svg is served, and it exists in both the latest and the
+  // versioned (/<repo>/<tag>/) doc deployments.
+  head: [['link', { rel: 'icon', href: '/lograil/logo.svg', type: 'image/svg+xml' }]],
   lastUpdated: true,
   cleanUrls: true,
   locales: {
