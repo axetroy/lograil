@@ -1,0 +1,55 @@
+# Normalize all text files to LF on checkout and in the repository.
+* text=auto eol=lf
+
+# Explicit text types (force LF, no matter the platform).
+*.ts text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.jsx text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.less text eol=lf
+*.html text eol=lf
+*.vue text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.map text eol=lf
+*.svg text eol=lf
+*.xml text eol=lf
+*.editorconfig text eol=lf
+*.npmrc text eol=lf
+*.nvmrc text eol=lf
+*.prettierrc text eol=lf
+*.eslintrc text eol=lf
+*.gitattributes text eol=lf
+*.gitignore text eol=lf
+
+# Binary files that must never be normalized or diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.node binary
+*.wasm binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.pdf binary
