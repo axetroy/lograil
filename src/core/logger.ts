@@ -333,13 +333,19 @@ export class Logger implements LoggerMethods {
         console.error('[lograil] formatter failed:', err);
         formatted = `[formatting failed] ${entry.message}`;
       }
-      const result = transport.write(entry, String(formatted));
-      if (result && typeof (result as Promise<void>).then === 'function') {
-        this.writeQueue = this.writeQueue
-          .then(() => result as Promise<void>)
-          .catch(() => {
-            /* never reject the queue */
-          });
+      const onErr = transport.onError;
+      try {
+        const result = transport.write(entry, String(formatted));
+        if (result && typeof (result as Promise<void>).then === 'function') {
+          this.writeQueue = this.writeQueue
+            .then(() => result as Promise<void>)
+            .catch((err) => {
+              // never reject the queue; surface the failure via the hook instead
+              if (onErr) onErr(err, entry);
+            });
+        }
+      } catch (err) {
+        if (onErr) onErr(err, entry);
       }
     }
   }

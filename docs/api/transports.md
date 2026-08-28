@@ -8,6 +8,7 @@ interface Transport {
   readonly formatter?: Formatter;
   readonly level?: LogLevelInput; // optional per-transport minimum level
   write(entry: LogEntry, formatted: string): void | Promise<void>;
+  onError?(err: unknown, entry: LogEntry): void; // called by the logger if write fails
   flush?(): void | Promise<void>;
   close?(): void | Promise<void>;
 }

@@ -22,6 +22,12 @@ export interface Transport {
   readonly level?: LogLevelInput;
   /** Emit a processed entry. */
   write(entry: LogEntry, formatted: string): void | Promise<void>;
+  /**
+   * Optional hook invoked by the logger when `write` (or the promise it
+   * returns) fails, so a broken sink can be reported without throwing out of
+   * the caller's `log.*` call. The original entry is passed for context.
+   */
+  onError?(err: unknown, entry: LogEntry): void;
   /** Optional flush; awaited by `Logger.flush()`. */
   flush?(): void | Promise<void>;
   /** Optional teardown. */

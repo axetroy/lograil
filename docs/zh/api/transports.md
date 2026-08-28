@@ -8,6 +8,7 @@ interface Transport {
   readonly formatter?: Formatter;
   readonly level?: LogLevelInput; // 可选的传输器最小级别
   write(entry: LogEntry, formatted: string): void | Promise<void>;
+  onError?(err: unknown, entry: LogEntry): void; // write 失败时由 logger 调用
   flush?(): void | Promise<void>;
   close?(): void | Promise<void>;
 }

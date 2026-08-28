@@ -171,7 +171,7 @@ export class OtlpTransport implements Transport {
   private readonly headers: Record<string, string>;
   private readonly scopeName: string;
   private readonly batchSize: number;
-  private readonly onError: (err: unknown) => void;
+  private readonly errorHandler: (err: unknown) => void;
   private readonly resourceAttributes: OtlpAttribute[];
   private queue: OtlpLogRecord[] = [];
   private flushing = false;
@@ -183,7 +183,8 @@ export class OtlpTransport implements Transport {
     this.headers = { 'content-type': 'application/json', ...options.headers };
     this.scopeName = options.scopeName ?? 'lograil';
     this.batchSize = options.batchSize && options.batchSize > 0 ? options.batchSize : 100;
-    this.onError = options.onError ?? ((err) => console.error('[lograil] OTLP send failed:', err));
+    this.errorHandler =
+      options.onError ?? ((err) => console.error('[lograil] OTLP send failed:', err));
     const resource: Record<string, unknown> = { 'service.name': options.serviceName ?? 'lograil' };
     if (options.resource) Object.assign(resource, options.resource);
     this.resourceAttributes = toAttributes(resource);
@@ -217,7 +218,7 @@ export class OtlpTransport implements Transport {
   /**
    * Send the buffered batch to the OTLP endpoint and clear the queue. Safe to
    * call repeatedly — no-op while already flushing or when the queue is empty.
-   * On a non-2xx response or network error, `onError` is invoked.
+   * On a non-2xx response or network error, `errorHandler` is invoked.
    */
   async flush(): Promise<void> {
     if (this.flushing || this.queue.length === 0) return;
@@ -231,10 +232,10 @@ export class OtlpTransport implements Transport {
         body: JSON.stringify(this.buildPayload(batch)),
       });
       if (!res.ok) {
-        this.onError(new Error(`OTLP HTTP ${res.status} ${res.statusText}`));
+        this.errorHandler(new Error(`OTLP HTTP ${res.status} ${res.statusText}`));
       }
     } catch (err) {
-      this.onError(err);
+      this.errorHandler(err);
     } finally {
       this.flushing = false;
     }
