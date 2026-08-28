@@ -36,3 +36,26 @@ ctx.clear();
 `ctx.child()` creates a new store seeded with the current values. Scoped loggers
 (`logger.scope`) automatically receive an isolated child store, so context set on
 a child never leaks to its parent.
+
+## Ambient (async) context
+
+Beyond per-logger context, lograil can attach a **request-scoped** context that
+every log call inside a block inherits automatically — including across `await`.
+This is built on Node's `AsyncLocalStorage` and is a no-op in browsers.
+
+```ts
+import { logger, runWithContext } from 'lograil';
+
+app.use((req, res, next) => {
+  // Every log inside the request handler (and anything it awaits) carries
+  // `requestId`, with no manual plumbing.
+  runWithContext(() => next(), { requestId: req.id });
+});
+
+// later, anywhere in the request:
+logger.info('handling'); // => context: { requestId: '...' }
+```
+
+Ambient context is merged on top of the logger's own context (ambient wins on
+collision). When no ambient context is active, logging is unaffected and
+allocation-free.

@@ -10,7 +10,7 @@ import type { Transport } from '../transport/transport.js';
 import type { Plugin, PluginContext } from '../plugin/index.js';
 import { PluginManager } from '../plugin/index.js';
 import type { ContextStore } from '../context/index.js';
-import { createContextStore } from '../context/index.js';
+import { createContextStore, asyncContext, isEmptyRecord } from '../context/index.js';
 
 function pad(n: number, len: number): string {
   let s = String(n);
@@ -269,6 +269,17 @@ export class Logger implements LoggerMethods {
 
     const now = this.runtime.now();
     const ts = typeof now === 'number' ? now : new Date(now).getTime();
+
+    // Merge the ambient (request-scoped) context on top of this logger's own
+    // context. Reading it is O(1); we only clone when one side is non-empty.
+    const base = this.context.get();
+    const ambient = asyncContext.get();
+    const context = isEmptyRecord(ambient)
+      ? base
+      : isEmptyRecord(base)
+        ? ambient
+        : { ...base, ...ambient };
+
     return {
       level: levelValue,
       levelName,
@@ -278,7 +289,7 @@ export class Logger implements LoggerMethods {
       time: isoFromMs(ts),
       scope: this.scopeName,
       pid: this.runtime.pid(),
-      context: this.context.get(),
+      context,
       metadata: {},
       error,
     };

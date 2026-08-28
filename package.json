@@ -47,6 +47,8 @@
   "browser": {
     "./dist/cjs/runtime/electron-binding.js": "./dist/cjs/runtime/electron-binding.browser.js",
     "./dist/esm/runtime/electron-binding.js": "./dist/esm/runtime/electron-binding.browser.js",
+    "./dist/cjs/context/async-context.js": "./dist/cjs/context/async-context.browser.js",
+    "./dist/esm/context/async-context.js": "./dist/esm/context/async-context.browser.js",
     "electron": false
   },
   "files": [
