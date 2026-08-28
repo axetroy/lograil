@@ -17,7 +17,7 @@ testable. A log call flows through them in a predictable order.
           ▼
    ┌───────────────┐
    │   Pipeline     │  1. Filters  — drop entries (e.g. by level/scope)
-   │                │  2. Processors — transform/enrich/redact
+   │                │  2. Processors — transform/enrich/redact/serialize
    │                │  3. Formatter — serialize to string/JSON
    └───────────────┘
           │
@@ -29,7 +29,7 @@ testable. A log call flows through them in a predictable order.
           │
           ▼
    ┌───────────────┐
-   │  Transports   │  final sinks: console, rotating file, IPC, custom
+   │  Transports   │  final sinks: console, rotating file, IPC, OTLP, custom
    └───────────────┘
           ▲
           │
@@ -38,23 +38,29 @@ testable. A log call flows through them in a predictable order.
    │  Adapter       │  — auto-detected, or supplied explicitly
    └───────────────┘
 
-   Context  — persistent structured fields attached to every entry.
+   Context  — persistent structured fields attached to every entry (plus an
+             optional ambient async context).
 ```
 
 - **Logger** turns a call into a `LogEntry`. The first argument may be a
   `string`, an `Error`, or any value (objects are kept structured).
 - **Pipeline** runs `Filter`s (returning `false` drops the entry), then
-  `Processor`s (in order, for enrichment/redaction), then a `Formatter` that
-  produces the on-wire representation.
+  `Processor`s (in order, for enrichment, redaction, serialization, …), then a
+  `Formatter` that produces the on-wire representation. Built-in processors such
+  as `createRedactProcessor` and `createSerializeProcessor` plug in here.
 - **Plugins** run after the pipeline via an async `intercept` hook per entry.
   They can drop an entry (return `null`) or rewrite it, and they receive a
   `PluginContext` to reconfigure the logger at runtime.
-- **Transports** are the sinks. A transport's `write` may be async; when it is,
-  the logger awaits it during `flush()` / `destroy()`.
+- **Transports** are the sinks (`console`, `rotating file`, `IPC`, `OTLP`, or
+  your own). A transport's `write` may be async; when it is, the logger awaits
+  it during `flush()` / `destroy()`. Each transport may also declare its own
+  `level` to filter independently.
 - **Runtime Adapter** abstracts the environment (Web / Node / Electron), so the
   same logger code runs everywhere.
 - **Context** is merged into every entry's `context` field; scoped loggers get an
-  isolated child context.
+  isolated child context. An **ambient (async) context** — request-scoped fields
+  kept via `AsyncLocalStorage` and auto-inherited across `await` — is layered on
+  top (browser: no-op).
 
 ## Asynchrony & lifecycle
 
@@ -70,17 +76,23 @@ await logger.destroy(); // flush, tear down plugins, close transports
 
 Because plugin `onEntry` hooks are awaited and chained, and async transport
 writes are queued, calling `flush()` (or `destroy()`) before process exit
-guarantees no buffered logs are lost.
+guarantees no buffered logs are lost. In a Node / Electron **main** process,
+`autoFlushOnExit` (or `attachExitHandlers`) flushes on `beforeExit` / `SIGINT` /
+`SIGTERM`, and `watchUncaughtErrors` logs uncaught exceptions / unhandled
+rejections as `fatal` before exiting. `redirectConsole` bridges `console.*` into
+the logger.
 
 ## Where filtering happens
 
-There are two independent gates:
+There are three independent gates:
 
-1. **Level gate** — both `setLevel` on the logger and `createLevelFilter` in the
-   pipeline drop entries below a threshold. The logger-level gate runs first, so
-   cheaply-discarded entries never enter the pipeline.
-2. **Pipeline filters** — arbitrary predicates (`createScopeFilter`,
-   `combineFilters`, custom) run inside the pipeline after the level gate.
+1. **Logger-level gate** — `setLevel` drops entries below a threshold before they
+   enter the pipeline, so cheaply-discarded entries never cost processing.
+2. **Pipeline filters** — arbitrary predicates (`createLevelFilter`,
+   `createScopeFilter`, `combineFilters`, custom) run inside the pipeline.
+3. **Per-transport level** — each transport may declare its own `level`; entries
+   below it are skipped by that transport only, so one logger can fan out (e.g.
+   `error`+ to a remote sink while writing everything to a file).
 
 ## Why it's structured this way
 

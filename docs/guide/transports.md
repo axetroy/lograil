@@ -9,6 +9,8 @@ interface Transport {
   readonly name: string;
   /** Optional per-transport formatter that overrides the pipeline default. */
   readonly formatter?: Formatter;
+  /** Optional minimum level; entries below it are skipped by this sink only. */
+  readonly level?: LogLevelInput;
   /** Emit a processed entry (sync or async). */
   write(entry: LogEntry, formatted: string): void | Promise<void>;
   /** Optional flush; awaited by `logger.flush()`. */
@@ -81,6 +83,26 @@ import { createElectronMainRuntime, registerIpcReceiver } from 'lograil';
 const log = createLogger({ runtime: createElectronMainRuntime() });
 // or simply: logger (default main runtime already attaches the receiver)
 ```
+
+### OtlpTransport
+
+Forwards entries to an OpenTelemetry Collector (or any OTLP HTTP/JSON receiver)
+over `POST /v1/logs`. Entries are buffered and sent in batches; call
+`flush()` (or enable `autoFlushOnExit` on the logger) to drain them before the
+process exits. Requires a global `fetch` (Node >= 18, modern browsers, Electron).
+
+```ts
+import { OtlpTransport } from 'lograil';
+
+new OtlpTransport({
+  endpoint: 'http://localhost:4318/v1/logs', // OTLP HTTP receiver
+  serviceName: 'my-service',
+  resource: { 'deployment.environment': 'prod' },
+});
+```
+
+Per-transport `level` lets one logger fan out — combine an `OtlpTransport` at
+`error` with a file transport at `info`, for example.
 
 ## Custom transports
 

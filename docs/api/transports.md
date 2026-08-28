@@ -64,6 +64,27 @@ class ElectronIpcTransport implements Transport;
 Renderer-side: forwards each entry to the main process over IPC. Safe to import
 outside Electron.
 
+## OtlpTransport
+
+```ts
+interface OtlpTransportOptions {
+  endpoint?: string; // default http://localhost:4318/v1/logs
+  headers?: Record<string, string>;
+  resource?: Record<string, unknown>;
+  serviceName?: string; // default 'lograil'
+  scopeName?: string; // default 'lograil'
+  batchSize?: number; // default 100
+  onError?: (err: unknown) => void;
+}
+
+class OtlpTransport implements Transport;
+```
+
+Forwards entries to an OpenTelemetry Collector over OTLP HTTP/JSON (`POST
+/v1/logs`). Entries are buffered and sent in batches; call `logger.flush()` (or
+enable `autoFlushOnExit`) to drain them. Requires a global `fetch` (Node >= 18,
+modern browsers, Electron).
+
 ## registerIpcReceiver
 
 ```ts

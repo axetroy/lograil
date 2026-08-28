@@ -61,6 +61,24 @@ class ElectronIpcTransport implements Transport;
 
 渲染进程侧：通过 IPC 将每条条目转发到主进程。在 Electron 之外导入也是安全的。
 
+## OtlpTransport
+
+```ts
+interface OtlpTransportOptions {
+  endpoint?: string; // 默认 http://localhost:4318/v1/logs
+  headers?: Record<string, string>;
+  resource?: Record<string, unknown>;
+  serviceName?: string; // 默认 'lograil'
+  scopeName?: string; // 默认 'lograil'
+  batchSize?: number; // 默认 100
+  onError?: (err: unknown) => void;
+}
+
+class OtlpTransport implements Transport;
+```
+
+通过 OTLP HTTP/JSON（`POST /v1/logs`）把日志转发到 OpenTelemetry Collector。日志会被缓冲并按批次发送；调用 `logger.flush()`（或开启 `autoFlushOnExit`）即可排空。需要全局 `fetch`（Node >= 18、现代浏览器、Electron 均支持）。
+
 ## registerIpcReceiver
 
 ```ts

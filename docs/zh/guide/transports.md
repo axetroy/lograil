@@ -8,6 +8,8 @@ interface Transport {
   readonly name: string;
   /** 可选的、覆盖管道默认值的每传输器格式化器。 */
   readonly formatter?: Formatter;
+  /** 可选的最小级别；低于它的条目仅被该落点跳过。 */
+  readonly level?: LogLevelInput;
   /** 输出一条已处理的条目（同步或异步均可）。 */
   write(entry: LogEntry, formatted: string): void | Promise<void>;
   /** 可选：刷新，由 `logger.flush()` 等待。 */
@@ -73,6 +75,25 @@ import { createElectronMainRuntime, registerIpcReceiver } from 'lograil';
 const log = createLogger({ runtime: createElectronMainRuntime() });
 // 或直接使用默认主进程运行时（已自动挂载接收器）
 ```
+
+### OtlpTransport
+
+通过 OTLP HTTP/JSON 把日志转发到 OpenTelemetry Collector（或任意 OTLP 接收端）。
+日志会被缓冲并按批次发送；在进程退出前调用 `flush()`（或开启 logger 的
+`autoFlushOnExit`）以排空。需要全局 `fetch`（Node >= 18、现代浏览器、Electron 均支持）。
+
+```ts
+import { OtlpTransport } from 'lograil';
+
+new OtlpTransport({
+  endpoint: 'http://localhost:4318/v1/logs', // OTLP HTTP 接收端
+  serviceName: 'my-service',
+  resource: { 'deployment.environment': 'prod' },
+});
+```
+
+借助按传输器 `level`，可以让一个 logger 分流——例如把 `OtlpTransport` 设为
+`error`，文件传输器设为 `info`。
 
 ## 自定义传输器
 
