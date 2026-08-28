@@ -14,7 +14,7 @@ hero:
       link: /api/
     - theme: alt
       text: View on GitHub
-      link: https://github.com/axetroy/electron-logger
+      link: https://github.com/axetroy/lograil
 
 features:
   - title: Runtime agnostic
