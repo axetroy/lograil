@@ -148,4 +148,32 @@ describe('P0: internal errors never crash the caller', () => {
     const logger = new Logger({ transports: [transport] });
     expect(() => logger.info('q')).not.toThrow();
   });
+
+  it('a stalled transport never blocks other transports (per-transport queue)', async () => {
+    const slow: Transport = {
+      name: 'slow',
+      write() {
+        // Never resolves.
+        return new Promise<void>(() => {});
+      },
+    };
+    const fastEntries: LogEntry[] = [];
+    const fast: Transport = {
+      name: 'fast',
+      write(entry) {
+        fastEntries.push(entry);
+      },
+    };
+    const logger = new Logger({
+      transports: [slow, fast],
+      writeTimeoutMs: 80,
+    });
+
+    logger.info('a');
+    logger.info('b');
+    // The stalled `slow` transport must not prevent `fast` from receiving
+    // subsequent entries, and flush() must still resolve.
+    await expect(logger.flush()).resolves.toBeUndefined();
+    expect(fastEntries.map((e) => e.message)).toEqual(['a', 'b']);
+  });
 });

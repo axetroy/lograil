@@ -212,7 +212,15 @@ export class Logger implements LoggerMethods {
   private scopeName?: string;
   private parent?: Logger;
   private levelOverride?: number;
-  private writeQueue: Promise<void> = Promise.resolve();
+  /**
+   * Sequences the async plugin-interception step so entries are processed in
+   * emit order. Transport writes fan out to their own per-transport queues
+   * (see `transportQueues`), so a slow/blocked transport can never stall the
+   * others or this front queue.
+   */
+  private dispatchQueue: Promise<void> = Promise.resolve();
+  /** Independent async-write queue per transport. */
+  private transportQueues = new Map<Transport, Promise<void>>();
   private destroyed = false;
   private detachReceiver?: () => void;
   private processHandlersAttached = false;
@@ -439,7 +447,7 @@ export class Logger implements LoggerMethods {
       const p = this.plugins.intercept(entry).then((intercepted) => {
         if (intercepted) this.writeToTransports(intercepted);
       });
-      this.writeQueue = this.writeQueue
+      this.dispatchQueue = this.dispatchQueue
         .then(() => p)
         .catch((err) => this.reportError('plugin', err));
       return;
@@ -536,9 +544,13 @@ export class Logger implements LoggerMethods {
         const result = transport.write(entry, String(formatted));
         if (result && typeof (result as Promise<void>).then === 'function') {
           const guarded = this.guardWrite(result as Promise<void>);
-          this.writeQueue = this.writeQueue
+          // Chain onto THIS transport's own queue, not a shared one, so a stalled
+          // write here cannot block other transports (or the front dispatch queue).
+          const prev = this.transportQueues.get(transport) ?? Promise.resolve();
+          const next = prev
             .then(() => guarded)
             .catch((err) => this.reportTransportError(err, entry, onErr));
+          this.transportQueues.set(transport, next);
         }
       } catch (err) {
         this.reportTransportError(err, entry, onErr);
@@ -574,7 +586,13 @@ export class Logger implements LoggerMethods {
   // ---- Lifecycle ----
 
   async flush(): Promise<void> {
-    await this.writeQueue;
+    // Let in-flight interception finish so every scheduled write has been
+    // enqueued onto its transport's own queue.
+    await this.dispatchQueue;
+    // Aggregate all per-transport async-write queues. `allSettled` means a
+    // rejected/errored transport queue never rejects flush; a stalled one is
+    // bounded by `writeTimeoutMs` via `guardWrite`.
+    await Promise.allSettled(Array.from(this.transportQueues.values()));
     for (const transport of this.transports) {
       if (transport.flush) {
         await transport.flush();
@@ -692,5 +710,7 @@ export class Logger implements LoggerMethods {
         await transport.close();
       }
     }
+    this.transportQueues.clear();
+    this.dispatchQueue = Promise.resolve();
   }
 }
