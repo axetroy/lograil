@@ -4,40 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
+    # Pure docs/markdown changes don't need the full verify matrix.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+
+# Cancel in-progress runs for the same ref (e.g. superseded commits / PR
+# updates) to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   verify:
-    name: Lint, Test & Build (${{ matrix.os }}, Node ${{ matrix.node-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [20, 22, 24, 26]
-    env:
-      # Skip the Electron binary download during install (we only need its types).
-      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: yarn
-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      - name: Lint
-        run: yarn lint
-
-      - name: Test
-        run: yarn test
-
-      - name: Build
-        run: yarn build
+    uses: ./.github/workflows/verify.yml
