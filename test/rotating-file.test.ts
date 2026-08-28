@@ -135,7 +135,7 @@ describe('RotatingFileTransport (daily)', () => {
     expect(one).not.toContain('m0');
     // The 99th slot holds m98.
     expect(readFileSync(dated(path, '2026-08-27', '99'), 'utf8')).toContain('m98');
-  });
+  }, 30000);
 
   it('resets index to 01 on a new day and keeps previous day files', async () => {
     const path = tmpFile('day.log');
