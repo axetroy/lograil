@@ -1,4 +1,4 @@
-import type { LogEntry } from '../types.js';
+import type { LogEntry, LogLevelInput } from '../types.js';
 import type { Formatter } from '../pipeline/formatter.js';
 
 /**
@@ -13,6 +13,13 @@ export interface Transport {
   readonly name: string;
   /** Optional per-transport formatter, overrides the pipeline default. */
   readonly formatter?: Formatter;
+  /**
+   * Optional minimum level for this transport, as a name (`'info'`) or number.
+   * Entries below this level are skipped by this transport (the logger-level
+   * filter still applies first). Lets you route, e.g., `error`+ to a remote
+   * sink while sending everything to a file.
+   */
+  readonly level?: LogLevelInput;
   /** Emit a processed entry. */
   write(entry: LogEntry, formatted: string): void | Promise<void>;
   /** Optional flush; awaited by `Logger.flush()`. */

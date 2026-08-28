@@ -323,6 +323,8 @@ export class Logger implements LoggerMethods {
 
   private writeToTransports(entry: LogEntry): void {
     for (const transport of this.transports) {
+      const tl = transport.level;
+      if (tl !== undefined && entry.level < normalizeLevel(tl)) continue;
       const formatter: Formatter = transport.formatter ?? this.pipeline.getFormatter();
       let formatted: unknown;
       try {

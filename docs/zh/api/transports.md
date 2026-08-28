@@ -6,11 +6,15 @@
 interface Transport {
   readonly name: string;
   readonly formatter?: Formatter;
+  readonly level?: LogLevelInput; // 可选的传输器最小级别
   write(entry: LogEntry, formatted: string): void | Promise<void>;
   flush?(): void | Promise<void>;
   close?(): void | Promise<void>;
 }
 ```
+
+`level` 会在 logger 级别过滤之外，单独限制该传输器：低于它的日志仅会被此 sink 跳过。可用它拆分日志流——例如把 `error` 及以上发往远端，其余写入文件。
+
 
 ## ConsoleTransport
 

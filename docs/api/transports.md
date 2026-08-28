@@ -6,11 +6,17 @@
 interface Transport {
   readonly name: string;
   readonly formatter?: Formatter;
+  readonly level?: LogLevelInput; // optional per-transport minimum level
   write(entry: LogEntry, formatted: string): void | Promise<void>;
   flush?(): void | Promise<void>;
   close?(): void | Promise<void>;
 }
 ```
+
+`level` restricts this transport independently of the logger-level filter: entries
+below it are skipped by this sink only. Use it to split streams — e.g. send
+`error` and above to a remote sink while writing everything to a file.
+
 
 ## ConsoleTransport
 
