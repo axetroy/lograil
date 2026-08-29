@@ -89,7 +89,7 @@ uses a single pipeline (`Filter`/`Processor`/`Formatter`) plus transports.
 ## From `pino`
 
 `pino` is a Node-only, extremely fast raw logger. `lograil` trades a little raw
-Node throughput for first-class **Electron/Web** support, structured
+Node throughput for first-class **Web/Node/Electron** support, structured
 context/metadata, a plugin pipeline, and zero-copy IPC.
 
 | `pino` | `lograil` |

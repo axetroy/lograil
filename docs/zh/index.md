@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: lograil
-  text: 为 Electron 与 Web 打造的安全日志库
-  tagline: 高性能、结构化的日志方案，采用 Core → Pipeline → Transport 的分层架构，可在 Web、Node.js 与 Electron 上无缝运行。
+  text: 通用日志库，覆盖 Web、Node.js 与 Electron
+  tagline: 高性能、结构化的日志方案，采用 Core → Pipeline → Transport 的分层架构，可在 Web、Node.js 与 Electron 上无缝运行，并通过插件扩展到其他平台。
   actions:
     - theme: brand
       text: 快速开始
@@ -23,8 +23,10 @@ features:
     details: 每条日志都是一个带类型的 LogEntry，包含时间戳、作用域、上下文、元数据以及完整的 Error 因果链。
   - title: 可组合管道
     details: 过滤器、处理器与格式化器自由组合，内置脱敏与采样能力。
-  - title: 原生支持 Electron
-    details: 渲染进程的日志通过 IPC 转发到主进程，并持久化到滚动文件，无需额外接线。
+  - title: 跨运行时一等公民
+    details: Web、Node.js 与 Electron 开箱即用，运行时会自动探测——一套 API，无需为不同平台写额外代码。
+  - title: 插件可扩展
+    details: 插件可在运行时添加传输器、重构管道、拦截日志条目，甚至注册其他插件。实现自定义运行时适配器，即可支持任意其他平台。
   - title: 插件系统
     details: 插件可在运行时添加传输器、重构管道、拦截日志条目，甚至注册其他插件。
   - title: 轻量且类型完备

@@ -1,5 +1,5 @@
 /**
- * lograil — high-performance, secure logging for Electron & Web.
+ * lograil — high-performance, secure universal logging for Web, Node.js and Electron.
  *
  * Layered architecture:
  *   Core (Logger) -> Pipeline (Filter/Processor/Formatter) -> Transports,

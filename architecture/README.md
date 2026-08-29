@@ -1,4 +1,4 @@
-# Electron/Web 高性能安全日志库
+# 通用高性能安全日志库（Web / Node.js / Electron）
 
 ## Executive Summary
 

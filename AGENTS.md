@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI coding agents working on **lograil** — a high-performance, secure logging library for Electron and Web runtimes.
+Guidance for AI coding agents working on **lograil** — a high-performance, secure universal logging library for Web, Node.js and Electron (all first-class runtimes, extensible to other platforms via plugins).
 
 ## Project overview
 

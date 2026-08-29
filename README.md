@@ -4,9 +4,9 @@
 
 # lograil
 
-Structured, secure logging for **Electron** (main + renderer), **Node.js**, and the **Web** — with one zero-config `logger`, pluggable transports, filters, processors, formatters, and plugins.
+Structured, secure logging for **Web**, **Node.js**, and **Electron** — three first-class runtimes, one zero-config `logger`, pluggable transports, filters, processors, formatters, and plugins. Extend to any other platform through the plugin and runtime-adapter APIs.
 
-In Electron, the main process writes logs to the console **and** daily rotating files, and renderer logs are forwarded over IPC automatically. The same `import { logger } from 'lograil'` works untouched in every runtime.
+The same `import { logger } from 'lograil'` works untouched in every runtime. On Electron, the main process writes logs to the console **and** daily rotating files, and renderer logs are forwarded over IPC automatically; on Node it persists to a rotating file by default; in the browser it speaks the console and any remote transport you add.
 
 ## Install
 
@@ -33,8 +33,7 @@ Full guides, API reference, and examples are on the **docs site**:
 **https://axetroy.github.io/lograil/**
 
 - Getting started · Configuration · Transports · Plugins
-- Electron (incl. secure `contextIsolation` + preload setup)
-- API reference
+- Runtimes (Web, Node.js, Electron) & extending to others via plugins
 
 ## License
 

@@ -75,7 +75,7 @@ registerIpcReceiver((entry) => logger.ingestEntry(entry));
 
 ## 从 `pino` 迁移
 
-`pino` 是仅限 Node、极快的裸日志库。`lograil` 用少量纯 Node 吞吐换取**一流的 Electron/Web 支持**、结构化 `context`/`metadata`、插件管道与零拷贝 IPC。
+`pino` 是仅限 Node、极快的裸日志库。`lograil` 用少量纯 Node 吞吐换取**一流的 Web/Node/Electron 全平台支持**、结构化 `context`/`metadata`、插件管道与零拷贝 IPC。
 
 | `pino` | `lograil` |
 | --- | --- |

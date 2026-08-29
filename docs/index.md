@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: lograil
-  text: Secure logging for Electron & Web
-  tagline: High-performance, structured logging with a layered Core → Pipeline → Transport architecture that runs unchanged on Web, Node.js and Electron.
+  text: Universal logging for Web, Node.js & Electron
+  tagline: High-performance, structured logging with a layered Core → Pipeline → Transport architecture that runs unchanged on Web, Node.js and Electron — and extends to other platforms through plugins.
   actions:
     - theme: brand
       text: Get Started
@@ -23,8 +23,10 @@ features:
     details: Every entry is a typed LogEntry with timestamp, scope, context, metadata and full Error cause chains.
   - title: Pluggable pipeline
     details: Filters, processors and formatters compose freely. Redaction and sampling ship out of the box.
-  - title: Electron ready
-    details: Renderer logs are forwarded to the main process over IPC and persisted to a rotating file — no extra wiring.
+  - title: First-class runtimes
+    details: Web, Node.js and Electron are supported out of the box with auto-detected adapters — one API, no per-platform code.
+  - title: Extensible via plugins
+    details: Plugins add transports, reshape the pipeline, intercept entries and register other plugins at runtime. Bring your own runtime adapter to support any other platform.
   - title: Plugin system
     details: Plugins can add transports, reshape the pipeline, intercept entries and register other plugins at runtime.
   - title: Tiny & typed
