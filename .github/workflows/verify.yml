@@ -73,6 +73,42 @@ jobs:
       - name: Typecheck
         run: yarn typecheck
 
+  coverage:
+    name: Coverage (with thresholds)
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      # Skip the Electron binary download during install (we only need its types).
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      # Runs the suite with v8 coverage. The thresholds declared in
+      # vitest.config.ts fail the job if coverage drops below the guardrails.
+      - name: Test with coverage
+        run: yarn test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+          if-no-files-found: ignore
+
   build:
     name: Build (ESM + CJS)
     needs: lint
