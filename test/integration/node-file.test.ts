@@ -11,7 +11,13 @@ import {
 
 describe('integration: Node real file output', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lograil-node-int-'));
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const loggers: { destroy(): Promise<void> }[] = [];
+  afterAll(async () => {
+    // Close every logger first so file handles are released — on Windows an
+    // open handle makes rmSync(recursive) fail with ENOTEMPTY.
+    await Promise.all(loggers.map((l) => l.destroy().catch(() => {})));
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('writes formatted entries to a real file and keeps structured fields', async () => {
     const file = join(dir, 'app.log');
@@ -22,6 +28,7 @@ describe('integration: Node real file output', () => {
         new RotatingFileTransport({ path: file, daily: false, formatter: createLineFormatter() }),
       ],
     });
+    loggers.push(logger);
 
     logger.debug('debug line');
     logger.info('hello world', { userId: 42 });
@@ -50,6 +57,7 @@ describe('integration: Node real file output', () => {
         new RotatingFileTransport({ path: file, daily: false, formatter: createLineFormatter() }),
       ],
     });
+    loggers.push(logger);
 
     logger.debug('nope');
     logger.info('also nope');
