@@ -122,3 +122,30 @@ import { registerIpcReceiver } from 'lograil';
 
 const off = registerIpcReceiver((entry) => logger.ingestEntry(entry));
 ```
+
+## LiveTransport
+
+```ts
+interface LiveTransportOptions {
+  name?: string;
+  formatter?: Formatter; // used by onFormatted; raw entries otherwise
+  bufferSize?: number; // ring-buffer size for replay(); 0 disables (default)
+}
+
+class LiveTransport implements Transport {
+  readonly name: string;
+  readonly formatter?: Formatter;
+  get subscriberCount(): number;
+  subscribe(cb: (entry: LogEntry) => void): () => void; // returns unsubscribe
+  onFormatted(cb: (line: string, entry: LogEntry) => void): () => void;
+  replay(cb: (entry: LogEntry) => void, newestFirst?: boolean): number; // count
+  clearBuffer(): void;
+  close(): void;
+}
+```
+
+In-memory, subscribable transport for live log streaming. `write()` forwards each
+entry to all subscribers and catches subscriber errors so the logger's hot path
+never breaks. Subscribers receive the frozen, zero-copy `LogEntry`. With
+`bufferSize > 0`, late subscribers can `replay()` the ring buffer. See
+[Transports guide](/guide/transports#livetransport).

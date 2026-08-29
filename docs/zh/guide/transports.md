@@ -113,6 +113,42 @@ new OtlpTransport({
 借助按传输器 `level`，可以让一个 logger 分流——例如把 `OtlpTransport` 设为
 `error`，文件传输器设为 `info`。
 
+### LiveTransport
+
+一个内存型、可订阅的传输器，用于**实时日志流**——它不写入落点，而是把每条
+条目转发给进程内的订阅者。它是调试面板、webview 日志查看器，或渲染日志流的
+React/Vue Hook 的基石。零依赖、跨运行时（Web、Node、Electron 通用）。
+
+```ts
+import { LiveTransport } from 'lograil';
+
+const live = new LiveTransport({ bufferSize: 100 });
+logger.addTransport(live);
+
+// 原始、已冻结的条目——切勿修改它们。
+const unsubscribe = live.subscribe((entry) => render(entry));
+
+// 或用于简单 UI 的预格式化文本行。
+live.onFormatted((line, entry) => appendLine(line));
+
+// 后加入的订阅者可回放缓冲（newestFirst 为 true 时最新在前）。
+live.replay((entry) => backfill(entry), true);
+
+console.log(live.subscriberCount); // 当前订阅者数量
+live.clearBuffer(); // 清空缓冲
+unsubscribe(); // 停止接收
+```
+
+关键行为：
+
+- **热路径安全。** 订阅者抛出的异常会被捕获并记录，绝不会中断 logger 的 `write()` 或其他订阅者。
+- **零拷贝。** 订阅者拿到的是管道产出的同一个已冻结 `LogEntry` 引用——不要修改它。
+- **缓冲。** 设置 `bufferSize > 0` 可为后加入的订阅者保留环形缓冲（通过 `replay` 回放）。`0`（默认）完全关闭缓冲。
+- **释放。** `close()` 会清空所有订阅者与缓冲。
+
+对于跨进程流式传输（Electron 主进程 → 渲染进程/webview），可配合现有的 IPC 通道使用；
+跨标签页的 Web 流式传输则使用 `BroadcastChannelTransport`。
+
 ## 自定义传输器
 
 只需实现 `Transport` 接口即可：

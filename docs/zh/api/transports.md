@@ -110,3 +110,29 @@ import { registerIpcReceiver } from 'lograil';
 
 const off = registerIpcReceiver((entry) => logger.ingestEntry(entry));
 ```
+
+## LiveTransport
+
+```ts
+interface LiveTransportOptions {
+  name?: string;
+  formatter?: Formatter; // 供 onFormatted 使用；否则给原始条目
+  bufferSize?: number; // 供 replay() 使用的环形缓冲大小；0 关闭（默认）
+}
+
+class LiveTransport implements Transport {
+  readonly name: string;
+  readonly formatter?: Formatter;
+  get subscriberCount(): number;
+  subscribe(cb: (entry: LogEntry) => void): () => void; // 返回取消订阅函数
+  onFormatted(cb: (line: string, entry: LogEntry) => void): () => void;
+  replay(cb: (entry: LogEntry) => void, newestFirst?: boolean): number; // 数量
+  clearBuffer(): void;
+  close(): void;
+}
+```
+
+用于实时日志流的内存型、可订阅传输器。`write()` 把每条条目转发给所有订阅者，
+并捕获订阅者抛出的异常，使 logger 的热路径永不被打断。订阅者拿到的是已冻结、
+零拷贝的 `LogEntry`。当 `bufferSize > 0` 时，后加入的订阅者可用 `replay()` 回放
+环形缓冲。详见[传输器指南](/zh/guide/transports#livetransport)。

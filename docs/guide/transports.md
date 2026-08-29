@@ -127,6 +127,47 @@ distributed trace in your backend.
 Per-transport `level` lets one logger fan out — combine an `OtlpTransport` at
 `error` with a file transport at `info`, for example.
 
+### LiveTransport
+
+An in-memory, subscribable transport for **live log streaming** — instead of
+writing to a sink, it forwards every entry to in-process subscribers. It is the
+building block for a debug panel, a webview log viewer, or a React/Vue hook that
+renders the stream. Zero-dependency and runtime-agnostic (Web, Node, Electron).
+
+```ts
+import { LiveTransport } from 'lograil';
+
+const live = new LiveTransport({ bufferSize: 100 });
+logger.addTransport(live);
+
+// Raw, frozen entries — never mutate them.
+const unsubscribe = live.subscribe((entry) => render(entry));
+
+// Or pre-formatted text lines for simple UIs.
+live.onFormatted((line, entry) => appendLine(line));
+
+// Late subscribers can replay the buffer (most-recent-first when true).
+live.replay((entry) => backfill(entry), true);
+
+console.log(live.subscriberCount); // active subscribers
+live.clearBuffer(); // drop buffered entries
+unsubscribe(); // stop receiving
+```
+
+Key behaviors:
+
+- **Hot-path safe.** A subscriber that throws is caught and logged; it never
+  breaks the logger's `write()` or other subscribers.
+- **Zero-copy.** Subscribers receive the same frozen `LogEntry` reference the
+  pipeline produced — do not mutate it.
+- **Buffering.** Set `bufferSize > 0` to keep a ring buffer for late subscribers
+  (via `replay`). `0` (default) disables buffering entirely.
+- **Teardown.** `close()` clears all subscribers and the buffer.
+
+For cross-process streaming (Electron main → renderer/webview) pair it with the
+existing IPC channel, or use `BroadcastChannelTransport` for cross-tab Web
+streaming.
+
 ## Custom transports
 
 Implement the `Transport` interface — that's all:
