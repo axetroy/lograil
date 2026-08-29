@@ -14,8 +14,34 @@ interface RuntimeAdapter {
   hasFileSystem(): boolean;
   defaultTransports(): Transport[];
   attachReceiver?: (ingest: IngestFn) => () => void;
+  /**
+   * 宿主生命周期钩子。提供时，Logger 会通过它们来接线“退出前 flush”与“崩溃记录”，
+   * 而不是直接触碰 `process` / `window`，从而让每个运行时自行决定何时退出、并拥有
+   * 自己的 `process.exit()`。在不需要响应宿主生命周期的运行时可省略（或留空）。
+   * 内置适配器已提供：Node → process 事件，Electron 主进程 → `app` 的 `before-quit` /
+   * `will-quit`，Web → `pagehide` / `visibilitychange`。
+   */
+  lifecycle?: LifecycleHooks;
 }
 ```
+
+## 生命周期钩子
+
+`LifecycleHooks` 把 logger 与宿主解耦。logger 提供行为（带超时的 flush、以 `fatal`
+记录崩溃），运行时拥有触发器：
+
+```ts
+interface LifecycleHooks {
+  // 在宿主关闭前 flush 待写条目。返回一个注销函数。
+  onFlushBeforeExit(cb: () => void | Promise<void>): () => void;
+  // 可选：记录致命的宿主未捕获错误（仅 Node / Electron）。
+  onUncaughtError?(cb: (err: unknown) => void | Promise<void>): () => void;
+}
+```
+
+只有编写**自定义**运行时适配器时才需要实现它；内置的 `createNodeRuntime` /
+`createWebRuntime` / `createElectronMainRuntime` / `createElectronRendererRuntime`
+已经挂好了对应钩子，因此各平台开箱即用 `autoFlushOnExit` / `watchUncaughtErrors`。
 
 ## 探测
 

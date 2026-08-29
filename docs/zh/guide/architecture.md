@@ -58,7 +58,7 @@ await logger.flush(); // 等待队列（含异步写入）清空
 await logger.destroy(); // 先 flush，再释放插件、关闭传输器
 ```
 
-由于插件的 `onEntry` 钩子会被 `await` 并链式执行，且异步传输写入会进入队列，因此在进程退出前调用 `flush()`（或 `destroy()`）能保证缓冲区中的日志不丢失。在 Node / Electron **主进程**中，`autoFlushOnExit`（或 `attachExitHandlers`）会在 `beforeExit` / `SIGINT` / `SIGTERM` 时 flush；`watchUncaughtErrors` 会把未捕获异常 / 未处理的拒绝以 `fatal` 记录后再退出；`redirectConsole` 把 `console.*` 桥接进 logger。
+由于插件的 `onEntry` 钩子会被 `await` 并链式执行，且异步传输写入会进入队列，因此在进程退出前调用 `flush()`（或 `destroy()`）能保证缓冲区中的日志不丢失。Logger 通过运行时的 `lifecycle` 钩子来接线 flush / 崩溃行为：所以 `autoFlushOnExit`（或 `attachExitHandlers`）会在宿主退出时 flush——Node 的 `beforeExit` / `SIGINT` / `SIGTERM`、Electron **主进程**的 `app` `before-quit` / `will-quit`、Web 的 `pagehide` / `visibilitychange`；`watchUncaughtErrors` 会把未捕获异常 / 未处理的拒绝以 `fatal` 记录后再退出；`redirectConsole` 把 `console.*` 桥接进 logger。
 
 ## 过滤发生在哪里
 

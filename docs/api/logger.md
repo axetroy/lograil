@@ -151,11 +151,18 @@ your process exits to avoid losing buffered logs.
 
 ## Process integration
 
-In a Node/Electron **main** process, lograil can hook the process lifecycle so
-logs are never lost on shutdown and crashes are captured automatically.
+lograil hooks the host lifecycle so logs are never lost on shutdown and crashes
+are captured automatically. The wiring is **runtime-agnostic**: the Logger
+delegates flush / crash behaviour to the active `RuntimeAdapter`'s `lifecycle`
+hooks, so each runtime listens on its own native events:
+
+- **Node** — `beforeExit`, `SIGINT` (`130`) and `SIGTERM` (`143`)
+- **Electron main** — `app` `before-quit` / `will-quit` (the normal window-close
+  path), with the process signals as a fallback for CLI launches
+- **Web** — `pagehide` / `visibilitychange` (best-effort; the page unloads anyway)
 
 ```ts
-// Flush pending logs on SIGINT/SIGTERM/beforeExit (default off).
+// Flush pending logs on host exit (default off). The runtime owns the trigger.
 logger.attachExitHandlers(); // or new Logger({ autoFlushOnExit: true })
 
 // Capture uncaught exceptions / unhandled rejections as fatal logs, then exit(1).
@@ -165,9 +172,11 @@ logger.watchUncaughtErrors();
 const restore = logger.redirectConsole(); // returns a function that restores console
 ```
 
-- `attachExitHandlers()` registers `beforeExit`, `SIGINT` and `SIGTERM`
-  listeners that flush before the event loop empties (exit codes `130`/`143`).
-  It is a no-op in the browser and is idempotent.
+- `attachExitHandlers()` flushes before the host exits. On Node / Electron it
+  registers `beforeExit`, `SIGINT` and `SIGTERM` (exit codes `130`/`143`); on an
+  Electron **main** process it additionally flushes on `app` `before-quit` /
+  `will-quit`, so a normal window close does not drop buffered logs. It is a
+  no-op in the browser and is idempotent.
 - `watchUncaughtErrors()` logs the error at `fatal` and then exits with code `1`.
 - `redirectConsole()` routes the captured `console` methods through the logger
   and suppresses the native output. The console bridge is recursion-safe even

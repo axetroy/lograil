@@ -15,8 +15,38 @@ interface RuntimeAdapter {
   hasFileSystem(): boolean;
   defaultTransports(): Transport[];
   attachReceiver?: (ingest: IngestFn) => () => void;
+  /**
+   * Host lifecycle hooks. When present, the Logger wires its flush-on-exit and
+   * crash-logging through these instead of touching `process` / `window`
+   * directly, so each runtime controls *when* it exits and owns any
+   * `process.exit()`. Omit (or leave `undefined`) on runtimes where the logger
+   * should not react to host lifecycle. The built-in adapters already provide
+   * this: Node → process events, Electron main → `app` `before-quit` /
+   * `will-quit`, Web → `pagehide` / `visibilitychange`.
+   */
+  lifecycle?: LifecycleHooks;
 }
 ```
+
+## Lifecycle hooks
+
+`LifecycleHooks` decouples the logger from the host. The logger supplies the
+behaviour (flush with a timeout, log the crash at `fatal`); the runtime owns the
+trigger:
+
+```ts
+interface LifecycleHooks {
+  // Flush pending entries before the host closes. Returns an unregister fn.
+  onFlushBeforeExit(cb: () => void | Promise<void>): () => void;
+  // Optional: log fatal, uncaught host errors (Node/Electron only).
+  onUncaughtError?(cb: (err: unknown) => void | Promise<void>): () => void;
+}
+```
+
+You only implement this when writing a **custom** runtime adapter; the built-in
+`createNodeRuntime` / `createWebRuntime` / `createElectronMainRuntime` /
+`createElectronRendererRuntime` already attach the right hooks, so
+`autoFlushOnExit` / `watchUncaughtErrors` work out of the box per platform.
 
 ## Detection
 

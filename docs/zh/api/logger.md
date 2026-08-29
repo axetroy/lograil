@@ -126,10 +126,14 @@ await logger.destroy(): Promise<void>;
 
 ## 进程集成
 
-在 Node / Electron **主进程**中，lograil 可以挂载进程生命周期钩子，从而避免在退出时丢失日志，并自动捕获崩溃。
+lograil 会挂载宿主的生命周期钩子，从而在退出时不丢失日志、并自动捕获崩溃。接线是**运行时无关**的：Logger 把 flush / 崩溃行为委托给当前 `RuntimeAdapter` 的 `lifecycle` 钩子，因此每个运行时监听自己原生的事件：
+
+- **Node** — `beforeExit`、`SIGINT`（`130`）、`SIGTERM`（`143`）
+- **Electron 主进程** — `app` 的 `before-quit` / `will-quit`（正常的窗口关闭路径），进程信号作为 CLI 启动时的回退
+- **Web** — `pagehide` / `visibilitychange`（尽力而为；页面无论如何都会卸载）
 
 ```ts
-// 在 SIGINT/SIGTERM/beforeExit 时 flush 待写日志（默认关闭）。
+// 在宿主退出时 flush 待写日志（默认关闭）。触发器由运行时拥有。
 logger.attachExitHandlers(); // 或在创建时传入 new Logger({ autoFlushOnExit: true })
 
 // 将未捕获异常 / 未处理的拒绝记录为 fatal 日志，然后 exit(1)。
@@ -139,7 +143,7 @@ logger.watchUncaughtErrors();
 const restore = logger.redirectConsole(); // 返回一个用于还原 console 的函数
 ```
 
-- `attachExitHandlers()` 注册 `beforeExit`、`SIGINT`、`SIGTERM` 监听器，在事件循环排空前 flush（退出码为 `130`/`143`）。在浏览器中为空操作，且幂等。
+- `attachExitHandlers()` 在宿主退出前 flush。在 Node / Electron 上注册 `beforeExit`、`SIGINT`、`SIGTERM` 监听器（退出码 `130`/`143`）；在 Electron **主进程**上还会在 `app` 的 `before-quit` / `will-quit` 时 flush，使正常的窗口关闭不会丢弃缓冲中的日志。在浏览器中为空操作，且幂等。
 - `watchUncaughtErrors()` 会将错误以 `fatal` 级别记录，随后以退出码 `1` 退出。
 - `redirectConsole()` 把被捕获的 `console` 方法转交给 logger，并抑制原生输出。即使挂载了 `ConsoleTransport`，console 桥接也不会递归。
 - 上述进程处理器同样会在 `destroy()` 时被移除。

@@ -76,11 +76,13 @@ await logger.destroy(); // flush, tear down plugins, close transports
 
 Because plugin `onEntry` hooks are awaited and chained, and async transport
 writes are queued, calling `flush()` (or `destroy()`) before process exit
-guarantees no buffered logs are lost. In a Node / Electron **main** process,
-`autoFlushOnExit` (or `attachExitHandlers`) flushes on `beforeExit` / `SIGINT` /
-`SIGTERM`, and `watchUncaughtErrors` logs uncaught exceptions / unhandled
-rejections as `fatal` before exiting. `redirectConsole` bridges `console.*` into
-the logger.
+guarantees no buffered logs are lost. The Logger wires flush / crash behaviour
+through the runtime's `lifecycle` hooks, so `autoFlushOnExit` (or
+`attachExitHandlers`) flushes on host exit — Node `beforeExit` / `SIGINT` /
+`SIGTERM`, Electron **main** `app` `before-quit` / `will-quit`, Web
+`pagehide` / `visibilitychange` — and `watchUncaughtErrors` logs uncaught
+exceptions / unhandled rejections as `fatal` before exiting. `redirectConsole`
+bridges `console.*` into the logger.
 
 ## Where filtering happens
 
