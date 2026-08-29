@@ -134,18 +134,53 @@ writing to a sink, it forwards every entry to in-process subscribers. It is the
 building block for a debug panel, a webview log viewer, or a React/Vue hook that
 renders the stream. Zero-dependency and runtime-agnostic (Web, Node, Electron).
 
+There are two ways to consume the stream, depending on how you want to render it:
+
+#### Render by entity (`subscribe`)
+
+You receive the **raw, frozen `LogEntry`** and render it however you like — a
+level badge, an expandable `context`/`metadata` tree, click-to-copy, filtering by
+field, etc. This is the right choice when your UI is structured (React/Vue
+components keyed by entry) rather than a plain text log.
+
 ```ts
 import { LiveTransport } from 'lograil';
 
 const live = new LiveTransport({ bufferSize: 100 });
 logger.addTransport(live);
 
-// Raw, frozen entries — never mutate them.
-const unsubscribe = live.subscribe((entry) => render(entry));
+// entry is frozen & zero-copy — never mutate it.
+const unsubscribe = live.subscribe((entry) => {
+  // e.g. <LogRow level={entry.levelName} msg={entry.message} ctx={entry.context} />
+  renderRow(entry);
+});
+```
 
-// Or pre-formatted text lines for simple UIs.
-live.onFormatted((line, entry) => appendLine(line));
+#### Render by formatted string (`onFormatted`)
 
+You receive a **pre-formatted text line** (produced by the transport's formatter,
+or the entry's `message` when none is set) and append it to a text view. This is
+the right choice for a simple console-like pane where you just want lines of text.
+
+```ts
+import { LiveTransport, createLineFormatter } from 'lograil';
+
+const live = new LiveTransport({ formatter: createLineFormatter() });
+logger.addTransport(live);
+
+// line is already formatted; entry is also passed if you need it.
+const unsubscribe = live.onFormatted((line, entry) => {
+  appendLine(line); // e.g. textarea / <pre> / terminal component
+});
+```
+
+> The two modes are independent subscriptions — you can use either, or both at
+> once. `subscribe` always delivers the raw entry; `onFormatted` only computes the
+> string lazily when a formatted subscriber is actually attached.
+
+#### Replay, buffer & teardown
+
+```ts
 // Late subscribers can replay the buffer (most-recent-first when true).
 live.replay((entry) => backfill(entry), true);
 

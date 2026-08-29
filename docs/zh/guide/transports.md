@@ -119,18 +119,50 @@ new OtlpTransport({
 条目转发给进程内的订阅者。它是调试面板、webview 日志查看器，或渲染日志流的
 React/Vue Hook 的基石。零依赖、跨运行时（Web、Node、Electron 通用）。
 
+消费日志流有两种方式，取决于你想怎么渲染：
+
+#### 按实体渲染（`subscribe`）
+
+你拿到的是**原始、已冻结的 `LogEntry`**，可以随意渲染——级别徽标、可展开的
+`context`/`metadata` 树、点击复制、按字段过滤等。当你的 UI 是结构化的
+（按条目 key 的 React/Vue 组件）而非纯文本日志时，选这个。
+
 ```ts
 import { LiveTransport } from 'lograil';
 
 const live = new LiveTransport({ bufferSize: 100 });
 logger.addTransport(live);
 
-// 原始、已冻结的条目——切勿修改它们。
-const unsubscribe = live.subscribe((entry) => render(entry));
+// entry 已冻结且零拷贝——切勿修改它。
+const unsubscribe = live.subscribe((entry) => {
+  // 例如 <LogRow level={entry.levelName} msg={entry.message} ctx={entry.context} />
+  renderRow(entry);
+});
+```
 
-// 或用于简单 UI 的预格式化文本行。
-live.onFormatted((line, entry) => appendLine(line));
+#### 按格式化字符串渲染（`onFormatted`）
 
+你拿到的是**预格式化好的文本行**（由传输器的 formatter 生成；未设置时取条目的
+`message`），直接追加到文本视图即可。当你只需要一个类控制台的纯文本面板时，选这个。
+
+```ts
+import { LiveTransport, createLineFormatter } from 'lograil';
+
+const live = new LiveTransport({ formatter: createLineFormatter() });
+logger.addTransport(live);
+
+// line 已格式化；若需要，entry 也会一并传入。
+const unsubscribe = live.onFormatted((line, entry) => {
+  appendLine(line); // 例如 textarea / <pre> / 终端组件
+});
+```
+
+> 两种模式是独立的订阅——可以只用其一，也可以同时使用。`subscribe` 始终给原始
+> 条目；`onFormatted` 仅在确实挂了格式化订阅者时才惰性计算字符串。
+
+#### 回放、缓冲与释放
+
+```ts
 // 后加入的订阅者可回放缓冲（newestFirst 为 true 时最新在前）。
 live.replay((entry) => backfill(entry), true);
 
