@@ -1,5 +1,6 @@
 import { ConsoleTransport } from '../transport/console.js';
 import type { RuntimeAdapter } from './adapter.js';
+import { createWebLifecycle } from './web-lifecycle.js';
 
 /**
  * Web runtime (browsers). No process id, no filesystem, console only by
@@ -12,5 +13,6 @@ export function createWebRuntime(): RuntimeAdapter {
     pid: () => undefined,
     hasFileSystem: () => false,
     defaultTransports: () => [new ConsoleTransport()],
+    lifecycle: createWebLifecycle(),
   };
 }

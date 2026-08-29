@@ -4,13 +4,16 @@ const getName = vi.fn(() => 'MyApp');
 const getPath = vi.fn((p: string) => (p === 'appData' ? '/fake/appdata' : '/fake'));
 const ipcOn = vi.fn();
 const ipcRemove = vi.fn();
+const appOn = vi.fn();
+const appRemove = vi.fn();
 
 vi.mock('../src/runtime/electron-binding.js', () => ({
   isElectronProcess: () => true,
   getElectron: () => ({
-    app: { getName, getPath },
+    app: { getName, getPath, on: appOn, removeListener: appRemove },
     ipcMain: { on: ipcOn, removeListener: ipcRemove },
   }),
+  getElectronApp: () => ({ getName, getPath, on: appOn, removeListener: appRemove }),
 }));
 
 import { createElectronMainRuntime } from '../src/runtime/electron-main.js';

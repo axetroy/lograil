@@ -293,6 +293,7 @@ describe('ElectronIpcTransport - error isolation', () => {
           removeListener: () => {},
         },
       }),
+      getElectronApp: () => ({ on: vi.fn(), removeListener: vi.fn() }),
     }));
   });
 

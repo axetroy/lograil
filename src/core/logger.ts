@@ -722,6 +722,24 @@ export class Logger implements LoggerMethods {
    */
   attachExitHandlers(): void {
     if (this.processHandlersAttached) return;
+    // Prefer runtime-provided lifecycle hooks so the logger stays
+    // runtime-agnostic and the runtime owns process/window event wiring and
+    // exit semantics. Falls back to a direct `process` binding below for
+    // adapters that don't supply lifecycle hooks (e.g. custom test runtimes).
+    const lc = this.runtime.lifecycle;
+    if (lc) {
+      const ms = this.exitFlushTimeoutMs;
+      const detach = lc.onFlushBeforeExit(() => {
+        void this.flushWithTimeout(ms);
+      });
+      const prev = this.removeProcessHandlers;
+      this.removeProcessHandlers = () => {
+        prev?.();
+        detach();
+      };
+      this.processHandlersAttached = true;
+      return;
+    }
     const proc = getNodeProcess();
     if (!proc) return;
     const ms = this.exitFlushTimeoutMs;
@@ -766,6 +784,26 @@ export class Logger implements LoggerMethods {
    */
   watchUncaughtErrors(): void {
     if (this.errorHandlersAttached) return;
+    // Delegate to the runtime's lifecycle hooks when present (see
+    // `attachExitHandlers` for the rationale). The hooks own the `process`
+    // events and the post-flush `exit(1)`; we only provide the fatal log +
+    // bounded flush. Runtimes without an `onUncaughtError` hook (e.g. web)
+    // fall back to the direct `process` binding below, which is a no-op there.
+    const lc = this.runtime.lifecycle;
+    if (lc?.onUncaughtError) {
+      const ms = this.exitFlushTimeoutMs;
+      const detach = lc.onUncaughtError((err: unknown) => {
+        this.fatal(err);
+        return this.flushWithTimeout(ms);
+      });
+      const prev = this.removeProcessHandlers;
+      this.removeProcessHandlers = () => {
+        prev?.();
+        detach();
+      };
+      this.errorHandlersAttached = true;
+      return;
+    }
     const proc = getNodeProcess();
     if (!proc) return;
     const onUncaught = (err: unknown): void => {

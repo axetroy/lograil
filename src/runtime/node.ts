@@ -3,6 +3,7 @@ import { ConsoleTransport } from '../transport/console.js';
 import type { RotatingFileTransportOptions } from '../transport/rotating-file.js';
 import { RotatingFileTransport } from '../transport/rotating-file.js';
 import type { RuntimeAdapter } from './adapter.js';
+import { createProcessLifecycle } from './process-lifecycle.js';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 
@@ -59,5 +60,7 @@ export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdap
       }
       return transports;
     },
+    // Flush on process exit / signals via the shared Node lifecycle hooks.
+    lifecycle: createProcessLifecycle(),
   };
 }

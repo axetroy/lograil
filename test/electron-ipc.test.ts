@@ -10,6 +10,7 @@ vi.mock('../src/runtime/electron-binding.js', () => ({
     ipcRenderer: { send },
     ipcMain: { on, removeListener },
   }),
+  getElectronApp: () => ({ on: vi.fn(), removeListener: vi.fn() }),
 }));
 
 import {

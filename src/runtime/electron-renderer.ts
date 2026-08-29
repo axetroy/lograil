@@ -3,6 +3,7 @@ import type { Transport } from '../transport/transport.js';
 import type { IpcRenderer } from 'electron';
 import { ConsoleTransport } from '../transport/console.js';
 import { ElectronIpcTransport } from '../transport/electron-ipc.js';
+import { createWebLifecycle } from './web-lifecycle.js';
 
 export interface ElectronRendererRuntimeOptions {
   /**
@@ -50,5 +51,6 @@ export function createElectronRendererRuntime(
       }
       return transports;
     },
+    lifecycle: createWebLifecycle(),
   };
 }

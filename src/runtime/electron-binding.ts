@@ -1,3 +1,5 @@
+import type { App } from 'electron';
+
 /**
  * Type of the `electron` module as returned by `require('electron')`. We use
  * electron's own `Electron.CrossProcessExports` type so we stay in sync with
@@ -35,4 +37,19 @@ export function getElectron(): ElectronModule {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   cached = require('electron') as ElectronModule;
   return cached;
+}
+
+/**
+ * Resolve the Electron `app` instance. Only meaningful inside a real Electron
+ * process; returns `undefined` when Electron is absent or `app` can't be read
+ * (e.g. a renderer process, or a bundler that stripped `electron`). This is the
+ * runtime layer's single entry point for `app`-level lifecycle wiring.
+ */
+export function getElectronApp(): App | undefined {
+  if (!isElectronProcess()) return undefined;
+  try {
+    return getElectron().app;
+  } catch {
+    return undefined;
+  }
 }

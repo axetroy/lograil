@@ -4,8 +4,8 @@ import { ConsoleTransport } from '../transport/console.js';
 import type { RotatingFileTransportOptions } from '../transport/rotating-file.js';
 import { RotatingFileTransport } from '../transport/rotating-file.js';
 import { registerIpcReceiver, RENDERER_PROCESS_MARKER } from '../transport/electron-ipc.js';
-import { getElectron, isElectronProcess } from './electron-binding.js';
-import type { App } from 'electron';
+import { getElectronApp } from './electron-binding.js';
+import { createElectronLifecycle } from './electron-lifecycle.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -20,16 +20,6 @@ export interface ElectronMainRuntimeOptions {
    * `<appData>/Lograil` and cannot be customized.
    */
   receiveFromRenderer?: boolean;
-}
-
-/** Resolve `electron.app` (only meaningful inside a real Electron process). */
-function getElectronApp(): App | undefined {
-  if (!isElectronProcess()) return undefined;
-  try {
-    return getElectron().app;
-  } catch {
-    return undefined;
-  }
 }
 
 /** Log directory: `<appData>/Lograil`, or the temp dir when Electron is absent. */
@@ -97,6 +87,7 @@ export function createElectronMainRuntime(
       }
       return transports;
     },
+    lifecycle: createElectronLifecycle(),
   };
 
   if (receiveFromRenderer) {
