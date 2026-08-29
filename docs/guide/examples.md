@@ -239,6 +239,31 @@ reqLog.info('start'); // every entry carries requestId + tenant
 const quiet = logger.child({ level: 'error' });
 ```
 
+`child()` is lightweight — it reuses the parent's pipeline, plugins, transports
+and namespace filter with no extra environment reads or runtime detection, so it
+is safe to call per request. (Only the root logger owns shared resources;
+`destroy()` on a child does not tear down the parent's transports or plugins.)
+
+### `printf`-style messages
+
+As a convenience for those used to Node's `util.format` / `console.log`, lograil
+also accepts `printf` specifiers. It is **not** a performance feature — in JS,
+function arguments are evaluated eagerly, so `logger.info('user %s', name)` and
+`logger.info(\`user ${name}\`)` are equivalent (both preserve structured `args`,
+and neither skips argument evaluation). Use whichever reads better for you:
+
+```ts
+logger.info('user %s logged in', user.name);   // %s string
+logger.info('price %d', price);                 // %d number
+logger.info('payload %j', data);                // %j JSON
+logger.info('obj %o', data);                    // %o/%O object preview
+logger.info('progress %s%%', pct);              // %% literal '%'
+// Unconsumed args stay structured:
+logger.info('user %s', user.name, { requestId }); // => message + { requestId }
+// No specifier? The message is kept verbatim and args pass through unchanged:
+logger.info('discount 50% off', { code: 'SALE' });
+```
+
 ### OTLP with trace correlation
 
 When an entry's context carries `traceId` / `spanId` (or `trace_id` / `span_id`),

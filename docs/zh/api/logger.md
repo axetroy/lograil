@@ -22,6 +22,22 @@ logger.fatal(msg, ...args);
 
 - `message` 可以是 `string`、`Error` 或任意值。对象会被保留为结构化 `args`；`Error` 会被提取并连同其 `cause` 因果链一起渲染。
 
+## 消息格式化（`printf`）
+
+当 `message` 是字符串且至少传入一个参数时，lograil 支持 Node `util.format` 的一个精简 `printf` 子集，因此你可以这样写：
+
+```ts
+logger.info('user %s logged in', name);
+logger.info('cost %d', price);
+logger.info('payload %j', { a: 1 }); // %j => JSON
+logger.info('obj %o', { a: 1 });     // %o/%O => 对象预览
+logger.info('done %s%%', '100');      // %% => 字面量 '%'
+```
+
+占位符（`%s %d %i %j %o %O %%`）会按顺序消费位置参数；**未被消费的**参数会像普通的 `logger.info('msg', obj)` 那样保留为结构化 `args`。如果消息里没有任何合法占位符（比如字面量 `50% off`），或者没有传入参数，消息会原样保留、`args` 也原样透传——也就是说，最常见的结构化日志调用仍走零格式化的快速路径。
+
+这仅仅是对熟悉 Node `util.format` 的用户的便利写法。它**并不比模板字符串更快**：在 JavaScript 里，所有实参都会在调用前先求值，因此 `logger.info('user %s', name)` 与 `logger.info(\`user ${name}\`, …)` 是等价的——两者都会保留结构化 `args`，也都不会跳过实参求值。按你自己的喜好选择即可。
+
 ## 级别
 
 ```ts
@@ -72,6 +88,8 @@ logger.child(options?: { context?: Record<string, unknown>; level?: LogLevelInpu
 - 把 `options.context` 合并到父 logger 上下文之上（在创建时捕获）；
 - 继承父 logger 的作用域；
 - **实时继承父 logger 的级别**，除非通过 `options.level` 覆盖（该覆盖同样对更深层子 logger 生效）。
+
+子 logger 的创建是**轻量的**：它复用父 logger 的管道、插件、传输器与作用域过滤器，并且不会重新读取环境变量、编译正则或检测运行时。因此 `child()` 可以安全地按请求调用（例如 `logger.child({ requestId })`），不会有每次创建的额外分配开销。（只有根 logger 拥有共享资源——在子 logger 上调用 `destroy()` 不会销毁父 logger 的传输器与插件。）
 
 这是成熟日志库标配的"子 logger"（类似 `pino.child`），非常适合用于请求级上下文：
 

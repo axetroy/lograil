@@ -87,6 +87,21 @@ describe('emit (noop transport)', () => {
     logScoped.info('token refreshed');
   });
 
+  // Lightweight child derivation: reuses the parent's pipeline/plugins/transports
+  // with no env reads / regex compile / runtime detection, so per-request
+  // `logger.child({ requestId })` is cheap.
+  bench('child() construction (lightweight)', () => {
+    const c = logLine.child({ context: { requestId: 'r1' } });
+    void c;
+  });
+
+  // Emitting through a child must cost the same as through the root — the child
+  // shares the parent's transports/pipeline by reference (no per-call penalty).
+  const logChild = logLine.child({ context: { requestId: 'r1' } });
+  bench('info via child logger', () => {
+    logChild.info('hello', { a: 1 });
+  });
+
   bench('with filters + redact processor', () => {
     logWithPipe.info('login', { user: 'bob', password: 'secret' });
   });

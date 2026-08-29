@@ -228,6 +228,24 @@ reqLog.info('start'); // 每条日志都携带 requestId + tenant
 const quiet = logger.child({ level: 'error' });
 ```
 
+`child()` 是轻量的——它复用父 logger 的管道、插件、传输器与作用域过滤器，不会额外读取环境变量或检测运行时，因此可以安全地按请求调用。（只有根 logger 拥有共享资源；在子 logger 上调用 `destroy()` 不会销毁父 logger 的传输器与插件。）
+
+### `printf` 风格的消息
+
+作为对熟悉 Node `util.format` / `console.log` 的用户的便利，lograil 也支持 `printf` 占位符。但这**不是性能特性**——在 JS 里函数实参会先求值，所以 `logger.info('user %s', name)` 与 `logger.info(\`user ${name}\`)` 是等价的（两者都会保留结构化 `args`，且都不会跳过实参求值）。按你自己读着顺手的方式来选即可：
+
+```ts
+logger.info('user %s logged in', user.name);   // %s 字符串
+logger.info('price %d', price);                 // %d 数字
+logger.info('payload %j', data);                // %j JSON
+logger.info('obj %o', data);                    // %o/%O 对象预览
+logger.info('progress %s%%', pct);              // %% 字面量 '%'
+// 未被消费的剩余参数仍保留为结构化数据：
+logger.info('user %s', user.name, { requestId }); // => 消息 + { requestId }
+// 没有占位符？消息原样保留，args 也原样透传：
+logger.info('discount 50% off', { code: 'SALE' });
+```
+
 ### 用 OTLP 关联调用链（trace）
 
 当条目的上下文里带有 `traceId` / `spanId`（或 `trace_id` / `span_id`）时，`OtlpTransport` 会把它们填进 OTLP 专用的追踪字段，这样在后端的监控系统中，这条日志就能和同一次请求的调用链（trace）关联起来：

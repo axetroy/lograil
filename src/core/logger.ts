@@ -12,6 +12,7 @@ import { PluginManager } from '../plugin/index.js';
 import type { ContextStore } from '../context/index.js';
 import { createContextStore, asyncContext, isEmptyRecord, EMPTY_RECORD } from '../context/index.js';
 import { freezeEntry } from './entry.js';
+import { formatMessage, hasPrintfSpecifier } from './printf.js';
 
 // Captured at module load — before `redirectConsole` can replace `console.*` —
 // so the logger's own error reporting never recurses into itself.
@@ -185,6 +186,26 @@ export interface LoggerOptions {
   namespaceEnvVar?: string | null;
 }
 
+/**
+ * Internal options passed by `scope`/`child` to build a **lightweight** child
+ * logger. The child reuses the parent's runtime, pipeline, plugins, transports
+ * and namespace filter — it only carries its own scope and context. This avoids
+ * re-running environment reads, regex compilation and runtime detection on
+ * every derived logger (important for per-request `child({ requestId })`).
+ */
+interface ChildOptions {
+  __child: true;
+  parent: Logger;
+  scope?: string;
+  context?: ContextStore;
+  levelOverride?: number;
+}
+
+/** Narrowing guard for {@link ChildOptions}. */
+function isChildOptions(o: LoggerOptions | ChildOptions): o is ChildOptions {
+  return (o as ChildOptions).__child === true;
+}
+
 /** Minimal structural view of the Node `process` used for lifecycle hooks. */
 type NodeProcess = {
   on(event: string, cb: (...args: unknown[]) => void): void;
@@ -210,12 +231,12 @@ function getNodeProcess(): NodeProcess | undefined {
  * scope and context (captured from the parent at creation).
  */
 export class Logger implements LoggerMethods {
-  private runtime: RuntimeAdapter;
-  private pipeline: Pipeline;
-  private plugins: PluginManager;
-  private transports: Transport[];
-  private context: ContextStore;
-  private level: number;
+  private runtime!: RuntimeAdapter;
+  private pipeline!: Pipeline;
+  private plugins!: PluginManager;
+  private transports!: Transport[];
+  private context!: ContextStore;
+  private level!: number;
   private scopeName?: string;
   private parent?: Logger;
   private levelOverride?: number;
@@ -233,13 +254,24 @@ export class Logger implements LoggerMethods {
   private processHandlersAttached = false;
   private errorHandlersAttached = false;
   private removeProcessHandlers?: () => void;
-  private readonly onLoggerError?: LoggerErrorHandler;
-  private readonly writeTimeoutMs: number;
-  private exitFlushTimeoutMs: number;
+  private onLoggerError?: LoggerErrorHandler;
+  private writeTimeoutMs!: number;
+  private exitFlushTimeoutMs!: number;
   private _exiting = false;
   private namespaceFilter?: NamespaceFilter;
+  /** True for loggers created via `scope`/`child` (share the parent's plumbing). */
+  private isChild = false;
 
-  constructor(options: LoggerOptions = {}) {
+  constructor(options: LoggerOptions | ChildOptions = {}) {
+    // Lightweight child path: reuse the parent's runtime, pipeline, plugins,
+    // transports and namespace filter, skipping env reads, regex compilation
+    // and runtime detection entirely. This keeps `scope`/`child` (used per
+    // request, e.g. `logger.child({ requestId })`) near-zero allocation.
+    if (isChildOptions(options)) {
+      this.isChild = true;
+      this.initFromParent(options);
+      return;
+    }
     this.runtime = options.runtime ?? detectRuntime();
     const pipelineOpts = options.pipeline instanceof Pipeline ? undefined : options.pipeline;
     this.pipeline =
@@ -277,6 +309,29 @@ export class Logger implements LoggerMethods {
     // Wire the pipeline/plugin error sinks into the unified handler.
     this.pipeline.onError = (err, info) => this.reportError(info.phase, err, info.entry);
     this.plugins.onError = (name, err, entry) => this.reportError('plugin', err, entry, name);
+  }
+
+  /**
+   * Initialise a lightweight child from its parent. Reuses the parent's
+   * runtime, pipeline, plugins, transports and namespace filter, and shares the
+   * parent's error handler config so no duplicate `onError` wiring (or duplicate
+   * IPC receiver registration) happens.
+   */
+  private initFromParent(opts: ChildOptions): void {
+    const parent = opts.parent;
+    this.parent = parent;
+    this.runtime = parent.runtime;
+    this.pipeline = parent.pipeline;
+    this.plugins = parent.plugins;
+    this.transports = parent.transports;
+    this.namespaceFilter = parent.namespaceFilter;
+    this.context = opts.context ?? createContextStore();
+    this.scopeName = opts.scope;
+    // Only a root logger owns the shared plugin error sink; children inherit it.
+    this.onLoggerError = parent.onLoggerError;
+    this.writeTimeoutMs = parent.writeTimeoutMs;
+    this.exitFlushTimeoutMs = parent.exitFlushTimeoutMs;
+    if (opts.levelOverride !== undefined) this.levelOverride = opts.levelOverride;
   }
 
   /**
@@ -373,6 +428,9 @@ export class Logger implements LoggerMethods {
    * context (captured from the parent at creation), and may carry extra
    * context. The level is inherited live from the parent (see {@link child})
    * unless overridden via `setLevel`.
+   *
+   * Construction is lightweight: no environment reads, regex compilation or
+   * runtime detection is performed — the child reuses this logger's plumbing.
    */
   scope(scope: string, context?: Record<string, unknown>): Logger {
     const childScope = this.scopeName ? `${this.scopeName}:${scope}` : scope;
@@ -380,17 +438,12 @@ export class Logger implements LoggerMethods {
     if (context) {
       childContext.merge(context);
     }
-    const child = new Logger({
+    return new Logger({
+      __child: true,
+      parent: this,
       scope: childScope,
-      runtime: this.runtime,
       context: childContext,
-      transports: this.transports,
-      pipeline: this.pipeline,
-      plugins: this.plugins,
     });
-    child.parent = this;
-    child.namespaceFilter = this.namespaceFilter;
-    return child;
   }
 
   /**
@@ -403,27 +456,21 @@ export class Logger implements LoggerMethods {
    *   (the override also applies to any further descendants).
    *
    * This is the canonical "child logger" (à la `pino.child`), ideal for
-   * per-request context such as `logger.child({ requestId: id })`.
+   * per-request context such as `logger.child({ requestId: id })`. Construction
+   * is lightweight — see {@link scope}.
    */
   child(options: { context?: Record<string, unknown>; level?: LogLevelInput } = {}): Logger {
     const childContext = this.context.child();
     if (options.context) {
       childContext.merge(options.context);
     }
-    const child = new Logger({
+    return new Logger({
+      __child: true,
+      parent: this,
       scope: this.scopeName,
-      runtime: this.runtime,
       context: childContext,
-      transports: this.transports,
-      pipeline: this.pipeline,
-      plugins: this.plugins,
+      levelOverride: options.level !== undefined ? normalizeLevel(options.level) : undefined,
     });
-    child.parent = this;
-    child.namespaceFilter = this.namespaceFilter;
-    if (options.level !== undefined) {
-      child.levelOverride = normalizeLevel(options.level);
-    }
-    return child;
   }
 
   // ---- Emitting ----
@@ -499,7 +546,17 @@ export class Logger implements LoggerMethods {
       error = message;
       msg = message.message;
     } else if (typeof message === 'string') {
-      msg = message;
+      // `printf`-style: `logger.info('user %s', name)`. Only enter the format
+      // path when at least one argument is present and a legal specifier
+      // exists, so the dominant `info('msg', {obj})` pattern stays on the
+      // zero-format fast path and literal `%` in messages is preserved.
+      if (args.length > 0 && hasPrintfSpecifier(message)) {
+        const [formatted, ...restArgs] = formatMessage(message, args);
+        msg = formatted;
+        rest = restArgs;
+      } else {
+        msg = message;
+      }
     } else {
       // Non-string / non-Error first argument (e.g. an object): preserve it as
       // structured data instead of coercing to "[object Object]".
@@ -771,6 +828,14 @@ export class Logger implements LoggerMethods {
 
   async destroy(): Promise<void> {
     this.destroyed = true;
+    // Only a root logger owns the shared resources (process handlers, plugins,
+    // transports, the IPC receiver). A child shares them with its parent and
+    // must not tear them down — destroying a child used to silently break the
+    // parent's transports and plugins.
+    if (this.isChild) {
+      this.transportQueues.clear();
+      return;
+    }
     this.removeProcessHandlers?.();
     // Flush pending writes before tearing down transports, so buffered logs
     // are not lost. Bounded by the exit-flush timeout so a stalled sink can

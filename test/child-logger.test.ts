@@ -103,4 +103,59 @@ describe('Logger.child', () => {
     child.info('hi');
     expect(sink[0].scope).toBe('svc');
   });
+
+  it('is a lightweight child: shares pipeline/plugins and does not re-detect runtime', () => {
+    const sink: LogEntry[] = [];
+    const log = makeLogger();
+    log.addTransport(capturingTransport('cap', sink));
+    const child = log.child();
+    // Same pipeline instance (no re-creation of filters/processors).
+    expect((child as unknown as { pipeline: unknown }).pipeline).toBe(
+      (log as unknown as { pipeline: unknown }).pipeline,
+    );
+    expect((child as unknown as { plugins: unknown }).plugins).toBe(
+      (log as unknown as { plugins: unknown }).plugins,
+    );
+    expect((child as unknown as { transports: unknown }).transports).toBe(
+      (log as unknown as { transports: unknown }).transports,
+    );
+    // Marked as a child (lightweight path).
+    expect((child as unknown as { isChild: boolean }).isChild).toBe(true);
+    expect((log as unknown as { isChild: boolean }).isChild).toBe(false);
+  });
+
+  it('destroying a child does not tear down the parent transports/plugins', async () => {
+    const sink: LogEntry[] = [];
+    const log = makeLogger();
+    log.addTransport(capturingTransport('cap', sink));
+    const child = log.child();
+    child.info('from child');
+    await child.destroy();
+    // Parent must still be fully functional after a child is destroyed.
+    expect(child['destroyed']).toBe(true);
+    log.info('from parent');
+    expect(sink.map((e) => e.message)).toEqual(['from child', 'from parent']);
+  });
+
+  it('child scope does not attach a duplicate IPC receiver on main runtime', () => {
+    // On a runtime that would attach a receiver (Electron main), deriving a
+    // child must not register a *second* receiver — it must reuse the parent's.
+    let attachCount = 0;
+    const runtime = {
+      name: 'electron',
+      processType: 'main',
+      now: () => 0,
+      pid: () => 1,
+      hasFileSystem: () => true,
+      defaultTransports: () => [],
+      attachReceiver: (_fn: (e: LogEntry) => void) => {
+        attachCount++;
+        return () => {};
+      },
+    } as unknown as RuntimeAdapter;
+    const log = new Logger({ runtime });
+    const child = log.scope('svc');
+    expect(attachCount).toBe(1); // parent only, not re-attached for the child
+    expect((child as unknown as { isChild: boolean }).isChild).toBe(true);
+  });
 });
