@@ -142,6 +142,12 @@ export interface LoggerOptions {
    * a stalled sink can never hang `flush()`/`destroy()`. Default `5000`.
    */
   writeTimeoutMs?: number;
+  /**
+   * Maximum time (ms) to spend flushing on process exit (`beforeExit`,
+   * `SIGINT`, `SIGTERM`) before giving up and letting the process exit, so a
+   * stalled transport flush can never hang shutdown. Default `2000`.
+   */
+  exitFlushTimeoutMs?: number;
   /** Optional scope / namespace for this logger. */
   scope?: string;
   /** Runtime adapter. Auto-detected when omitted. */
@@ -229,6 +235,8 @@ export class Logger implements LoggerMethods {
   private removeProcessHandlers?: () => void;
   private readonly onLoggerError?: LoggerErrorHandler;
   private readonly writeTimeoutMs: number;
+  private exitFlushTimeoutMs: number;
+  private _exiting = false;
   private namespaceFilter?: NamespaceFilter;
 
   constructor(options: LoggerOptions = {}) {
@@ -265,6 +273,7 @@ export class Logger implements LoggerMethods {
 
     this.onLoggerError = options.onError;
     this.writeTimeoutMs = options.writeTimeoutMs ?? 5000;
+    this.exitFlushTimeoutMs = options.exitFlushTimeoutMs ?? 2000;
     // Wire the pipeline/plugin error sinks into the unified handler.
     this.pipeline.onError = (err, info) => this.reportError(info.phase, err, info.entry);
     this.plugins.onError = (name, err, entry) => this.reportError('plugin', err, entry, name);
@@ -605,6 +614,37 @@ export class Logger implements LoggerMethods {
     }
   }
 
+  /**
+   * Flush, but never wait longer than `ms`. Resolves (does not reject) once the
+   * flush settles or the timeout elapses, so callers can always proceed (e.g.
+   * exit the process) without risking a hang on a stalled transport.
+   */
+  private flushWithTimeout(ms: number): Promise<void> {
+    if (!ms) return this.flush();
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const done = (): void => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      if (typeof timer.unref === 'function') timer.unref();
+      this.flush().then(done, done);
+    });
+  }
+
+  /** Set the max time (ms) to flush on process exit before giving up. */
+  setExitFlushTimeout(ms: number): this {
+    if (Number.isFinite(ms) && ms >= 0) this.exitFlushTimeoutMs = ms;
+    return this;
+  }
+
+  /** Get the current exit-flush timeout (ms). */
+  getExitFlushTimeout(): number {
+    return this.exitFlushTimeoutMs;
+  }
+
   // ---- Process integration ----
 
   /**
@@ -616,17 +656,31 @@ export class Logger implements LoggerMethods {
     if (this.processHandlersAttached) return;
     const proc = getNodeProcess();
     if (!proc) return;
+    const ms = this.exitFlushTimeoutMs;
+    // On normal exit the event loop is about to empty: flush pending writes.
+    // `beforeExit` re-fires as long as async writes keep the loop alive, so the
+    // queue keeps draining until empty (bounded by `ms` if a sink stalls).
     const onBeforeExit = (): void => {
-      void this.flush();
+      void this.flushWithTimeout(ms);
     };
+    // On a signal, flush what we can, then terminate — but never hang shutdown
+    // on a stalled transport (the timeout guarantees we still exit).
     const onSignal = (code: number): void => {
-      void this.flush().finally(() => proc.exit(code));
+      if (this._exiting) return;
+      this._exiting = true;
+      void this.flushWithTimeout(ms).finally(() => {
+        try {
+          proc.exit(code);
+        } catch {
+          /* ignore */
+        }
+      });
     };
     const onSigInt = (): void => onSignal(130);
     const onSigTerm = (): void => onSignal(143);
     proc.on('beforeExit', onBeforeExit);
-    proc.once('SIGINT', onSigInt);
-    proc.once('SIGTERM', onSigTerm);
+    proc.on('SIGINT', onSigInt);
+    proc.on('SIGTERM', onSigTerm);
     this.processHandlersAttached = true;
     const prev = this.removeProcessHandlers;
     this.removeProcessHandlers = () => {
@@ -648,11 +702,11 @@ export class Logger implements LoggerMethods {
     if (!proc) return;
     const onUncaught = (err: unknown): void => {
       this.fatal(err);
-      void this.flush().finally(() => proc.exit(1));
+      void this.flushWithTimeout(this.exitFlushTimeoutMs).finally(() => proc.exit(1));
     };
     const onRejection = (reason: unknown): void => {
       this.fatal(reason);
-      void this.flush().finally(() => proc.exit(1));
+      void this.flushWithTimeout(this.exitFlushTimeoutMs).finally(() => proc.exit(1));
     };
     proc.on('uncaughtException', onUncaught);
     proc.on('unhandledRejection', onRejection);
@@ -707,12 +761,15 @@ export class Logger implements LoggerMethods {
   async destroy(): Promise<void> {
     this.destroyed = true;
     this.removeProcessHandlers?.();
-    await this.flush();
-    await this.plugins.destroy();
+    // Flush pending writes before tearing down transports, so buffered logs
+    // are not lost. Bounded by the exit-flush timeout so a stalled sink can
+    // never hang teardown.
+    await this.flushWithTimeout(this.exitFlushTimeoutMs).catch(() => {});
+    await this.plugins.destroy().catch(() => {});
     this.detachReceiver?.();
     for (const transport of this.transports) {
       if (transport.close) {
-        await transport.close();
+        await Promise.resolve(transport.close()).catch(() => {});
       }
     }
     this.transportQueues.clear();

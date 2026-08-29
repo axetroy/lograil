@@ -67,26 +67,25 @@ describe('attachExitHandlers', () => {
 
   it('registers beforeExit / SIGINT / SIGTERM handlers', () => {
     const on = vi.spyOn(process, 'on');
-    const once = vi.spyOn(process, 'once');
     const { log } = captureLogger();
     log.attachExitHandlers();
     expect(on).toHaveBeenCalledWith('beforeExit', expect.any(Function));
-    expect(once).toHaveBeenCalledWith('SIGINT', expect.any(Function));
-    expect(once).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+    expect(on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+    expect(on).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
   });
 
   it('is idempotent (second call does not re-register)', () => {
-    const once = vi.spyOn(process, 'once');
+    const on = vi.spyOn(process, 'on');
     const { log } = captureLogger();
     log.attachExitHandlers();
-    const afterFirst = (once as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+    const afterFirst = (on as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
     log.attachExitHandlers();
-    const afterSecond = (once as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+    const afterSecond = (on as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
     expect(afterSecond - afterFirst).toBe(0);
   });
 
   it('auto-registers when autoFlushOnExit is set', () => {
-    const once = vi.spyOn(process, 'once');
+    const on = vi.spyOn(process, 'on');
     const runtime = {
       name: 'node',
       now: () => 0,
@@ -95,7 +94,77 @@ describe('attachExitHandlers', () => {
       defaultTransports: () => [],
     } as unknown as RuntimeAdapter;
     new Logger({ transports: [], level: 'debug', runtime, autoFlushOnExit: true });
-    expect(once).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+    expect(on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+  });
+
+  it('flushes pending writes when beforeExit fires', async () => {
+    const on = vi.spyOn(process, 'on');
+    const flush = vi.fn(() => Promise.resolve());
+    const transport: Transport = { name: 'cap', write: () => {}, flush };
+    const runtime = {
+      name: 'node',
+      now: () => 0,
+      pid: () => 1,
+      hasFileSystem: () => false,
+      defaultTransports: () => [],
+    } as unknown as RuntimeAdapter;
+    const log = new Logger({ transports: [transport], level: 'debug', runtime });
+    log.attachExitHandlers();
+    log.info('pending');
+    const beforeExit = (
+      on.mock.calls.find((c) => c[0] === 'beforeExit') as unknown[]
+    )[1] as () => void;
+    beforeExit();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(flush).toHaveBeenCalled();
+  });
+
+  it('flushes then exits with the signal code on SIGTERM', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const on = vi.spyOn(process, 'on');
+    const runtime = {
+      name: 'node',
+      now: () => 0,
+      pid: () => 1,
+      hasFileSystem: () => false,
+      defaultTransports: () => [],
+    } as unknown as RuntimeAdapter;
+    const log = new Logger({ transports: [], level: 'debug', runtime });
+    log.attachExitHandlers();
+    const sigterm = (on.mock.calls.find((c) => c[0] === 'SIGTERM') as unknown[])[1] as () => void;
+    sigterm();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(exit).toHaveBeenCalledWith(143);
+    exit.mockRestore();
+  });
+
+  it('still exits even if a transport flush stalls (timeout safety)', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const on = vi.spyOn(process, 'on');
+    const runtime = {
+      name: 'node',
+      now: () => 0,
+      pid: () => 1,
+      hasFileSystem: () => false,
+      defaultTransports: () => [],
+    } as unknown as RuntimeAdapter;
+    const stalled: Transport = {
+      name: 'stalled',
+      write: () => new Promise<void>(() => {}), // never resolves
+      flush: () => new Promise<void>(() => {}), // never resolves
+    };
+    const log = new Logger({
+      transports: [stalled],
+      level: 'debug',
+      runtime,
+      exitFlushTimeoutMs: 20,
+    });
+    log.attachExitHandlers();
+    const sigint = (on.mock.calls.find((c) => c[0] === 'SIGINT') as unknown[])[1] as () => void;
+    sigint();
+    await new Promise((r) => setTimeout(r, 60));
+    expect(exit).toHaveBeenCalledWith(130);
+    exit.mockRestore();
   });
 });
 
