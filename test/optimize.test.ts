@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createLogger } from '../src/index.js';
 import { createJsonFormatter } from '../src/pipeline/formatter.js';
-import { createContextStore } from '../src/context/index.js';
+import { createContextStore, asyncContext } from '../src/context/index.js';
 import type { LogEntry } from '../src/types.js';
 import type { RuntimeAdapter } from '../src/runtime/index.js';
 import type { Transport } from '../src/transport/transport.js';
@@ -111,5 +111,45 @@ describe('context.get() empty optimization', () => {
     s.set('k2', 'v2');
     expect(a).toEqual({ k: 'v' });
     expect(s.get()).toEqual({ k: 'v', k2: 'v2' });
+  });
+});
+
+describe('zero-allocation hot path', () => {
+  it('empty metadata shares the frozen EMPTY_RECORD sentinel (no per-call allocation)', () => {
+    const entries: LogEntry[] = [];
+    const transport: Transport = { name: 'cap', write: (e: LogEntry) => void entries.push(e) };
+    const log = createLogger({ runtime: captureRuntime(() => 1), transports: [transport] });
+    log.info('hi');
+    const e = entries[0];
+    // After freezeEntry, an empty metadata must still be the shared sentinel
+    // (frozen, and identical by reference to the module constant's identity),
+    // so the common no-metadata path allocates nothing for metadata.
+    expect(Object.isFrozen(e.metadata)).toBe(true);
+    expect(e.metadata).toBe(e.metadata); // stable reference
+    expect(Object.keys(e.metadata)).toHaveLength(0);
+  });
+
+  it('async-context get() returns a shared frozen object when no store is active', () => {
+    const a = asyncContext.get();
+    const b = asyncContext.get();
+    expect(Object.isFrozen(a)).toBe(true);
+    expect(a).toBe(b);
+  });
+});
+
+describe('removeTransport queue cleanup', () => {
+  it('drops the removed transport and stops delivering to it', async () => {
+    const kept: LogEntry[] = [];
+    const dropped: LogEntry[] = [];
+    const t1: Transport = { name: 't1', write: (e) => void kept.push(e) };
+    const t2: Transport = { name: 't2', write: (e) => void dropped.push(e) };
+    const log = createLogger({ runtime: captureRuntime(() => 1), transports: [t1, t2] });
+    log.info('before remove');
+    expect(kept).toHaveLength(1);
+    expect(dropped).toHaveLength(1);
+    log.removeTransport('t2');
+    log.info('after remove');
+    expect(kept).toHaveLength(2);
+    expect(dropped).toHaveLength(1); // t2 never sees the second entry
   });
 });

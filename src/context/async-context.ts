@@ -11,6 +11,10 @@ export type AmbientContext = Record<string, unknown>;
  * module is swapped for `async-context.browser.js` (via `package.json` `browser`)
  * which is a no-op, so the API is safe to call everywhere.
  */
+// Shared frozen empty object returned when no async store is active, so the
+// common (no ambient context) path allocates nothing on every `get()`.
+const EMPTY_AMBIENT: AmbientContext = Object.freeze({});
+
 export const asyncContext = {
   run<T>(fn: () => T, context: AmbientContext): T {
     return storage.run(context, fn);
@@ -19,7 +23,7 @@ export const asyncContext = {
     return storage.run(context, fn);
   },
   get(): AmbientContext {
-    return storage.getStore() ?? {};
+    return storage.getStore() ?? EMPTY_AMBIENT;
   },
   supported(): boolean {
     return true;

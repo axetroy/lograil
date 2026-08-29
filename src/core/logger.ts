@@ -10,7 +10,7 @@ import type { Transport } from '../transport/transport.js';
 import type { Plugin, PluginContext } from '../plugin/index.js';
 import { PluginManager } from '../plugin/index.js';
 import type { ContextStore } from '../context/index.js';
-import { createContextStore, asyncContext, isEmptyRecord } from '../context/index.js';
+import { createContextStore, asyncContext, isEmptyRecord, EMPTY_RECORD } from '../context/index.js';
 import { freezeEntry } from './entry.js';
 
 // Captured at module load — before `redirectConsole` can replace `console.*` —
@@ -323,6 +323,8 @@ export class Logger implements LoggerMethods {
   }
 
   removeTransport(name: string): void {
+    const removed = this.transports.filter((t) => t.name === name);
+    for (const t of removed) this.transportQueues.delete(t);
     this.transports = this.transports.filter((t) => t.name !== name);
   }
 
@@ -516,11 +518,18 @@ export class Logger implements LoggerMethods {
     // context. Reading it is O(1); we only clone when one side is non-empty.
     const base = this.context.get();
     const ambient = asyncContext.get();
-    const context = isEmptyRecord(ambient)
-      ? base
-      : isEmptyRecord(base)
-        ? ambient
-        : { ...base, ...ambient };
+    // NB: never hand the live AsyncLocalStorage store directly to the entry —
+    // the ambient object is shared across the async scope, so a later mutation
+    // (or `freezeEntry` below) would corrupt every entry in that scope. When
+    // ambient is the only source we clone it into a per-entry object; otherwise
+    // we reuse the frozen EMPTY_RECORD sentinel so the hot path allocates
+    // nothing.
+    const context =
+      ambient === EMPTY_RECORD
+        ? base
+        : isEmptyRecord(base)
+          ? { ...ambient }
+          : { ...base, ...ambient };
 
     return {
       level: levelValue,
@@ -532,7 +541,9 @@ export class Logger implements LoggerMethods {
       scope: this.scopeName,
       pid: this.runtime.pid(),
       context,
-      metadata: {},
+      // Shared frozen empty record (no per-call allocation); `freezeEntry`
+      // recognises it as a sentinel and skips cloning/freezing.
+      metadata: EMPTY_RECORD,
       error,
     };
   }

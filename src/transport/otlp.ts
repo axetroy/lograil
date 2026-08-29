@@ -79,17 +79,23 @@ function toOtlpValue(value: unknown): OtlpValue {
   return { stringValue: JSON.stringify(value) };
 }
 
-/** Flatten a plain object into an array of OTLP {@link OtlpAttribute}s. */
-function toAttributes(record: Record<string, unknown>): OtlpAttribute[] {
-  const out: OtlpAttribute[] = [];
+/** Context/metadata keys (any casing / underscore form) mapped to OTLP trace fields. */
+const TRACE_KEYS = new Set(['traceid', 'trace_id', 'spanid', 'span_id']);
+
+/**
+ * Flatten `record` into OTLP attributes, skipping the reserved trace-correlation
+ * keys (which are lifted to the dedicated `traceId`/`spanId` fields instead).
+ * Returns `undefined` when the record contributes no attributes, so the caller
+ * can avoid allocating an intermediate array for empty records.
+ */
+function collectAttributes(record: Record<string, unknown>): OtlpAttribute[] | undefined {
+  let out: OtlpAttribute[] | undefined;
   for (const key of Object.keys(record)) {
-    out.push({ key, value: toOtlpValue(record[key]) });
+    if (TRACE_KEYS.has(key.toLowerCase())) continue;
+    (out ??= []).push({ key, value: toOtlpValue(record[key]) });
   }
   return out;
 }
-
-/** Context/metadata keys (any casing / underscore form) mapped to OTLP trace fields. */
-const TRACE_KEYS = new Set(['traceid', 'trace_id', 'spanid', 'span_id']);
 
 /** Read a non-empty string value for one of several candidate key names. */
 function pickString(record: Record<string, unknown>, ...names: string[]): string | undefined {
@@ -110,10 +116,14 @@ function pickString(record: Record<string, unknown>, ...names: string[]): string
  * the record body.
  */
 function toLogRecord(entry: LogEntry): OtlpLogRecord {
-  const attributes: OtlpAttribute[] = [
-    ...toAttributes(entry.context).filter((a) => !TRACE_KEYS.has(a.key.toLowerCase())),
-    ...toAttributes(entry.metadata).filter((a) => !TRACE_KEYS.has(a.key.toLowerCase())),
-  ];
+  const attributes: OtlpAttribute[] = [];
+  // Single pass per source: collect attributes and (for context) harvest the
+  // trace ids in the same traversal, avoiding the prior double flatten + filter
+  // + per-key `toLowerCase()` churn.
+  const ctxAttrs = collectAttributes(entry.context);
+  if (ctxAttrs) for (const a of ctxAttrs) attributes.push(a);
+  const metaAttrs = collectAttributes(entry.metadata);
+  if (metaAttrs) for (const a of metaAttrs) attributes.push(a);
   if (entry.scope) attributes.push({ key: 'scope', value: { stringValue: entry.scope } });
   if (typeof entry.pid === 'number') {
     attributes.push({ key: 'pid', value: { intValue: String(entry.pid) } });
@@ -223,7 +233,7 @@ export class OtlpTransport implements Transport {
       options.onError ?? ((err) => console.error('[lograil] OTLP send failed:', err));
     const resource: Record<string, unknown> = { 'service.name': options.serviceName ?? 'lograil' };
     if (options.resource) Object.assign(resource, options.resource);
-    this.resourceAttributes = toAttributes(resource);
+    this.resourceAttributes = collectAttributes(resource) ?? [];
   }
 
   /**

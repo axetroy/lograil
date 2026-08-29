@@ -24,6 +24,14 @@ export interface ContextStore {
 
 const EMPTY_CONTEXT = Object.freeze({}) as Record<string, unknown>;
 
+/**
+ * A shared, frozen empty record. Returned by `ContextStore.get()` when empty
+ * and used as the default `metadata` for every entry, so the hot path never
+ * allocates an empty object — and `freezeEntry` can recognise it as a sentinel
+ * and skip cloning/freezing entirely.
+ */
+export const EMPTY_RECORD = EMPTY_CONTEXT;
+
 /** True when the record has no own enumerable keys. */
 export function isEmptyRecord(o: Record<string, unknown>): boolean {
   for (const _k in o) return false;

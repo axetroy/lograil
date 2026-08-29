@@ -1,4 +1,5 @@
 import type { LogEntry } from '../types.js';
+import { EMPTY_RECORD } from '../context/context.js';
 
 /**
  * An entry that has crossed the immutability boundary: the entry itself and its
@@ -32,14 +33,15 @@ export function freezeEntry<T extends LogEntry>(entry: T): T & FrozenLogEntry {
   if (Object.isFrozen(entry)) return entry as T & FrozenLogEntry;
 
   const ctx = entry.context;
-  (entry as { context: Record<string, unknown> }).context = Object.isFrozen(ctx)
-    ? ctx
-    : Object.freeze({ ...ctx });
-
   const meta = entry.metadata;
-  (entry as { metadata: Record<string, unknown> }).metadata = Object.isFrozen(meta)
-    ? meta
-    : Object.freeze({ ...meta });
+  (entry as { context: Record<string, unknown> }).context =
+    ctx === EMPTY_RECORD || Object.isFrozen(ctx) ? ctx : Object.freeze({ ...ctx });
+
+  // Skip cloning/freezing when empty: the shared `EMPTY_RECORD` sentinel is
+  // already frozen and reused by reference, so the common (no-metadata) path
+  // allocates nothing here.
+  (entry as { metadata: Record<string, unknown> }).metadata =
+    meta === EMPTY_RECORD || Object.isFrozen(meta) ? meta : Object.freeze({ ...meta });
 
   if (!Object.isFrozen(entry.args)) Object.freeze(entry.args);
 
