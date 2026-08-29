@@ -6,7 +6,7 @@ function themeConfig(locale: 'en' | 'zh') {
   const p = locale === 'zh' ? '/zh' : '';
   return {
     nav: [
-      { text: locale === 'zh' ? '指南' : 'Guide', link: `${p}/guide/getting-started` },
+      { text: locale === 'zh' ? '指南' : 'Guide', link: `${p}/guide/introduction` },
       { text: 'API', link: `${p}/api/` },
       { text: 'GitHub', link: `https://github.com/${REPO}` },
     ],
@@ -15,6 +15,10 @@ function themeConfig(locale: 'en' | 'zh') {
         {
           text: locale === 'zh' ? '指南' : 'Guide',
           items: [
+            {
+              text: locale === 'zh' ? '简介' : 'Introduction',
+              link: `${p}/guide/introduction`,
+            },
             {
               text: locale === 'zh' ? '快速开始' : 'Getting Started',
               link: `${p}/guide/getting-started`,
