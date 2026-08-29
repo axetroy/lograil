@@ -8,6 +8,12 @@ on:
     paths-ignore:
       - 'docs/**'
       - '**.md'
+  workflow_dispatch:
+    inputs:
+      electron_real:
+        description: Also run the real Electron integration test (downloads the Electron binary).
+        type: boolean
+        default: false
 
 # Cancel in-progress runs for the same ref (e.g. superseded commits / PR
 # updates) to save CI minutes.
@@ -21,3 +27,5 @@ permissions:
 jobs:
   verify:
     uses: ./.github/workflows/verify.yml
+    with:
+      electron_real: ${{ inputs.electron_real }}

@@ -7,6 +7,11 @@ name: Verify
 
 on:
   workflow_call:
+    inputs:
+      electron_real:
+        description: Run the real Electron integration test (downloads the Electron binary).
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -90,3 +95,31 @@ jobs:
 
       - name: Build
         run: yarn build
+
+  electron-real:
+    name: Electron real app (optional)
+    runs-on: windows-latest
+    if: inputs.electron_real == true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+      - name: Test (real Electron)
+        run: yarn vitest run test/integration/electron-real.test.ts
+        env:
+          RUN_ELECTRON_INTEGRATION: '1'
