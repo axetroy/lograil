@@ -71,4 +71,46 @@ describe('Logger', () => {
     await logger.flush();
     expect(t.entries).toHaveLength(0);
   });
+
+  it('scope() without extra context still derives a scoped child', async () => {
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'debug' });
+    const child = logger.scope('svc');
+    child.info('hi');
+    await logger.flush();
+    expect(t.entries[0].scope).toBe('svc');
+    expect(t.entries[0].context).toEqual({});
+  });
+
+  it('setLevel accepts a numeric level', async () => {
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'info' });
+    logger.setLevel(50); // error
+    logger.info('skipped');
+    logger.error('shown');
+    await logger.flush();
+    expect(t.entries.map((e) => e.levelName)).toEqual(['error']);
+  });
+
+  it('redirectConsole routes console.* through the logger and restores', async () => {
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'debug' });
+    const restore = logger.redirectConsole();
+    console.info('via-console');
+    restore();
+    console.info('after-restore');
+    await logger.flush();
+    // Only the redirected call reaches the transport; the restored one does not.
+    expect(t.entries).toHaveLength(1);
+    expect(t.entries[0].message).toBe('via-console');
+  });
+
+  it('does not emit after destroy()', async () => {
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'debug' });
+    await logger.destroy();
+    logger.info('after destroy');
+    await logger.flush();
+    expect(t.entries).toHaveLength(0);
+  });
 });

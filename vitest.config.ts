@@ -10,14 +10,26 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov', 'clover'],
       reportsDirectory: 'coverage',
-      // Guardrail thresholds derived from the current baseline (measured
-      // ~89% across statements/branches/functions/lines on the default suite).
-      // CI fails if coverage drops below these, catching regressions.
+      include: ['src/**/*.ts'],
+      // Exclude code that has no executable statements to cover: build scripts,
+      // browser-only stubs (exercised under a jsdom/playwright env, not node),
+      // and pure type-declaration modules (interfaces only — v8 reports them at
+      // 0% which would unfairly drag the average). Measuring these is noise, not
+      // signal.
+      exclude: [
+        'scripts/**',
+        '**/*.browser.ts',
+        'src/plugin/plugin.ts',
+        'src/transport/transport.ts',
+        'src/runtime/adapter.ts',
+      ],
+      // Guardrail thresholds: CI fails if coverage drops below these, so any
+      // regression in the runtime code is caught before it ships.
       thresholds: {
-        statements: 88,
-        branches: 88,
-        functions: 88,
-        lines: 88,
+        statements: 90,
+        branches: 90,
+        functions: 90,
+        lines: 90,
       },
     },
   },

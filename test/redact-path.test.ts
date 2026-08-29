@@ -67,4 +67,33 @@ describe('Processor - redact (paths)', () => {
     expect((list[0] as Record<string, unknown>).id).toBe(1);
     expect((list[1] as Record<string, unknown>).token).toBe('keep');
   });
+
+  it('supports a bare-key glob (any depth) and a dotted wildcard combined', () => {
+    const redact = createRedactProcessor(['token', 'user.*']);
+    const out = redact(
+      entry({ user: { name: 'bob', ssn: 'x' }, token: 't', other: { token: 'deep' } }),
+    );
+    const c = out.context as Record<string, unknown>;
+    // bare 'token' matches at any depth
+    expect(c.token).toBe('[REDACTED]');
+    expect((c.other as Record<string, unknown>).token).toBe('[REDACTED]');
+    // 'user.*' matches every key under user
+    const user = c.user as Record<string, unknown>;
+    expect(user.name).toBe('[REDACTED]');
+    expect(user.ssn).toBe('[REDACTED]');
+  });
+
+  it('returns the same entry when given an empty key list', () => {
+    const redact = createRedactProcessor([]);
+    const e = entry({ foo: 'bar' });
+    expect(redact(e)).toBe(e);
+  });
+
+  it('clones and redacts array elements without mutating the original array', () => {
+    const redact = createRedactProcessor(['password']);
+    const orig = [{ password: 'a' }, { password: 'b' }];
+    const out = redact(entry({}, orig));
+    expect((out.args as Record<string, unknown>[])[0].password).toBe('[REDACTED]');
+    expect(orig[0].password).toBe('a'); // original untouched
+  });
 });

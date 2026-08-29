@@ -30,11 +30,33 @@ describe('formatMessage (printf)', () => {
     expect(formatMessage('n=%d', [42])[0]).toBe('n=42');
     expect(formatMessage('n=%i', ['7' as unknown as number])[0]).toBe('n=7');
   });
-  it('formats %j as JSON', () => {
-    expect(formatMessage('payload=%j', [{ a: 1 }])[0]).toBe('payload={"a":1}');
+  it('%d renders non-number inputs via Number()', () => {
+    expect(formatMessage('x=%d', ['42' as unknown as number])[0]).toBe('x=42');
+    expect(formatMessage('x=%d', [true as unknown as number])[0]).toBe('x=1');
   });
-  it('formats %o/%O as object preview', () => {
-    expect(formatMessage('obj=%o', [{ a: 1 }])[0]).toContain('a: 1');
+  it('formats %j as JSON and falls back on circular refs', () => {
+    const circular: Record<string, unknown> = { a: 1 };
+    circular.self = circular;
+    expect(formatMessage('payload=%j', [{ a: 1 }])[0]).toBe('payload={"a":1}');
+    // JSON.stringify throws on circular -> falls back to String()
+    expect(formatMessage('c=%j', [circular])[0]).toContain('[object Object]');
+  });
+  it('formats %o/%O as object preview with multiple keys and arrays', () => {
+    const out = formatMessage('obj=%o', [{ a: 1, b: 2 }])[0];
+    expect(out).toContain('a: 1');
+    expect(out).toContain('b: 2');
+    expect(formatMessage('arr=%o', [[1, 2, 3]])[0]).toContain('[1, 2, 3]');
+  });
+  it('%o preview truncates beyond 8 keys', () => {
+    const big = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9 };
+    const out = formatMessage('o=%o', [big])[0];
+    expect(out).toContain('…+1');
+  });
+  it('stringifies functions, bigint, null and undefined', () => {
+    expect(formatMessage('f=%s', [(() => {}) as unknown as string])[0]).toContain('[Function:');
+    expect(formatMessage('b=%s', [10n as unknown as string])[0]).toBe('b=10');
+    expect(formatMessage('n=%s', [null as unknown as string])[0]).toBe('n=null');
+    expect(formatMessage('u=%s', [undefined as unknown as string])[0]).toBe('u=undefined');
   });
   it('keeps trailing (unconsumed) args as rest', () => {
     const [msg, ...rest] = formatMessage('u=%s', ['bob', { extra: true }]);

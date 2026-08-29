@@ -46,6 +46,10 @@ export function createOtelTracePlugin(): Plugin {
       if (!traceApi) return entry;
       const span = traceApi.getActiveSpan();
       if (!span) return entry;
+      // Some tracer implementations return a span object without a
+      // `spanContext` method; tolerate that instead of throwing on the hot
+      // path.
+      if (typeof span.spanContext !== 'function') return entry;
       const ctx = span.spanContext();
       if (!ctx) return entry;
       return {

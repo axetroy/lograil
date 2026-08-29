@@ -95,4 +95,61 @@ describe('OtlpTransport', () => {
     expect(rec.traceId).toBe('aa');
     expect(rec.spanId).toBe('bb');
   });
+
+  it('reads trace ids from metadata when absent from context', async () => {
+    const t = new OtlpTransport();
+    t.write(makeEntry({ context: {}, metadata: { traceId: 'm1', spanId: 'm2' } }), 'hi');
+    await t.flush();
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    const rec = body.resourceLogs[0].scopeLogs[0].logRecords[0];
+    expect(rec.traceId).toBe('m1');
+    expect(rec.spanId).toBe('m2');
+  });
+
+  it('emits doubleValue for non-integer numbers', async () => {
+    const t = new OtlpTransport();
+    t.write(makeEntry({ context: { ratio: 0.5 } }), 'hi');
+    await t.flush();
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    const rec = body.resourceLogs[0].scopeLogs[0].logRecords[0];
+    const attr = rec.attributes.find((a: { key: string }) => a.key === 'ratio');
+    expect(attr.value.doubleValue).toBe(0.5);
+  });
+
+  it('appends resource attributes and honors service.name override', async () => {
+    const t = new OtlpTransport({ resource: { 'deployment.environment': 'prod' } });
+    t.write(makeEntry(), 'hi');
+    await t.flush();
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    const attrs = body.resourceLogs[0].resource.attributes;
+    expect(attrs).toContainEqual({ key: 'service.name', value: { stringValue: 'lograil' } });
+    expect(attrs).toContainEqual({
+      key: 'deployment.environment',
+      value: { stringValue: 'prod' },
+    });
+  });
+
+  it('clamps a non-positive batchSize to the default (100)', async () => {
+    const t = new OtlpTransport({ batchSize: 0 });
+    // Should not throw; buffers up to the default and only flushes on close.
+    t.write(makeEntry(), 'hi');
+    await t.close();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('flush is a no-op when the queue is empty', async () => {
+    const t = new OtlpTransport();
+    await expect(t.flush()).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports a network error (fetch rejection) via onError', async () => {
+    const errors: unknown[] = [];
+    fetchMock.mockRejectedValue(new Error('network down'));
+    const t = new OtlpTransport({ onError: (e) => void errors.push(e) });
+    t.write(makeEntry(), 'x');
+    await t.flush();
+    expect(errors).toHaveLength(1);
+    expect(String((errors[0] as Error).message)).toContain('network down');
+  });
 });

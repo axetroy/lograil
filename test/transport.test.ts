@@ -50,6 +50,51 @@ describe('ConsoleTransport', () => {
     t.write(makeEntry(), t.formatter(makeEntry()));
     expect(calls[0]).toBe('CUSTOM');
   });
+
+  it('routes error and fatal to the error method by default', () => {
+    const calls: Record<string, unknown[]> = {};
+    const capture = (lvl: string) => (s: unknown) => void (calls[lvl] ??= []).push(s);
+    // The default `methodMap` maps both `error` and `fatal` to `console.error`.
+    // Override them with a shared capture so we can assert they share the
+    // stderr method without reaching into the real `console`.
+    const t = new ConsoleTransport({
+      methodMap: {
+        trace: capture('trace'),
+        debug: capture('debug'),
+        info: capture('info'),
+        warn: capture('warn'),
+        error: capture('error'),
+        fatal: capture('error'),
+      },
+    });
+    t.write(makeEntry({ levelName: 'error', level: LOG_LEVELS.error }), 'e');
+    t.write(makeEntry({ levelName: 'fatal', level: LOG_LEVELS.fatal }), 'f');
+    expect(calls.error).toHaveLength(2); // both error and fatal route to error
+  });
+
+  it('routes extra levels to stderr via stderrLevels', () => {
+    const calls: Record<string, unknown[]> = {};
+    const capture = (lvl: string) => (s: unknown) => void (calls[lvl] ??= []).push(s);
+    const t = new ConsoleTransport({
+      stderrLevels: ['warn'],
+      methodMap: {
+        trace: capture('trace'),
+        debug: capture('debug'),
+        info: capture('info'),
+        warn: capture('warn'),
+        error: capture('error'),
+        fatal: capture('fatal'),
+      },
+    });
+    // Levels we did NOT list still use their `methodMap` entry.
+    t.write(makeEntry({ levelName: 'info', level: LOG_LEVELS.info }), 'i');
+    expect(calls.info).toHaveLength(1);
+    // `warn` is remapped to `console.error` (real stderr) by `stderrLevels`,
+    // which overrides the `methodMap` entry — so the `warn` capture is never
+    // hit and the entry is routed to stderr instead.
+    t.write(makeEntry({ levelName: 'warn', level: LOG_LEVELS.warn }), 'w');
+    expect(calls.warn).toBeUndefined();
+  });
 });
 
 describe('RotatingFileTransport (no rotation, daily:false)', () => {
