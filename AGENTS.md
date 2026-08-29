@@ -43,6 +43,15 @@ Guidance for AI coding agents working on **lograil** — a high-performance, sec
 - The browser build swaps `runtime/electron-binding.js` for a browser-safe stub (see `package.json` `browser` field) — don't break that mapping.
 - Prefer adding docs/examples in `docs/` (VitePress) and keep `README.md` concise for humans.
 
+## Documentation wording
+
+Write docs for a normal reader, not for insiders.
+
+- Use plain, everyday language. Say what something does in one short sentence before naming it.
+- Keep sentences short and direct. Prefer simple commands over long explanations.
+- Don't pile up jargon. If a technical term is unavoidable, explain it in plain words the first time it appears (e.g. "transport（把日志送到哪里的出口，比如文件或控制台）").
+- Keep the English and Chinese docs in sync — Chinese is the source of truth.
+
 ## Releasing
 
 - A version tag (`v*`) pushed to GitHub triggers `.github/workflows/release.yml`, which runs in order:
