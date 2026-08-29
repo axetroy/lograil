@@ -28,4 +28,7 @@ jobs:
   verify:
     uses: ./.github/workflows/verify.yml
     with:
-      electron_real: ${{ inputs.electron_real }}
+      # Only forward the input on manual dispatch; on push/PR `inputs` is empty
+      # and passing '' to a boolean input is invalid. Omitting it lets the
+      # reusable workflow fall back to its `default: false`.
+      electron_real: ${{ github.event_name == 'workflow_dispatch' && inputs.electron_real || false }}
