@@ -57,9 +57,7 @@ export default defineComponent({
         },
         [
           h('option', { value: '', disabled: true }, current.value || 'version'),
-          ...versions.value.map((v) =>
-            h('option', { value: v, selected: v === current.value }, v),
-          ),
+          ...versions.value.map((v) => h('option', { value: v, selected: v === current.value }, v)),
         ],
       );
   },
