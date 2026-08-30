@@ -90,7 +90,8 @@ interface NodeRuntimeOptions {
 }
 
 interface ElectronMainRuntimeOptions {
-  // log file names always contain the app name; fixed dir: <appData>/Lograil
+  // log files use appName main/renderer; default dir: app.getPath('logs')
+  // (override via fileTransportOptions: { dir })
   fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>;
   disableFile?: boolean;
   receiveFromRenderer?: boolean; // default true

@@ -23,14 +23,15 @@ app.whenReady().then(() => {
 ```
 
 That's all. The main process logs to the console **and** a daily rotating file
-under `<appData>/Lograil/`. Renderer logs arrive over IPC and are written to a
+under the app's `logs` directory (`app.getPath('logs')`, namespaced by the app
+name). Renderer logs arrive over IPC and are written to a
 **separate** daily rotating file so the two processes never mix:
 
-- `main.{YYYY-MM-DD}.{01-99}.log` — entries from the **main** process
-- `renderer.{YYYY-MM-DD}.{01-99}.log` — entries from **renderer** processes
+- `main.{YYYY-MM-DD}.log` — entries from the **main** process
+- `renderer.{YYYY-MM-DD}.log` — entries from **renderer** processes
 
-The filenames are fixed (no `appName` needed); the files live under
-`<appData>/Lograil/` so they stay isolated per installed app.
+The log files use `appName` `main` / `renderer`; they live under the app's
+`logs` directory so they stay isolated per installed app.
 
 ### Renderer process
 
@@ -176,7 +177,8 @@ import { createLogger, createElectronMainRuntime } from 'lograil';
 
 const log = createLogger({
   runtime: createElectronMainRuntime({
-    // log file names always contain the app name; fixed dir: <appData>/Lograil
+    // log files use appName main/renderer; default dir: app.getPath('logs')
+    // (override via fileTransportOptions: { dir })
     receiveFromRenderer: true, // default — receive renderer logs over IPC
   }),
 });

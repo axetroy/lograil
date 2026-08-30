@@ -85,7 +85,8 @@ interface NodeRuntimeOptions {
 }
 
 interface ElectronMainRuntimeOptions {
-  // 日志文件名始终包含应用名；固定目录：<appData>/Lograil
+  // 日志文件用 appName main/renderer；默认目录：app.getPath('logs')
+  // （可用 fileTransportOptions: { dir } 覆盖）
   fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>;
   disableFile?: boolean;
   receiveFromRenderer?: boolean; // 默认 true

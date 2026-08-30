@@ -19,7 +19,7 @@ app.whenReady().then(() => {
 });
 ```
 
-仅此而已。主进程会输出到控制台 **和** `<appData>/Lograil/` 下的每日滚动文件（分别为 `main.{YYYY-MM-DD}.{01-99}.log` 与 `renderer.{YYYY-MM-DD}.{01-99}.log`），并自动通过 IPC 接收渲染进程发来的日志。
+仅此而已。主进程会输出到控制台 **和** 应用 `logs` 目录（`app.getPath('logs')`，按应用名隔离）下的每日滚动文件（分别为 `main.{YYYY-MM-DD}.log` 与 `renderer.{YYYY-MM-DD}.log`），并自动通过 IPC 接收渲染进程发来的日志。
 
 ### 渲染进程
 
@@ -142,7 +142,8 @@ import { createLogger, createElectronMainRuntime } from 'lograil';
 
 const log = createLogger({
   runtime: createElectronMainRuntime({
-    // 日志文件路径固定：<appData>/Lograil/{main,renderer}.log
+    // 日志文件用 appName main/renderer；默认目录：app.getPath('logs')
+    // （可用 fileTransportOptions: { dir } 覆盖）
     receiveFromRenderer: true, // 默认 —— 通过 IPC 接收渲染进程日志
   }),
 });

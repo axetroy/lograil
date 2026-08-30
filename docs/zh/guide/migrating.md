@@ -9,7 +9,7 @@
 **不需要**配置 `transports`，也**不需要**写 IPC 对接代码：
 
 - 在**渲染进程**中，日志既写本地 console，又自动经 IPC 转发到主进程。
-- 在**主进程**中，日志写 console 和 `<appData>/Lograil/` 下的按日轮转文件；渲染进程
+- 在**主进程**中，日志写 console 和 应用 `logs` 目录（`app.getPath('logs')`）下的按日轮转文件；渲染进程
   日志经 IPC 接收后写入**独立**的 `renderer.{date}.log`，两个进程永不混在一起。
 
 | `electron-log` | `lograil`（零配置默认） |
@@ -17,7 +17,7 @@
 | `log.info('hi', meta)` | `logger.info('hi', meta)` |
 | `log.scope('worker')` | `logger.scope('worker', { /* ctx */ })` / `logger.child({ context })` |
 | `log.transports.console.level = 'info'` | 在 logger 上设 `level`——console transport 已自动添加 |
-| `log.transports.file.fileName = 'app.log'` | 自动：`<appData>/Lograil/main.log`（+ `renderer.log`） |
+| `log.transports.file.fileName = 'app.log'` | 自动：`<logs>/main.log`（+ `renderer.log`） |
 | `log.transports.console.format = '[{level}] {text}'` | `ConsoleTransport` 的 formatter（通过自定义 runtime 覆盖） |
 | `log.variables = { ... }` / `log.context` | `logger.setContext(key, value)` / `mergeContext` |
 | `log.hooks.process`（改写条目） | 带 `onEntry` 的 `Plugin` |

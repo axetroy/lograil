@@ -13,15 +13,16 @@ to configure and **no** IPC wiring to write:
 - In the **renderer**, logs go to the local console *and* are forwarded to the
   main process over IPC automatically.
 - In the **main**, logs go to the console *and* a daily rotating file under
-  `<appData>/Lograil/`; renderer entries are received over IPC and written to a
-  **separate** `renderer.{date}.log` so the two processes never mix.
+  the app's `logs` directory (`app.getPath('logs')`); renderer entries are
+  received over IPC and written to a **separate** `renderer.{date}.log` so the
+  two processes never mix.
 
 | `electron-log` | `lograil` (zero-config default) |
 | --- | --- |
 | `log.info('hi', meta)` | `logger.info('hi', meta)` |
 | `log.scope('worker')` | `logger.scope('worker', { /* ctx */ })` / `logger.child({ context })` |
 | `log.transports.console.level = 'info'` | set `level` on the logger — the console transport is added automatically |
-| `log.transports.file.fileName = 'app.log'` | automatic: `<appData>/Lograil/main.log` (+ `renderer.log`) |
+| `log.transports.file.fileName = 'app.log'` | automatic: `<logs>/main.log` (+ `renderer.log`) |
 | `log.transports.console.format = '[{level}] {text}'` | `ConsoleTransport` formatter (override via a custom runtime) |
 | `log.variables = { ... }` / `log.context` | `logger.setContext(key, value)` / `mergeContext` |
 | `log.hooks.process` (rewrite entries) | a `Plugin` with `onEntry` |

@@ -44,12 +44,12 @@ describe('createElectronMainRuntime', () => {
     expect(ts.some((t) => t instanceof FileTransport)).toBe(true);
   });
 
-  it('derives the default log path from app.getPath("appData")', () => {
+  it('derives the default log path from app.getPath("logs")', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
     const file = ts.find((t) => t instanceof FileTransport) as FileTransport;
-    // appName 'main' under `<appData>/Lograil`.
-    expect(getPath).toHaveBeenCalledWith('appData');
+    // appName 'main' under the app's `logs` directory.
+    expect(getPath).toHaveBeenCalledWith('logs');
     expect(file.name).toContain('file:main');
   });
 
@@ -73,7 +73,7 @@ describe('createElectronMainRuntime', () => {
     expect(ipcRemove).toHaveBeenCalled();
   });
 
-  it('uses fixed main.log / renderer.log base names under <appData>/Lograil', () => {
+  it('uses fixed main / renderer base names under the app logs directory', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
     const files = ts.filter((t): t is FileTransport => t instanceof FileTransport);

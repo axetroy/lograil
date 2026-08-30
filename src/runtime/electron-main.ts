@@ -17,26 +17,34 @@ export interface ElectronMainRuntimeOptions {
   /**
    * Listen for renderer entries over IPC and write them to the dedicated
    * `renderer.{date}.log` file (default `true`). Main-process entries
-   * go to `main.{date}.log`. Both paths are fixed under `<appData>/Lograil`
-   * and cannot be customized.
+   * go to `main.{date}.log`. By default both land under the app's `logs`
+   * directory (`app.getPath('logs')`); pass `fileTransportOptions: { dir }`
+   * to place them elsewhere.
    */
   receiveFromRenderer?: boolean;
 }
 
-/** Log directory: `<appData>/Lograil`, or the temp dir when Electron is absent. */
+/**
+ * Log directory for the Electron main runtime. Prefers Electron's dedicated
+ * `logs` path (e.g. `<userData>/logs`, already namespaced by the app name so
+ * multiple apps never collide), falling back to `<appData>/Logs` and finally
+ * the OS temp dir if Electron is unavailable or `app` is not ready.
+ */
 function defaultElectronLogDir(): string {
-  let dir = tmpdir();
   const app = getElectronApp();
   if (app?.getPath) {
     try {
-      // Store logs under `<appData>/Lograil` (e.g.
-      // %APPDATA%/Lograil on Windows) rather than the OS logs dir.
-      dir = join(app.getPath('appData'), 'Lograil');
+      return app.getPath('logs');
+    } catch {
+      /* app not ready yet — try the next fallback */
+    }
+    try {
+      return join(app.getPath('appData'), 'Logs');
     } catch {
       /* ignore */
     }
   }
-  return dir;
+  return tmpdir();
 }
 
 /**
