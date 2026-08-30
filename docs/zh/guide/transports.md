@@ -86,7 +86,10 @@ new FileTransport({
 所有文件模式都可以加上 `maxTotalSize` 与 `maxAge`。它们独立于各模式自带的 `maxFiles` 限制，且在所有模式下生效，但只有**真正产生多个文件**的 `rotate-*` 模式才会有实际作用。当前正在写入的活动文件永远不会被删除。
 
 - `maxTotalSize: number` —— 从最旧的历史文件开始删除，直到 **活动文件 + 历史文件** 的总体积降到这个字节数以下。默认 `Infinity`（不限制）。
-- `maxAge: number` —— 删除修改时间早于该毫秒数的历史文件。默认 `undefined`（不限制）。
+- `maxAge: number` —— 删除修改时间早于该毫秒数的历史文件。
+  - `undefined` 或 `-1`（默认）：不限制。
+  - `0`：立即删除所有历史文件。
+  - `>0`：毫秒数阈值。
 
 `rotate-size` 示例：
 ```ts

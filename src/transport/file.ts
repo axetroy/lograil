@@ -1,5 +1,5 @@
 import { mkdir, open, rename, rm, stat, readdir } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { LogEntry } from '../types.js';
 import type { Formatter } from '../pipeline/formatter.js';
@@ -30,7 +30,10 @@ export interface FileBaseOptions {
   /**
    * Global cap on file age. Any owned file (matched by `${appName}.*.${ext}`,
    * excluding the active file) whose modification time is older than
-   * `maxAge` milliseconds is deleted. Defaults to `undefined` (no limit).
+   * `maxAge` milliseconds is deleted.
+   * - `undefined` or `-1` (default): no limit.
+   * - `0`: delete all history files immediately.
+   * - `>0`: threshold in milliseconds.
    */
   maxAge?: number;
 }
@@ -134,26 +137,33 @@ interface FileIo {
   appName: string;
   /** Close the current file handle so a rotator can reopen a new path. */
   closeHandle(): Promise<void>;
+  /** Files this transport has created — trimRing/caps only touch these. */
+  owned: Set<string>;
 }
 
 // ---- shared helpers -------------------------------------------------------
 
 /** Best-effort cap: delete the oldest bucket/generation files beyond `maxFiles`.
- * Lenient by design — custom `fileName()` shapes are user-defined, so we only
- * match the conventional `${app}.<suffix>.${ext}` names. */
+ * Only touches files the transport has explicitly created (tracked in `owned`). */
 async function trimRing(
   dir: string,
   appName: string,
   ext: string,
   maxFiles: number,
+  owned: Set<string>,
 ): Promise<void> {
+  // maxFiles<=1 → no cap configured; skip trimming.
   if (maxFiles <= 1) return;
+  const keep = maxFiles - 1;
   try {
-    const entries = (await readdir(dir)).filter((f) => f.startsWith(`${appName}.`));
-    const backups = entries.filter((f) => f !== `${appName}.${ext}`).sort();
-    const excess = backups.length - (maxFiles - 1);
+    const backups = (await readdir(dir))
+      .filter((f) => owned.has(f) && f !== `${appName}.${ext}`)
+      .sort();
+    const excess = backups.length - keep;
     for (let i = 0; i < excess; i++) {
-      await rm(join(dir, backups[i]), { force: true }).catch(() => {});
+      const toDelete = backups[i];
+      await rm(join(dir, toDelete), { force: true }).catch(() => {});
+      owned.delete(toDelete);
     }
   } catch {
     /* ignore */
@@ -169,40 +179,29 @@ async function trimRing(
  */
 async function enforceGlobalCaps(params: {
   dir: string;
-  appName: string;
-  ext: string;
   activePath: string;
-  maxTotalSize: number; // Infinity = no limit
-  maxAge: number; // ms; 0 / NaN = no limit
-  now: number; // ms epoch
+  maxTotalSize: number;
+  maxAge: number; // -1 = no limit, 0 = delete all, >0 = threshold ms
+  now: number;
+  owned: Set<string>;
 }): Promise<void> {
-  const { dir, appName, ext, activePath, maxTotalSize, maxAge, now } = params;
-  if (!Number.isFinite(maxTotalSize) && !(maxAge > 0)) return;
+  const { dir, activePath, maxTotalSize, maxAge, now, owned } = params;
+  if (!Number.isFinite(maxTotalSize) && maxAge < 0) return;
   try {
-    const prefix = `${appName}.`;
-    const suffix = `.${ext}`;
-    const names = (await readdir(dir)).filter(
-      (f) => f.startsWith(prefix) && f.endsWith(suffix) && join(dir, f) !== activePath,
-    );
+    const names = (await readdir(dir)).filter((f) => owned.has(f) && join(dir, f) !== activePath);
     const files = await Promise.all(
       names.map(async (f) => {
-        let size = 0;
-        let mtimeMs = 0;
         try {
           const s = await stat(join(dir, f));
-          size = s.size;
-          mtimeMs = s.mtimeMs;
+          return { name: f, size: s.size, mtimeMs: s.mtimeMs };
         } catch {
-          /* unstatable — treat as smallest/oldest so it gets cleaned first */
+          return null; // skip unstatable files — no infinite delete loop
         }
-        return { name: f, size, mtimeMs };
       }),
     );
-    // Oldest first.
-    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    const valid = files.filter((f): f is NonNullable<typeof f> => f !== null);
+    valid.sort((a, b) => a.mtimeMs - b.mtimeMs);
 
-    // Size of the active file (never deleted, but counts toward the cap so the
-    // total disk footprint stays under `maxTotalSize`).
     let activeSize = 0;
     try {
       activeSize = (await stat(activePath)).size;
@@ -211,18 +210,17 @@ async function enforceGlobalCaps(params: {
     }
 
     const toDelete: string[] = [];
-    // Age cap: drop anything older than the threshold.
-    if (maxAge > 0) {
-      const cutoff = now - maxAge;
-      for (const f of files) {
-        if (f.mtimeMs < cutoff) toDelete.push(f.name);
+    // Age cap: drop anything older than the threshold (0 = delete all).
+    if (maxAge >= 0) {
+      for (const f of valid) {
+        if (maxAge === 0 || now - f.mtimeMs > maxAge) toDelete.push(f.name);
       }
     }
     // Size cap: drop oldest history files until active + history is under the limit.
     if (Number.isFinite(maxTotalSize)) {
       let total = activeSize;
-      for (const f of files) total += f.size;
-      for (const f of files) {
+      for (const f of valid) total += f.size;
+      for (const f of valid) {
         if (total <= maxTotalSize) break;
         if (!toDelete.includes(f.name)) {
           toDelete.push(f.name);
@@ -230,7 +228,10 @@ async function enforceGlobalCaps(params: {
         }
       }
     }
-    await Promise.all(toDelete.map((f) => rm(join(dir, f), { force: true }).catch(() => {})));
+    for (const f of toDelete) {
+      await rm(join(dir, f), { force: true }).catch(() => {});
+      owned.delete(f);
+    }
   } catch {
     /* ignore */
   }
@@ -246,8 +247,8 @@ class SingleRotator implements Rotator {
   activePath(): string {
     return this.path;
   }
-  async prepare(): Promise<boolean> {
-    /* never switches */
+  async prepare(_bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
+    io.owned.add(basename(this.path));
     return false;
   }
   reset(): void {
@@ -271,6 +272,8 @@ class TruncateRotator implements Rotator {
     return this.path;
   }
   async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
+    io.owned.add(basename(this.path));
+    io.owned.add(basename(this.backup));
     let size = 0;
     try {
       size = (await stat(this.path)).size;
@@ -282,8 +285,11 @@ class TruncateRotator implements Rotator {
       // Remove any previous backup first: on Windows `rename` refuses to
       // overwrite an existing target, which would otherwise block truncation.
       await rm(this.backup, { force: true }).catch(() => {});
+      io.owned.delete(basename(this.backup));
       try {
         await rename(this.path, this.backup);
+        io.owned.delete(basename(this.path));
+        io.owned.add(basename(this.backup));
         return true; // truncated → a new active file was started
       } catch {
         /* nothing to back up yet */
@@ -317,6 +323,7 @@ class SizeRotator implements Rotator {
     return join(io.dir, this.fileName(io.appName, index, io.ext));
   }
   async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
+    io.owned.add(basename(this.active));
     let size = 0;
     try {
       size = (await stat(this.active)).size;
@@ -328,13 +335,19 @@ class SizeRotator implements Rotator {
       const gens = this.maxFiles - 1;
       for (let k = gens; k >= 2; k--) {
         try {
-          await rename(this.genPath(k - 1, io), this.genPath(k, io));
+          const from = this.genPath(k - 1, io);
+          const to = this.genPath(k, io);
+          await rename(from, to);
+          io.owned.delete(basename(from));
+          io.owned.add(basename(to));
         } catch {
           /* missing generation — skip */
         }
       }
       try {
         await rename(this.active, this.genPath(1, io));
+        io.owned.delete(basename(this.active));
+        io.owned.add(basename(this.genPath(1, io)));
       } catch {
         /* nothing to rotate yet */
       }
@@ -401,22 +414,25 @@ class TimeRotator implements Rotator {
       const existing = await this.latestExistingStamp(stamp);
       this.currentStamp = existing ?? stamp;
       this.path = this.stampPath(this.currentStamp);
+      io.owned.add(basename(this.path));
       if (existing && existing !== stamp) {
         // Bucket already rolled over; open the new one and drop stale files.
         this.currentStamp = stamp;
         await io.closeHandle();
         this.path = this.stampPath(stamp);
-        await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0);
+        io.owned.add(basename(this.path));
+        await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
         return true;
       }
-      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0);
+      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
       return false;
     }
     if (stamp !== this.currentStamp) {
       this.currentStamp = stamp;
       await io.closeHandle();
       this.path = this.stampPath(stamp);
-      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0);
+      io.owned.add(basename(this.path));
+      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
       return true;
     }
     return false;
@@ -461,7 +477,8 @@ class CustomRotator implements Rotator {
       this.seq += 1;
       await io.closeHandle();
       this.path = join(io.dir, this.fileName(io.appName, this.seq, io.ext));
-      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0);
+      io.owned.add(basename(this.path));
+      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
       return true;
     }
     return false;
@@ -497,9 +514,13 @@ export class FileTransport implements Transport {
   private readonly rotator: Rotator;
   private readonly clock: () => Date;
   private readonly maxTotalSize: number; // Infinity = no limit
-  private readonly maxAge: number; // ms; 0 = no limit
+  private readonly maxAge: number; // ms; -1 = no limit, 0 = delete all, >0 = threshold
+  private readonly owned = new Set<string>();
+  private closed = false;
+  private reportedFirstError = false;
   private handle: Awaited<ReturnType<typeof open>> | null = null;
   private queue: Promise<void> = Promise.resolve();
+  private ownedScanned = false;
   // Throttled periodic capacity check (in addition to the mandatory check that
   // runs after every rotation): inspect at most once per `PERIODIC_EVERY`
   // writes and at most once per `PERIODIC_INTERVAL_MS`.
@@ -518,7 +539,7 @@ export class FileTransport implements Transport {
     this.formatter = options.formatter ?? createJsonFormatter();
     this.filter = options.filter;
     this.maxTotalSize = options.maxTotalSize ?? Infinity;
-    this.maxAge = options.maxAge && options.maxAge > 0 ? options.maxAge : 0;
+    this.maxAge = options.maxAge ?? -1;
 
     switch (options.mode) {
       case 'single':
@@ -547,15 +568,35 @@ export class FileTransport implements Transport {
       ext: this.ext,
       appName: options.appName,
       closeHandle: () => this.closeHandle(),
+      owned: this.owned,
     };
   }
 
   private async ensureHandle(): Promise<Awaited<ReturnType<typeof open>>> {
     if (!this.handle) {
+      await this.scanOwned();
       await mkdir(dirname(this.rotator.activePath()), { recursive: true });
       this.handle = await open(this.rotator.activePath(), 'a');
+      this.io.owned.add(basename(this.rotator.activePath()));
     }
     return this.handle;
+  }
+
+  private async scanOwned(): Promise<void> {
+    if (this.ownedScanned) return;
+    this.ownedScanned = true;
+    try {
+      const files = await readdir(this.dir);
+      const prefix = `${this.io.appName}.`;
+      const suffix = `.${this.io.ext}`;
+      for (const f of files) {
+        if (f.startsWith(prefix) && f.endsWith(suffix)) {
+          this.io.owned.add(f);
+        }
+      }
+    } catch {
+      /* ignore scan failures */
+    }
   }
 
   private async closeHandle(): Promise<void> {
@@ -566,7 +607,7 @@ export class FileTransport implements Transport {
   }
 
   write(entry: LogEntry, formatted: string): void | Promise<void> {
-    if (this.filter && !this.filter(entry)) return; // dropped by filter
+    if (this.closed || (this.filter && !this.filter(entry))) return;
     const line = formatted + '\n';
     const bytes = Buffer.byteLength(line, 'utf8');
     const now = this.clock();
@@ -581,12 +622,11 @@ export class FileTransport implements Transport {
         if (rotated) {
           await enforceGlobalCaps({
             dir: this.dir,
-            appName: this.io.appName,
-            ext: this.ext,
             activePath: this.rotator.activePath(),
             maxTotalSize: this.maxTotalSize,
             maxAge: this.maxAge,
             now: nowMs,
+            owned: this.io.owned,
           });
         }
         // Throttled periodic check so caps are still honored between rotations
@@ -600,19 +640,21 @@ export class FileTransport implements Transport {
           this.lastCheckMs = nowMs;
           await enforceGlobalCaps({
             dir: this.dir,
-            appName: this.io.appName,
-            ext: this.ext,
             activePath: this.rotator.activePath(),
             maxTotalSize: this.maxTotalSize,
             maxAge: this.maxAge,
             now: nowMs,
+            owned: this.io.owned,
           });
         }
         const handle = await this.ensureHandle();
         await handle.write(line);
       })
-      .catch(() => {
-        /* swallow write errors to avoid crashing the app */
+      .catch((err) => {
+        if (!this.reportedFirstError) {
+          this.reportedFirstError = true;
+          console.error('[lograil] FileTransport write error (subsequent errors suppressed):', err);
+        }
       });
     this.queue = task;
     return task;
@@ -626,5 +668,6 @@ export class FileTransport implements Transport {
     await this.queue;
     await this.closeHandle();
     this.rotator.reset();
+    this.closed = true;
   }
 }

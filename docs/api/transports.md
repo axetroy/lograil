@@ -49,7 +49,12 @@ interface FileBaseOptions {
   name?: string;
   /** Global cap on total bytes of all owned files (active + history). Default Infinity. */
   maxTotalSize?: number;
-  /** Global cap on file age in ms. Default undefined (no limit). */
+  /** 
+   * Global cap on file age in ms.
+   * - `undefined` or `-1` (default): no limit.
+   * - `0`: delete all history files immediately.
+   * - `>0`: threshold in milliseconds.
+   */
   maxAge?: number;
 }
 

@@ -97,7 +97,10 @@ files (i.e. any of the `rotate-*` modes). The active file is never deleted.
   size of the active file + history falls under this byte limit. Default:
   `Infinity` (no limit).
 - `maxAge: number` — delete history files whose modification time is older than
-  this many milliseconds. Default: `undefined` (no limit).
+  this many milliseconds.
+  - `undefined` or `-1` (default): no limit.
+  - `0`: delete all history files immediately.
+  - `>0`: threshold in milliseconds.
 
 Example with `rotate-size`:
 ```ts

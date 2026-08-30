@@ -45,7 +45,12 @@ interface FileBaseOptions {
   name?: string;
   /** 所有文件（活动 + 历史）的总体积上限。默认 Infinity。 */
   maxTotalSize?: number;
-  /** 文件最大存活毫秒数。默认 undefined（不限制）。 */
+  /** 
+   * 文件最大存活毫秒数。
+   * - `undefined` 或 `-1`（默认）：不限制。
+   * - `0`：立即删除所有历史文件。
+   * - `>0`：毫秒数阈值。
+   */
   maxAge?: number;
 }
 
