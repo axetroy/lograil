@@ -96,9 +96,11 @@ describe('bundler integration: browser build', () => {
     const code = await bundle('src/index.ts');
 
     // Dynamic-import the ESM bundle to verify it loads without throwing.
-    const { writeFileSync, unlinkSync } = await import('node:fs');
+    const { mkdirSync, writeFileSync, unlinkSync } = await import('node:fs');
+    const { dirname } = await import('node:path');
     const { pathToFileURL } = await import('node:url');
     const tmpFile = join(ROOT, 'dist', '_browser-test.mjs');
+    mkdirSync(dirname(tmpFile), { recursive: true });
     writeFileSync(tmpFile, code);
     try {
       const mod = await import(pathToFileURL(tmpFile).href);
