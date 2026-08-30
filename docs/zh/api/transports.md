@@ -43,6 +43,10 @@ interface FileBaseOptions {
   formatter?: Formatter;
   filter?: (entry: LogEntry) => boolean; // 返回 false 时丢弃该条目
   name?: string;
+  /** 所有文件（活动 + 历史）的总体积上限。默认 Infinity。 */
+  maxTotalSize?: number;
+  /** 文件最大存活毫秒数。默认 undefined（不限制）。 */
+  maxAge?: number;
 }
 
 // 1.1 — 单文件，一直追加到磁盘满

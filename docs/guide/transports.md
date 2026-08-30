@@ -86,6 +86,31 @@ new FileTransport({
 });
 ```
 
+### Global capacity caps (optional)
+
+Both `maxTotalSize` and `maxAge` can be added to **any** file mode. They are
+evaluated independently of the per-mode `maxFiles` limit and work across all
+modes, but only have practical effect when the mode actually produces multiple
+files (i.e. any of the `rotate-*` modes). The active file is never deleted.
+
+- `maxTotalSize: number` — delete the oldest history files until the combined
+  size of the active file + history falls under this byte limit. Default:
+  `Infinity` (no limit).
+- `maxAge: number` — delete history files whose modification time is older than
+  this many milliseconds. Default: `undefined` (no limit).
+
+Example with `rotate-size`:
+```ts
+new FileTransport({
+  mode: 'rotate-size',
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024,
+  maxFiles: 100,
+  maxTotalSize: 100 * 1024 * 1024, // keep at most 100 MB of logs total
+  maxAge: 30 * 24 * 60 * 60 * 1000, // and drop anything older than 30 days
+});
+```
+
 - **`single`** — one `<appName>.log` file, appended forever (until the disk fills).
 - **`single-truncate`** — same single file, but once `maxSize` would be exceeded the
   current content is renamed to `<appName>.bak` and the original is truncated.

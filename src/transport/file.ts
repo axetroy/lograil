@@ -19,6 +19,20 @@ export interface FileBaseOptions {
   name?: string;
   /** File extension without the dot. Defaults to `'log'`. */
   ext?: string;
+  /**
+   * Global cap on the **total** bytes of every file this transport owns in
+   * `dir` (matched by the `${appName}.*.${ext}` shape). When exceeded, the
+   * oldest files are deleted until back under the cap. Defaults to `Infinity`
+   * (no limit). Works alongside, and independently of, `maxFiles` — whichever
+   * limit is hit first trims from the oldest.
+   */
+  maxTotalSize?: number;
+  /**
+   * Global cap on file age. Any owned file (matched by `${appName}.*.${ext}`,
+   * excluding the active file) whose modification time is older than
+   * `maxAge` milliseconds is deleted. Defaults to `undefined` (no limit).
+   */
+  maxAge?: number;
 }
 
 /** 1.1 — write to one fixed file, appending forever until the disk is full. */
@@ -105,8 +119,10 @@ function timeStamp(d: Date, unit: 'hour' | 'day'): string {
 interface Rotator {
   /** Path the next line will be written to. */
   activePath(): string;
-  /** Before writing `bytes`, switch files if the strategy requires it. */
-  prepare(bytes: number, entry: LogEntry, now: Date, fs: FileIo): Promise<void>;
+  /** Before writing `bytes`, switch files if the strategy requires it.
+   * Resolves to `true` when a rotation actually happened (a new file was
+   * opened), so the transport can run its global capacity check. */
+  prepare(bytes: number, entry: LogEntry, now: Date, fs: FileIo): Promise<boolean>;
   /** Reset transient state after the transport is closed (so a reopen re-stats). */
   reset(): void;
 }
@@ -144,6 +160,82 @@ async function trimRing(
   }
 }
 
+/**
+ * Global capacity guard: alongside (and independent of) per-mode `maxFiles`,
+ * delete the **oldest** owned files when either a total-size cap or an age cap
+ * is exceeded. "Oldest" is judged by modification time so it works uniformly
+ * across every mode. The active file is never deleted, even if it is the
+ * oldest. Best-effort: any fs error is swallowed.
+ */
+async function enforceGlobalCaps(params: {
+  dir: string;
+  appName: string;
+  ext: string;
+  activePath: string;
+  maxTotalSize: number; // Infinity = no limit
+  maxAge: number; // ms; 0 / NaN = no limit
+  now: number; // ms epoch
+}): Promise<void> {
+  const { dir, appName, ext, activePath, maxTotalSize, maxAge, now } = params;
+  if (!Number.isFinite(maxTotalSize) && !(maxAge > 0)) return;
+  try {
+    const prefix = `${appName}.`;
+    const suffix = `.${ext}`;
+    const names = (await readdir(dir)).filter(
+      (f) => f.startsWith(prefix) && f.endsWith(suffix) && join(dir, f) !== activePath,
+    );
+    const files = await Promise.all(
+      names.map(async (f) => {
+        let size = 0;
+        let mtimeMs = 0;
+        try {
+          const s = await stat(join(dir, f));
+          size = s.size;
+          mtimeMs = s.mtimeMs;
+        } catch {
+          /* unstatable — treat as smallest/oldest so it gets cleaned first */
+        }
+        return { name: f, size, mtimeMs };
+      }),
+    );
+    // Oldest first.
+    files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+    // Size of the active file (never deleted, but counts toward the cap so the
+    // total disk footprint stays under `maxTotalSize`).
+    let activeSize = 0;
+    try {
+      activeSize = (await stat(activePath)).size;
+    } catch {
+      /* active file not created yet */
+    }
+
+    const toDelete: string[] = [];
+    // Age cap: drop anything older than the threshold.
+    if (maxAge > 0) {
+      const cutoff = now - maxAge;
+      for (const f of files) {
+        if (f.mtimeMs < cutoff) toDelete.push(f.name);
+      }
+    }
+    // Size cap: drop oldest history files until active + history is under the limit.
+    if (Number.isFinite(maxTotalSize)) {
+      let total = activeSize;
+      for (const f of files) total += f.size;
+      for (const f of files) {
+        if (total <= maxTotalSize) break;
+        if (!toDelete.includes(f.name)) {
+          toDelete.push(f.name);
+          total -= f.size;
+        }
+      }
+    }
+    await Promise.all(toDelete.map((f) => rm(join(dir, f), { force: true }).catch(() => {})));
+  } catch {
+    /* ignore */
+  }
+}
+
 // ---- 1.1 single -----------------------------------------------------------
 
 class SingleRotator implements Rotator {
@@ -154,8 +246,9 @@ class SingleRotator implements Rotator {
   activePath(): string {
     return this.path;
   }
-  async prepare(): Promise<void> {
+  async prepare(): Promise<boolean> {
     /* never switches */
+    return false;
   }
   reset(): void {
     /* no transient state */
@@ -177,7 +270,7 @@ class TruncateRotator implements Rotator {
   activePath(): string {
     return this.path;
   }
-  async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<void> {
+  async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
     let size = 0;
     try {
       size = (await stat(this.path)).size;
@@ -191,10 +284,12 @@ class TruncateRotator implements Rotator {
       await rm(this.backup, { force: true }).catch(() => {});
       try {
         await rename(this.path, this.backup);
+        return true; // truncated → a new active file was started
       } catch {
         /* nothing to back up yet */
       }
     }
+    return false;
   }
   reset(): void {
     /* no transient state */
@@ -221,7 +316,7 @@ class SizeRotator implements Rotator {
   private genPath(index: number, io: FileIo): string {
     return join(io.dir, this.fileName(io.appName, index, io.ext));
   }
-  async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<void> {
+  async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
     let size = 0;
     try {
       size = (await stat(this.active)).size;
@@ -244,7 +339,9 @@ class SizeRotator implements Rotator {
         /* nothing to rotate yet */
       }
       // Generations are capped by the rename chain above; no extra trim needed.
+      return true;
     }
+    return false;
   }
   reset(): void {
     /* no transient state */
@@ -298,7 +395,7 @@ class TimeRotator implements Rotator {
     }
     return undefined;
   }
-  async prepare(_bytes: number, _entry: LogEntry, now: Date, io: FileIo): Promise<void> {
+  async prepare(_bytes: number, _entry: LogEntry, now: Date, io: FileIo): Promise<boolean> {
     const stamp = timeStamp(now, this.unit);
     if (this.currentStamp === undefined) {
       const existing = await this.latestExistingStamp(stamp);
@@ -309,16 +406,20 @@ class TimeRotator implements Rotator {
         this.currentStamp = stamp;
         await io.closeHandle();
         this.path = this.stampPath(stamp);
+        await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0);
+        return true;
       }
       await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0);
-      return;
+      return false;
     }
     if (stamp !== this.currentStamp) {
       this.currentStamp = stamp;
       await io.closeHandle();
       this.path = this.stampPath(stamp);
       await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0);
+      return true;
     }
+    return false;
   }
   reset(): void {
     this.currentStamp = undefined;
@@ -350,7 +451,7 @@ class CustomRotator implements Rotator {
   activePath(): string {
     return this.path;
   }
-  async prepare(_bytes: number, entry: LogEntry, now: Date, io: FileIo): Promise<void> {
+  async prepare(_bytes: number, entry: LogEntry, now: Date, io: FileIo): Promise<boolean> {
     const ctx: RotateContext = {
       entry,
       size: 0,
@@ -361,7 +462,9 @@ class CustomRotator implements Rotator {
       await io.closeHandle();
       this.path = join(io.dir, this.fileName(io.appName, this.seq, io.ext));
       await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0);
+      return true;
     }
+    return false;
   }
   reset(): void {
     this.seq = 0;
@@ -393,8 +496,17 @@ export class FileTransport implements Transport {
   private readonly io: FileIo;
   private readonly rotator: Rotator;
   private readonly clock: () => Date;
+  private readonly maxTotalSize: number; // Infinity = no limit
+  private readonly maxAge: number; // ms; 0 = no limit
   private handle: Awaited<ReturnType<typeof open>> | null = null;
   private queue: Promise<void> = Promise.resolve();
+  // Throttled periodic capacity check (in addition to the mandatory check that
+  // runs after every rotation): inspect at most once per `PERIODIC_EVERY`
+  // writes and at most once per `PERIODIC_INTERVAL_MS`.
+  private static readonly PERIODIC_EVERY = 256;
+  private static readonly PERIODIC_INTERVAL_MS = 60_000;
+  private writeCount = 0;
+  private lastCheckMs = 0;
 
   constructor(options: FileTransportOptions) {
     if (!options.appName) {
@@ -405,6 +517,8 @@ export class FileTransport implements Transport {
     this.name = options.name ?? `file:${options.appName}`;
     this.formatter = options.formatter ?? createJsonFormatter();
     this.filter = options.filter;
+    this.maxTotalSize = options.maxTotalSize ?? Infinity;
+    this.maxAge = options.maxAge && options.maxAge > 0 ? options.maxAge : 0;
 
     switch (options.mode) {
       case 'single':
@@ -456,9 +570,44 @@ export class FileTransport implements Transport {
     const line = formatted + '\n';
     const bytes = Buffer.byteLength(line, 'utf8');
     const now = this.clock();
+    const nowMs = now.getTime();
     const task = this.queue
       .then(async () => {
-        await this.rotator.prepare(bytes, entry, now, this.io);
+        const rotated = await this.rotator.prepare(bytes, entry, now, this.io);
+        // Run the global cap check only when a rotation just happened (a new
+        // file landed) — that is when stale files can exceed the caps. Non-
+        // rotating modes (e.g. `single`) rely on the throttled periodic check
+        // below, so we never scan the directory on every hot-path write.
+        if (rotated) {
+          await enforceGlobalCaps({
+            dir: this.dir,
+            appName: this.io.appName,
+            ext: this.ext,
+            activePath: this.rotator.activePath(),
+            maxTotalSize: this.maxTotalSize,
+            maxAge: this.maxAge,
+            now: nowMs,
+          });
+        }
+        // Throttled periodic check so caps are still honored between rotations
+        // (or when a mode never rotates). At most once per PERIODIC_EVERY writes
+        // and once per PERIODIC_INTERVAL_MS.
+        this.writeCount++;
+        const due =
+          this.writeCount % FileTransport.PERIODIC_EVERY === 0 &&
+          nowMs - this.lastCheckMs >= FileTransport.PERIODIC_INTERVAL_MS;
+        if (due) {
+          this.lastCheckMs = nowMs;
+          await enforceGlobalCaps({
+            dir: this.dir,
+            appName: this.io.appName,
+            ext: this.ext,
+            activePath: this.rotator.activePath(),
+            maxTotalSize: this.maxTotalSize,
+            maxAge: this.maxAge,
+            now: nowMs,
+          });
+        }
         const handle = await this.ensureHandle();
         await handle.write(line);
       })

@@ -8,6 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { mkdir, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileTransport, createLineFormatter } from '../src/index.js';
@@ -257,5 +258,128 @@ describe('FileTransport - construction', () => {
     await t.close();
     expect(readFileSync(join(dir, 'fmt.log'), 'utf8')).toContain('hi');
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
+  const base = mkdtempSync(join(tmpdir(), 'lograil-caps-'));
+  afterAll(() => rmSync(base, { recursive: true, force: true }));
+
+  // Caps only matter for rotating modes (they produce multiple files). For
+  // `single` (one file, no rotation) the per-file size is governed by
+  // `maxSize`/truncation instead, so caps are intentionally a no-op there.
+
+  it('deletes the oldest history files when total size exceeds maxTotalSize (rotate-size)', async () => {
+    const dir = join(base, 'size');
+    await mkdir(dir, { recursive: true });
+    // Three stale 50-byte history files (non-numeric suffixes so the
+    // rotation rename chain leaves them untouched), oldest first by mtime.
+    for (const [i, name] of ['old1', 'old2', 'old3'].entries()) {
+      const p = join(dir, `cap.${name}.log`);
+      writeFileSync(p, 'x'.repeat(50));
+      const t0 = new Date(2020, 0, 1, 0, 0, i + 1);
+      await utimes(p, t0, t0);
+    }
+    const t = new FileTransport({
+      mode: 'rotate-size',
+      appName: 'cap',
+      dir,
+      ext: 'log',
+      maxSize: 2, // every entry (3 bytes) exceeds this → rotates each write
+      maxFiles: 100, // let maxTotalSize be the only trimming authority
+      maxTotalSize: 105, // active(~4B) + 3×3B + 3×50B = 163 > 105 → drop cap.10 & cap.11
+    });
+    for (let i = 0; i < 3; i++) t.write(entry(`m${i}`), `m${i}`);
+    await t.flush();
+    await t.close();
+    // The active file (cap.log) is never deleted and counts toward the cap, so
+    // the two oldest stale history files are dropped; the newest stale one
+    // (cap.old3.log) plus the freshly rotated generations survive.
+    expect(existsSync(join(dir, 'cap.old1.log'))).toBe(false); // oldest → purged
+    expect(existsSync(join(dir, 'cap.old2.log'))).toBe(false); // 2nd oldest → purged
+    expect(existsSync(join(dir, 'cap.old3.log'))).toBe(true); // newest stale → kept
+    expect(readdirSync(dir)).toContain('cap.log');
+  });
+
+  it('deletes files older than maxAge, keeping the active file (rotate-size)', async () => {
+    const dir = join(base, 'age');
+    await mkdir(dir, { recursive: true });
+    const oldPath = join(dir, 'age.old.log');
+    writeFileSync(oldPath, 'stale');
+    const old = new Date(2020, 0, 1);
+    await utimes(oldPath, old, old);
+    const t = new FileTransport({
+      mode: 'rotate-size',
+      appName: 'age',
+      dir,
+      ext: 'log',
+      maxSize: 2,
+      maxFiles: 100,
+      maxAge: 1000, // anything older than ~1s is purged
+    });
+    for (let i = 0; i < 2; i++) t.write(entry(`m${i}`), `m${i}`);
+    await t.flush();
+    await t.close();
+    expect(existsSync(oldPath)).toBe(false);
+    expect(existsSync(join(dir, 'age.log'))).toBe(true);
+  });
+
+  it('never deletes the active file even if it is the oldest', async () => {
+    const dir = join(base, 'active');
+    await mkdir(dir, { recursive: true });
+    const t = new FileTransport({
+      mode: 'rotate-size',
+      appName: 'act',
+      dir,
+      ext: 'log',
+      maxSize: 2,
+      maxFiles: 100,
+      maxAge: 1, // aggressive: only the just-written active file survives
+    });
+    for (let i = 0; i < 2; i++) t.write(entry(`m${i}`), `m${i}`);
+    await t.flush();
+    // touch the active file old, then trigger another rotation via a write
+    const ap = join(dir, 'act.log');
+    const old = new Date(2020, 0, 1);
+    await utimes(ap, old, old);
+    t.write(entry('again'), 'again');
+    await t.flush();
+    await t.close();
+    expect(existsSync(ap)).toBe(true);
+  });
+
+  it('is a no-op for single mode (per-file size is governed by maxSize instead)', async () => {
+    const dir = join(base, 'single');
+    await mkdir(dir, { recursive: true });
+    // A stale file that would be deleted under a rotating mode.
+    const stale = join(dir, 'sg.1.log');
+    writeFileSync(stale, 'x'.repeat(50));
+    await utimes(stale, new Date(2020, 0, 1), new Date(2020, 0, 1));
+    const t = new FileTransport({
+      mode: 'single',
+      appName: 'sg',
+      dir,
+      ext: 'log',
+      maxTotalSize: 10, // tiny, but irrelevant for single mode
+      maxAge: 1,
+    });
+    t.write(entry('new'), 'new');
+    await t.flush();
+    await t.close();
+    // Single mode never rotates, so the periodic cap check is throttled and the
+    // stale history file is left intact (caps target rotating-mode file sets).
+    expect(existsSync(stale)).toBe(true);
+    expect(existsSync(join(dir, 'sg.log'))).toBe(true);
+  });
+
+  it('keeps everything when no caps are set', async () => {
+    const dir = join(base, 'none');
+    await mkdir(dir, { recursive: true });
+    for (let i = 1; i <= 3; i++) writeFileSync(join(dir, `nc.${i}.log`), 'data');
+    const t = new FileTransport({ mode: 'single', appName: 'nc', dir, ext: 'log' });
+    t.write(entry('new'), 'new');
+    await t.flush();
+    await t.close();
+    expect(readdirSync(dir).filter((f) => f.startsWith('nc.') && f !== 'nc.log')).toHaveLength(3);
   });
 });

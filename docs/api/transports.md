@@ -47,6 +47,10 @@ interface FileBaseOptions {
   formatter?: Formatter;
   filter?: (entry: LogEntry) => boolean; // drop entries when it returns false
   name?: string;
+  /** Global cap on total bytes of all owned files (active + history). Default Infinity. */
+  maxTotalSize?: number;
+  /** Global cap on file age in ms. Default undefined (no limit). */
+  maxAge?: number;
 }
 
 // 1.1 — single fixed file, append until the disk is full

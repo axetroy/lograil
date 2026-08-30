@@ -81,6 +81,25 @@ new FileTransport({
 });
 ```
 
+### 全局容量上限（可选）
+
+所有文件模式都可以加上 `maxTotalSize` 与 `maxAge`。它们独立于各模式自带的 `maxFiles` 限制，且在所有模式下生效，但只有**真正产生多个文件**的 `rotate-*` 模式才会有实际作用。当前正在写入的活动文件永远不会被删除。
+
+- `maxTotalSize: number` —— 从最旧的历史文件开始删除，直到 **活动文件 + 历史文件** 的总体积降到这个字节数以下。默认 `Infinity`（不限制）。
+- `maxAge: number` —— 删除修改时间早于该毫秒数的历史文件。默认 `undefined`（不限制）。
+
+`rotate-size` 示例：
+```ts
+new FileTransport({
+  mode: 'rotate-size',
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024,
+  maxFiles: 100,
+  maxTotalSize: 100 * 1024 * 1024, // 总体积最多 100 MB
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 并丢弃 30 天前的文件
+});
+```
+
 - **`single`** — 单个 `<appName>.log` 文件，一直追加（直到磁盘写满）。
 - **`single-truncate`** — 同样是单文件，但一旦即将超过 `maxSize`，当前内容被改名为 `<appName>.bak`，原文件原地截断。
 - **`rotate-size`** — 当 `size + bytes > maxSize` 时，按 `maxFiles` 推移代际（`app.log` → `app.1.log` → …）。
