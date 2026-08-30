@@ -1,4 +1,4 @@
-import { mkdir, open, rename, stat } from 'node:fs/promises';
+import { mkdir, open, rename, rm, stat, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { LogEntry } from '../types.js';
@@ -116,7 +116,8 @@ export class FileTransport implements Transport {
   private readonly opts: FileTransportOptions;
   private readonly dir: string;
   private readonly ext: string;
-  private readonly now: () => Date;
+  /** Clock source; `rotate-time` reads it both at write time and on restart. */
+  private readonly clock: () => Date;
   private handle: Awaited<ReturnType<typeof open>> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private size = 0;
@@ -134,10 +135,7 @@ export class FileTransport implements Transport {
     }
     this.dir = options.dir ?? tmpdir();
     this.ext = options.ext ?? 'log';
-    this.now =
-      'now' in options && typeof (options as { now?: () => Date }).now === 'function'
-        ? (options as { now: () => Date }).now
-        : () => new Date();
+    this.clock = options.mode === 'rotate-time' && options.now ? options.now : () => new Date();
     this.name = options.name ?? `file:${options.appName}`;
     this.formatter = options.formatter ?? createJsonFormatter();
     this.filter = options.filter;
@@ -166,6 +164,39 @@ export class FileTransport implements Transport {
   private customPath(seq: number): string {
     const o = this.opts as RotateCustomOptions;
     return join(this.dir, o.fileName(o.appName, seq, this.ext));
+  }
+
+  /** Scan the directory for the most recent time-bucket file already on disk
+   * (at or before `upTo`), so a freshly started `rotate-time` transport
+   * continues the ring instead of orphaning yesterday's file. Returns the
+   * stamp, or `undefined`. */
+  private async latestExistingStamp(
+    o: RotateTimeOptions,
+    upTo: string,
+  ): Promise<string | undefined> {
+    try {
+      const ext = this.ext;
+      const app = o.appName;
+      const files = (await readdir(this.dir)).filter(
+        (f) => f.startsWith(`${app}.`) && f.endsWith(`.${ext}`),
+      );
+      // Exact bucket shapes, so we never mistake single/rotate-size/backup
+      // files (app.log, app.N.log, app.bak) for a time bucket:
+      //   day  -> `${app}.YYYY-MM-DD.${ext}`
+      //   hour -> `${app}.YYYY-MM-DD-HH.${ext}`
+      const stampRe = o.unit === 'hour' ? /^\d{4}-\d{2}-\d{2}-\d{2}$/ : /^\d{4}-\d{2}-\d{2}$/;
+      const prefix = `${app}.`;
+      const suffix = `.${ext}`;
+      // Sort ascending; walk from the end, pick the first bucket <= upTo.
+      files.sort();
+      for (let i = files.length - 1; i >= 0; i--) {
+        const stamp = files[i].slice(prefix.length, -suffix.length);
+        if (stampRe.test(stamp) && stamp <= upTo) return stamp;
+      }
+    } catch {
+      /* directory not readable yet — start fresh */
+    }
+    return undefined;
   }
 
   // ---- shared fs plumbing --------------------------------------------------
@@ -205,6 +236,10 @@ export class FileTransport implements Transport {
             this.handle = null;
           }
           const backup = join(this.dir, o.backupName ?? `${o.appName}.bak`);
+          // Remove any previous backup first: on Windows `rename` refuses to
+          // overwrite an existing target, so a stale backup would otherwise
+          // block the truncate and silently leave the active file growing.
+          await rm(backup, { force: true }).catch(() => {});
           try {
             await rename(this.activePath, backup);
           } catch {
@@ -229,8 +264,14 @@ export class FileTransport implements Transport {
       case 'rotate-time': {
         const stamp = timeStamp(now, o.unit);
         if (this.currentStamp === undefined) {
-          this.currentStamp = stamp;
-          this.activePath = this.stampPath(stamp);
+          // On (re)start, adopt the most recent existing time-bucket file that
+          // is not in the future as the starting stamp, so the ring cap counts
+          // pre-restart files too (otherwise a daily file written before
+          // restart would never be trimmed by maxFiles). If none exists we
+          // simply start a fresh bucket for the current stamp.
+          const existing = await this.latestExistingStamp(o, stamp);
+          this.currentStamp = existing ?? stamp;
+          this.activePath = this.stampPath(this.currentStamp);
           await this.rotateTimeRing(o.maxFiles);
         } else if (stamp !== this.currentStamp) {
           this.currentStamp = stamp;
@@ -289,15 +330,14 @@ export class FileTransport implements Transport {
     // We only enforce a soft cap by deleting files that start with appName
     // and carry a numeric/date suffix we can parse; this is intentionally
     // lenient since custom fileName() shapes are user-defined.
-    const fs = await import('node:fs/promises');
     try {
-      const entries = (await fs.readdir(this.dir)).filter((f) =>
+      const entries = (await readdir(this.dir)).filter((f) =>
         f.startsWith(`${this.opts.appName}.`),
       );
       const backups = entries.filter((f) => f !== `${this.opts.appName}.${this.ext}`).sort();
       const excess = backups.length - (maxFiles - 1);
       for (let i = 0; i < excess; i++) {
-        await fs.rm(join(this.dir, backups[i]), { force: true }).catch(() => {});
+        await rm(join(this.dir, backups[i]), { force: true }).catch(() => {});
       }
     } catch {
       /* ignore */
@@ -317,7 +357,7 @@ export class FileTransport implements Transport {
     if (this.filter && !this.filter(entry)) return; // dropped by filter
     const line = formatted + '\n';
     const bytes = Buffer.byteLength(line, 'utf8');
-    const now = this.now();
+    const now = this.clock();
     const task = this.queue
       .then(async () => {
         await this.prepare(bytes, entry, now);
@@ -339,5 +379,6 @@ export class FileTransport implements Transport {
   async close(): Promise<void> {
     await this.queue;
     await this.closeHandle();
+    this.sizeInitialized = false;
   }
 }

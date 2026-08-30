@@ -1,5 +1,13 @@
-import { afterAll, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileTransport, createLineFormatter } from '../src/index.js';
@@ -78,6 +86,29 @@ describe('FileTransport - single-truncate mode (1.2)', () => {
     await t.close();
     expect(existsSync(join(dir, 'ring2.backup'))).toBe(true);
   });
+
+  it('truncates even when a stale backup already exists', async () => {
+    // Pre-create a backup (simulates a previous run / Windows where rename
+    // refuses to overwrite). The transport must remove it before backing up.
+    writeFileSync(join(dir, 'ring3.bak'), 'old backup content');
+    const t = new FileTransport({
+      mode: 'single-truncate',
+      appName: 'ring3',
+      dir,
+      ext: 'log',
+      maxSize: 8,
+      backupName: 'ring3.bak',
+    });
+    for (let i = 1; i <= 10; i++) t.write(entry(String(i)), String(i));
+    await t.flush();
+    await t.close();
+    // active file was reset to a fresh, small size (truncation happened)
+    const size = statSync(join(dir, 'ring3.log')).size;
+    expect(size).toBeLessThanOrEqual(8);
+    expect(readFileSync(join(dir, 'ring3.log'), 'utf8')).toContain('10\n');
+    // backup holds the pre-truncation content, not the stale string
+    expect(readFileSync(join(dir, 'ring3.bak'), 'utf8')).not.toContain('old backup content');
+  });
 });
 
 describe('FileTransport - rotate-size mode (2.1)', () => {
@@ -122,11 +153,14 @@ describe('FileTransport - rotate-size mode (2.1)', () => {
 });
 
 describe('FileTransport - rotate-time mode (2.2)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'lograil-rtime-'));
-  const clock = { now: new Date(2024, 0, 1) };
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'lograil-rtime-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it('opens a new dated file on a new day, keeping the old one', async () => {
+    const clock = { now: new Date(2024, 0, 1) };
     const t = new FileTransport({
       mode: 'rotate-time',
       unit: 'day',
@@ -158,6 +192,25 @@ describe('FileTransport - rotate-time mode (2.2)', () => {
     await t.flush();
     await t.close();
     expect(readFileSync(join(dir, 'day_2024-03-03.log'), 'utf8')).toContain('x');
+  });
+
+  it('adopts the most recent existing bucket file on (re)start', async () => {
+    // Simulate a previous run that left a dated file on disk.
+    writeFileSync(join(dir, 'restart.2024-01-01.log'), 'old day\n');
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'restart',
+      dir,
+      ext: 'log',
+      now: () => new Date(2024, 0, 1),
+    });
+    t.write(entry('new'), 'new');
+    await t.flush();
+    await t.close();
+    // Continues writing into the existing bucket file, not a fresh one.
+    expect(readFileSync(join(dir, 'restart.2024-01-01.log'), 'utf8')).toContain('new');
+    expect(readFileSync(join(dir, 'restart.2024-01-01.log'), 'utf8')).toContain('old day');
   });
 });
 
