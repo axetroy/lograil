@@ -1,43 +1,39 @@
 import type { Transport } from '../transport/transport.js';
 import { ConsoleTransport } from '../transport/console.js';
-import type { RotatingFileTransportOptions } from '../transport/rotating-file.js';
-import { RotatingFileTransport } from '../transport/rotating-file.js';
+import type { RotateTimeOptions } from '../transport/file.js';
+import { FileTransport } from '../transport/file.js';
 import type { RuntimeAdapter } from './adapter.js';
 import { createProcessLifecycle } from './process-lifecycle.js';
 import { tmpdir } from 'node:os';
-import { join, basename } from 'node:path';
+import { basename } from 'node:path';
 
 export interface NodeRuntimeOptions {
-  /**
-   * Explicit log file path. When omitted, a rotating file in the system temp
-   * directory is used — the library writes logs by default.
-   */
-  logFile?: string;
-  /** Application name used to derive the default log path. */
+  /** Application name; embedded in the log file name (required). */
   appName?: string;
-  fileTransportOptions?: Partial<RotatingFileTransportOptions>;
+  /** Forwarded to the default `FileTransport` (mode `rotate-time`). */
+  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>;
   /** Disable the file transport entirely (console only). */
   disableFile?: boolean;
 }
 
-function defaultNodeLogPath(appName?: string): string {
-  let name = appName;
-  if (!name) {
-    try {
-      const p = process.argv[1];
-      if (p) name = basename(p).replace(/\.[^.]+$/, '');
-    } catch {
-      /* ignore */
-    }
+/** Derive an application name from the invoked script when none is given. */
+function inferAppName(): string | undefined {
+  try {
+    const p = process.argv[1];
+    if (p) return basename(p).replace(/\.[^.]+$/, '');
+  } catch {
+    /* ignore */
   }
-  return join(tmpdir(), `${name ?? 'app'}.log`);
+  return undefined;
 }
 
 /**
  * Plain Node.js runtime (CLI / server / worker). Has both a process id and
- * filesystem access, so by default it persists logs to a rotating file (in
- * addition to the console). Pass `disableFile` to opt out, or `logFile` /
- * `appName` / `fileTransportOptions` to customize.
+ * filesystem access, so by default it persists logs to a time-rotated file
+ * (in addition to the console). Pass `disableFile` to opt out, or
+ * `appName` / `fileTransportOptions` to customize. `appName` is required for
+ * the file transport; if omitted it is inferred from the launched script and
+ * throws if it cannot be determined.
  */
 export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdapter {
   const pid = typeof process !== 'undefined' ? process.pid : undefined;
@@ -49,11 +45,18 @@ export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdap
     defaultTransports: () => {
       const transports: Transport[] = [new ConsoleTransport()];
       if (!options.disableFile) {
-        const filePath = options.logFile ?? defaultNodeLogPath(options.appName);
+        const appName = options.appName ?? inferAppName();
+        if (!appName) {
+          throw new Error(
+            'Node runtime requires an "appName" (or a determinable script path) for the file transport',
+          );
+        }
         transports.push(
-          new RotatingFileTransport({
-            path: filePath,
-            daily: true,
+          new FileTransport({
+            mode: 'rotate-time',
+            unit: 'day',
+            appName,
+            dir: tmpdir(),
             ...options.fileTransportOptions,
           }),
         );

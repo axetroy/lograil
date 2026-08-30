@@ -79,14 +79,15 @@ See the [Electron guide](./electron.md).
 **Symptom:** a single file keeps growing, or no dated files appear.
 
 **Check**
-- `RotatingFileTransport` only works where the Node `fs` API exists — the
+- `FileTransport` only works where the Node `fs` API exists — the
   **main** process / Node runtime, not a browser or renderer Web Worker.
-- `daily` mode (default) writes `{name}.{YYYY-MM-DD}.{index}.log`. Check the date
+- `rotate-time` mode (default) writes `<appName>.{YYYY-MM-DD}.log`. Check the date
   stamp format and that the directory is writable. The directory is created
   automatically (`mkdir -p`).
-- Rotation triggers when a write would exceed `maxSize` (size mode) or advance the
-  daily index. A tiny `maxSize` / high volume makes rotation happen fast; verify
-  `maxFiles` isn't `1` (size mode enforces a minimum of 2).
+- Rotation triggers when a write would exceed `maxSize` (`rotate-size` / `single-truncate`),
+  or cross the `hour`/`day` boundary (`rotate-time`), or when your `shouldRotate`
+  predicate returns `true` (`rotate-custom`). A tiny `maxSize` / high volume makes
+  rotation happen fast; verify `maxFiles` allows more than one generation.
 - The file handle opens on the **first actual** write. If nothing is logged, no
   file is created — that's expected.
 

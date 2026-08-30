@@ -38,29 +38,88 @@ Maps each level to a `console` method (override via `methodMap`). Levels listed 
 `stderrLevels` are additionally routed to `console.error` (stderr) — useful for
 piping warnings/errors to a separate stream.
 
-## RotatingFileTransport
+## FileTransport
 
 ```ts
-interface RotatingFileTransportOptions {
-  path: string; // e.g. '/var/log/app.log'
-  maxSize?: number; // size-mode threshold (bytes)
-  maxFiles?: number; // ring buffer size (daily default 99, size default 5)
-  daily?: boolean; // default true
-  now?: () => Date; // clock override (testing)
+interface FileBaseOptions {
+  appName: string; // required; the log file name always contains it
+  dir?: string; // default os.tmpdir()
   formatter?: Formatter;
+  filter?: (entry: LogEntry) => boolean; // drop entries when it returns false
   name?: string;
-  /**
-   * Optional per-entry predicate. When it returns `false` the entry is dropped
-   * (not written). Handy for splitting one logger's output across multiple files
-   * — e.g. main vs renderer process logs, or an error-only vs full archive.
-   */
-  filter?: (entry: LogEntry) => boolean;
 }
 
-class RotatingFileTransport implements Transport;
+// 1.1 — single fixed file, append until the disk is full
+interface SingleFileOptions extends FileBaseOptions {
+  mode: 'single';
+  ext?: string; // default 'log'
+}
+
+// 1.2 — single file; when maxSize is exceeded, back up then truncate in place
+interface SingleTruncateOptions extends FileBaseOptions {
+  mode: 'single-truncate';
+  maxSize: number; // required
+  backupName?: string; // backup file name; default `${appName}.bak`
+  ext?: string;
+}
+
+// 2.1 — roll by size; file name is a function of the generation index
+interface RotateSizeOptions extends FileBaseOptions {
+  mode: 'rotate-size';
+  maxSize: number; // required
+  maxFiles: number; // required; how many generations to keep
+  fileName?: (app: string, index: number, ext: string) => string; // default `${app}.${index}.${ext}`
+  ext?: string;
+}
+
+// 2.2 — roll by time; file name is a function of the timestamp
+interface RotateTimeOptions extends FileBaseOptions {
+  mode: 'rotate-time';
+  unit: 'hour' | 'day'; // required
+  maxFiles?: number; // optional ring cap
+  now?: () => Date; // clock override (testing)
+  fileName?: (app: string, stamp: string, ext: string) => string; // default `${app}.${stamp}.${ext}`
+  ext?: string;
+}
+
+// 2.3 — roll whenever your predicate says so; file name is a function of the sequence
+interface RotateCustomOptions extends FileBaseOptions {
+  mode: 'rotate-custom';
+  shouldRotate: (entry: LogEntry, ctx: RotateContext) => boolean; // required
+  fileName: (app: string, seq: number, ext: string) => string; // required
+  maxFiles?: number;
+  ext?: string;
+}
+
+type FileTransportOptions =
+  | SingleFileOptions
+  | SingleTruncateOptions
+  | RotateSizeOptions
+  | RotateTimeOptions
+  | RotateCustomOptions;
+
+class FileTransport implements Transport;
 ```
 
-See [Transports guide](/guide/transports) for rotation behavior.
+`FileTransport` replaces the old `RotatingFileTransport`. `appName` is required and
+is always part of the file name, so a log file is identifiable by its owning
+application. The mode is a discriminated union — pick one and only its fields are
+required, so you can never forget a parameter the chosen mode needs.
+
+- `single` — one `dir/<appName>.<ext>` file, appended forever (until the disk fills).
+- `single-truncate` — same single file, but once `maxSize` would be exceeded the
+  current content is renamed to `backupName` and the original is truncated (ring
+  buffer). One main file plus one backup.
+- `rotate-size` — when `size + bytes > maxSize`, shift generations
+  (`app.log` → `app.1.log` → …) via `maxFiles`; `fileName(app, index, ext)` lets
+  you shape the archived names.
+- `rotate-time` — at each `unit` boundary (`hour`/`day`) a new file is opened and
+  named with a timestamp; `fileName(app, stamp, ext)` controls the shape.
+- `rotate-custom` — `shouldRotate(entry, ctx)` decides when to cut; `fileName(app,
+  seq, ext)` names every file. Total control over rotation.
+
+All modes share the same `open`/`queue`/`mkdir`/`flush`/`close` plumbing; only the
+"when do we switch, and how is the next file named" logic differs per mode.
 
 ## ElectronIpcTransport
 

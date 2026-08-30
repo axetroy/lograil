@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { formatMessage } from '../src/core/printf.js';
 import { createLineFormatter } from '../src/pipeline/formatter.js';
 import { OtlpTransport } from '../src/transport/otlp.js';
-import { RotatingFileTransport } from '../src/transport/rotating-file.js';
+import { FileTransport } from '../src/transport/file.js';
 import type { LogEntry } from '../src/types.js';
 import { LOG_LEVELS } from '../src/types.js';
 
@@ -54,18 +54,20 @@ describe('OtlpTransport - null attribute and pid', () => {
   });
 });
 
-describe('RotatingFileTransport - custom now and extension base', () => {
+describe('FileTransport - custom now and extension base', () => {
   it('uses the provided now() and handles a path with an extension', async () => {
     const { mkdtemp, readFile, rm } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const dir = await mkdtemp(join(tmpdir(), 'elog-edge-'));
     try {
-      const file = join(dir, 'app.log');
       const clock = new Date(2024, 0, 1, 0, 0, 0, 0);
-      const transport = new RotatingFileTransport({
-        path: file,
-        daily: true,
+      const transport = new FileTransport({
+        mode: 'rotate-time',
+        unit: 'day',
+        appName: 'app',
+        ext: 'log',
+        dir,
         now: () => clock,
       });
       transport.write(
@@ -73,7 +75,7 @@ describe('RotatingFileTransport - custom now and extension base', () => {
         transport.formatter!(makeEntry({ message: 'one' })),
       );
       await transport.close();
-      const content = (await readFile(join(dir, 'app.2024-01-01.01.log'), 'utf8')).trim();
+      const content = (await readFile(join(dir, 'app.2024-01-01.log'), 'utf8')).trim();
       expect(content).toContain('one');
     } finally {
       await rm(dir, { recursive: true, force: true });

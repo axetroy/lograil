@@ -140,9 +140,8 @@ const log = createLogger({
 
 | 运行时                  | 选项                    | 作用                                          |
 | ----------------------- | ----------------------- | --------------------------------------------- |
-| Node / Electron 主进程  | `logFile`               | 显式的滚动日志文件路径                         |
-| Node                     | `appName`               | 用于推导默认日志路径（仅 Node）                |
-| Node / Electron 主进程  | `fileTransportOptions`  | 透传给 `RotatingFileTransport`                |
+| Node / Electron 主进程  | `appName`               | `FileTransport` 必填；始终是日志文件名的一部分        |
+| Node / Electron 主进程  | `fileTransportOptions`  | 透传给 `FileTransport`（模式 `rotate-time`）        |
 | Node / Electron 主进程  | `disableFile`           | 仅控制台（不写文件）                          |
 | Electron 主进程         | `receiveFromRenderer`   | 通过 IPC 接收渲染进程日志（默认 `true`）      |
 

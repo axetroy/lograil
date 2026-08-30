@@ -36,38 +36,58 @@ new ConsoleTransport({
 
 通过 `methodMap` 可把某个级别路由到不同的 `console` 方法，或为其输出加前缀。默认每个级别映射到同名的 `console` 方法，且 `fatal` 映射到 `console.error`（因此在多数终端里会出现在 `stderr`）。
 
-### RotatingFileTransport
+### FileTransport
 
-面向 Node.js 与 Electron 主进程、带滚动能力的文件传输器。
+面向 Node.js 与 Electron 主进程、带多种模式的文件传输器。`appName` 必填，
+且始终是文件名的一部分。模式是一个判别联合，所以每种模式只暴露自己的字段：
 
 ```ts
-import { RotatingFileTransport, createJsonFormatter } from 'lograil';
+import { FileTransport, createJsonFormatter } from 'lograil';
 
-new RotatingFileTransport({
-  path: '/var/log/app.log',
-  daily: true, // 默认：每天一个带日期的文件
-  maxFiles: 99, // 每日环形缓冲大小（默认 99 / 体积模式 5）
-  maxSize: 10 * 1024 * 1024, // 体积模式的阈值（仅体积模式）
+// 1.1 / 1.2 — 单文件（一直追加，或超 maxSize 时截断）
+new FileTransport({
+  mode: 'single', // 或 'single-truncate'
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024, // 'single-truncate' 必填
+  formatter: createJsonFormatter(),
+});
+
+// 2.1 — 按体积轮转；fileName() 自定义归档名
+new FileTransport({
+  mode: 'rotate-size',
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024,
+  maxFiles: 5,
+  fileName: (app, index, ext) => `${app}.${index}.${ext}`,
+  formatter: createJsonFormatter(),
+});
+
+// 2.2 — 按时间轮转；每天一个带日期的文件
+new FileTransport({
+  mode: 'rotate-time',
+  appName: 'my-app',
+  unit: 'day',
+  fileName: (app, stamp, ext) => `${app}.${stamp}.${ext}`,
+  formatter: createJsonFormatter(),
+});
+
+// 2.3 — 按自定义谓词轮转
+new FileTransport({
+  mode: 'rotate-custom',
+  appName: 'my-app',
+  shouldRotate: (entry) => entry.levelName === 'error',
+  fileName: (app, seq, ext) => `${app}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 ```
 
-- **每日模式**（默认）：活动文件为 `app.{YYYY-MM-DD}.{01..maxFiles}.log`。当索引将要超过 `maxFiles` 时回绕到 `01` 并清空该文件——形成一个按天的环形缓冲。
-- **体积模式**（`daily: false`）：经典的分代滚动 `app.log` → `app.1.log` → `app.2.log` …，当活动文件超过 `maxSize` 时触发。
+- **`single`** — 单个 `<appName>.log` 文件，一直追加（直到磁盘写满）。
+- **`single-truncate`** — 同样是单文件，但一旦即将超过 `maxSize`，当前内容被改名为 `<appName>.bak`，原文件原地截断。
+- **`rotate-size`** — 当 `size + bytes > maxSize` 时，按 `maxFiles` 推移代际（`app.log` → `app.1.log` → …）。
+- **`rotate-time`** — 在每个 `hour`/`day` 边界开启新文件，并以时间戳命名。
+- **`rotate-custom`** — `shouldRotate(entry, ctx)` 决定何时切分；`fileName` 为每个文件命名。对轮转拥有完全控制。
 
-利用 `filter` 选项可以把单个 logger 的输出拆分到多个文件。内置的 Electron 主进程运行时正是用它来把主进程日志（`main.{date}.{idx}.log`）与渲染进程日志（`renderer.{date}.{idx}.log`）分开：
-
-```ts
-import { RotatingFileTransport, createJsonFormatter } from 'lograil';
-
-// 只接收渲染进程条目（由 IPC 桥接在 metadata 中打标）。
-new RotatingFileTransport({
-  path: '/var/log/renderer.log',
-  daily: true,
-  filter: (e) => e.metadata?.renderer === 'renderer',
-  formatter: createJsonFormatter(),
-});
-```
+利用 `filter` 选项可把单个 logger 的输出拆分到多个文件——例如内置的 Electron 主进程运行时给主进程与渲染进程各分配一个 `FileTransport`（`appName: 'main'` / `'renderer'`），从而分开两者日志。
 
 ### ElectronIpcTransport
 

@@ -70,7 +70,7 @@ uses a single pipeline (`Filter`/`Processor`/`Formatter`) plus transports.
 
 | `winston` | `lograil` |
 | --- | --- |
-| `createLogger({ transports: [new transports.Console(), new transports.File()] })` | `createLogger({ transports: [new ConsoleTransport(), new RotatingFileTransport({ path })] })` |
+| `createLogger({ transports: [new transports.Console(), new transports.File()] })` | `createLogger({ transports: [new ConsoleTransport(), new FileTransport({ mode: 'rotate-time', appName, unit: 'day' })] })` |
 | `logger.log('info', msg, meta)` | `logger.info(msg, meta)` |
 | `format.combine(format.json(), …)` | `createJsonFormatter()` (or `createJsonFormatter({ flatten: true })`) |
 | `format.timestamp()` / `format.colorize()` | built into `createLineFormatter()` |
@@ -95,11 +95,11 @@ context/metadata, a plugin pipeline, and zero-copy IPC.
 | `pino` | `lograil` |
 | --- | --- |
 | `pino({ level })` | `createLogger({ level })` |
-| `pino({ transport: { target: 'pino/file', options: { destination } } })` | `new RotatingFileTransport({ path })` |
+| `pino({ transport: { target: 'pino/file', options: { destination } } })` | `new FileTransport({ mode: 'rotate-time', appName, unit: 'day', dir })` |
 | `pino-pretty` | `ConsoleTransport` + `createLineFormatter()` |
 | `logger.child({ reqId })` | `logger.child({ context: { reqId } })` |
 | `logger.info({ foo }, 'msg')` | `logger.info('msg', { foo })` (or `logger.child({ context: { foo } })`) |
-| `pino.destination` / `sonic-boom` | `RotatingFileTransport` (Node `fs`) |
+| `pino.destination` / `sonic-boom` | `FileTransport` (Node `fs`) |
 | `pino` transports (worker thread) | `ElectronIpcTransport` / `OtlpTransport` |
 
 **Differences**

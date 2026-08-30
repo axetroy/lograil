@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   ConsoleTransport,
-  RotatingFileTransport,
+  FileTransport,
   createLineFormatter,
   createLogger,
 } from '../../src/index.js';
@@ -25,7 +25,13 @@ describe('integration: Node real file output', () => {
       level: 'debug',
       transports: [
         new ConsoleTransport({ formatter: createLineFormatter() }),
-        new RotatingFileTransport({ path: file, daily: false, formatter: createLineFormatter() }),
+        new FileTransport({
+          mode: 'single',
+          appName: 'app',
+          dir,
+          ext: 'log',
+          formatter: createLineFormatter(),
+        }),
       ],
     });
     loggers.push(logger);
@@ -54,7 +60,13 @@ describe('integration: Node real file output', () => {
     const logger = createLogger({
       level: 'warn',
       transports: [
-        new RotatingFileTransport({ path: file, daily: false, formatter: createLineFormatter() }),
+        new FileTransport({
+          mode: 'single',
+          appName: 'filtered',
+          dir,
+          ext: 'log',
+          formatter: createLineFormatter(),
+        }),
       ],
     });
     loggers.push(logger);

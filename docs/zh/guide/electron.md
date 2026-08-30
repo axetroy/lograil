@@ -162,7 +162,7 @@ const log = createLogger({
 
 | 工厂                            | 选项                  | 作用                                           |
 | ------------------------------- | --------------------- | ---------------------------------------------- |
-| `createElectronMainRuntime`     | `fileTransportOptions` | 透传给 `RotatingFileTransport`                 |
+| `createElectronMainRuntime`     | `fileTransportOptions` | 透传给 `FileTransport`（模式 `rotate-time`）     |
 | `createElectronMainRuntime`     | `disableFile`         | 仅控制台（不写文件）                           |
 | `createElectronMainRuntime`     | `receiveFromRenderer` | 通过 IPC 接收渲染进程日志（默认 `true`）       |
 | `createElectronRendererRuntime` | `forwardToMain`       | 通过 IPC 转发到主进程（默认 `true`）           |
@@ -195,7 +195,7 @@ renderer ──ElectronIpcTransport──▶ IPC ──▶ main: registerIpcRece
                                             log.ingestEntry(entry)
                                                      │
                                                      ▼
-                              main: ConsoleTransport + RotatingFileTransport
+                              main: ConsoleTransport + FileTransport
 ```
 
 - 渲染进程日志不会直接落盘——由主进程负责持久化。

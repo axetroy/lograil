@@ -66,12 +66,13 @@ console 的 transport。
 **现象：** 单个文件持续增大，或没有出现按日期的文件。
 
 **自查**
-- `RotatingFileTransport` 仅在具备 Node `fs` 的环境生效——即**主进程** / Node 运行时，而非
+- `FileTransport` 仅在具备 Node `fs` 的环境生效——即**主进程** / Node 运行时，而非
   浏览器或渲染进程 Web Worker。
-- `daily` 模式（默认）写入 `{name}.{YYYY-MM-DD}.{index}.log`。检查日期戳格式与目录可写性；
+- `rotate-time` 模式（默认）写入 `<appName>.{YYYY-MM-DD}.log`。检查日期戳格式与目录可写性；
   目录会自动创建（`mkdir -p`）。
-- 轮转在"单次写入将超过 `maxSize`（size 模式）或推进每日索引"时触发。把 `maxSize` 设小、
-  日志量大时轮转会很快；确认 `maxFiles` 不是 `1`（size 模式最低为 2）。
+- 轮转触发条件：写入将导致超过 `maxSize`（`rotate-size` / `single-truncate`），或跨越
+  `hour`/`day` 边界（`rotate-time`），或你的 `shouldRotate` 谓词返回 `true`（`rotate-custom`）。
+  `maxSize` 过小 / 写入量大时轮转会很频繁；请确认 `maxFiles` 允许保留多于一代。
 - 文件句柄会在**第一次**真正写入日志时才打开。若从未打过日志，就不会创建文件——这是预期行为。
 
 ## 5. 日志乱序 / 在多个 transport 间重复

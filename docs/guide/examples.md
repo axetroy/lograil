@@ -128,7 +128,7 @@ import {
   createJsonFormatter,
   createLineFormatter,
   ConsoleTransport,
-  RotatingFileTransport,
+  FileTransport,
   createRedactProcessor,
   createLevelFilter,
   type Logger,
@@ -136,16 +136,18 @@ import {
 
 export function createProductionLogger(opts: {
   appName: string;
-  logFile: string;
+  dir?: string;
   level?: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 }): Logger {
   return createLogger({
     level: opts.level ?? 'info',
     transports: [
       new ConsoleTransport({ formatter: createLineFormatter() }),
-      new RotatingFileTransport({
-        path: opts.logFile,
-        daily: true,
+      new FileTransport({
+        mode: 'rotate-time',
+        appName: opts.appName,
+        dir: opts.dir,
+        unit: 'day',
         formatter: createJsonFormatter(),
       }),
     ],
@@ -185,7 +187,7 @@ The custom logger above can be further extended at runtime, and scoped for
 request context:
 
 ```ts
-const log = createProductionLogger({ appName: 'api', logFile: '/var/log/api.log' });
+const log = createProductionLogger({ appName: 'api', dir: '/var/log' });
 
 await log.use(redactPlugin(['session']));
 

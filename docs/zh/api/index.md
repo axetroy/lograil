@@ -7,7 +7,7 @@
 | `lograil`            | 全部：logger、`createLogger`、类型、所有子模块                |
 | `lograil/core`        | `Logger`、`Pipeline`、级别工具                                |
 | `lograil/pipeline`    | `Filter`、`Processor`、`Formatter`、内置过滤器/处理器         |
-| `lograil/transport`   | `Transport`、`ConsoleTransport`、`RotatingFileTransport`、`ElectronIpcTransport`、`OtlpTransport` |
+| `lograil/transport`   | `Transport`、`ConsoleTransport`、`FileTransport`、`ElectronIpcTransport`、`OtlpTransport` |
 | `lograil/runtime`     | 运行时适配器、`detectRuntime`、`registerIpcReceiver`          |
 | `lograil/plugin`      | `Plugin`、`PluginManager`、`PluginContext`                    |
 | `lograil/context`     | `ContextStore`、`createContextStore`、`runWithContext`、`asyncContext`、`isEmptyRecord` |

@@ -1,8 +1,8 @@
 import type { RuntimeAdapter } from './adapter.js';
 import type { Transport } from '../transport/transport.js';
 import { ConsoleTransport } from '../transport/console.js';
-import type { RotatingFileTransportOptions } from '../transport/rotating-file.js';
-import { RotatingFileTransport } from '../transport/rotating-file.js';
+import type { RotateTimeOptions } from '../transport/file.js';
+import { FileTransport } from '../transport/file.js';
 import { registerIpcReceiver, RENDERER_PROCESS_MARKER } from '../transport/electron-ipc.js';
 import { getElectronApp } from './electron-binding.js';
 import { createElectronLifecycle } from './electron-lifecycle.js';
@@ -10,14 +10,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export interface ElectronMainRuntimeOptions {
-  fileTransportOptions?: Partial<RotatingFileTransportOptions>;
+  /** Forwarded to the main/renderer `FileTransport` (mode `rotate-time`). */
+  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>;
   /** Disable the file transport entirely (console only). */
   disableFile?: boolean;
   /**
    * Listen for renderer entries over IPC and write them to the dedicated
-   * `renderer.{date}.{index}.log` file (default `true`). Main-process entries
-   * go to `main.{date}.{index}.log`. Both paths are fixed under
-   * `<appData>/Lograil` and cannot be customized.
+   * `renderer.{date}.log` file (default `true`). Main-process entries
+   * go to `main.{date}.log`. Both paths are fixed under `<appData>/Lograil`
+   * and cannot be customized.
    */
   receiveFromRenderer?: boolean;
 }
@@ -60,11 +61,12 @@ export function createElectronMainRuntime(
       const transports: Transport[] = [new ConsoleTransport()];
       if (!options.disableFile) {
         const dir = defaultElectronLogDir();
-        const mainPath = join(dir, 'main.log');
         transports.push(
-          new RotatingFileTransport({
-            path: mainPath,
-            daily: true,
+          new FileTransport({
+            mode: 'rotate-time',
+            unit: 'day',
+            appName: 'main',
+            dir,
             // Main-process entries only: renderer entries are routed to the
             // dedicated renderer log file below.
             filter: (entry) => entry.metadata?.[RENDERER_PROCESS_MARKER] !== 'renderer',
@@ -73,11 +75,12 @@ export function createElectronMainRuntime(
         );
 
         if (receiveFromRenderer) {
-          const rendererPath = join(dir, 'renderer.log');
           transports.push(
-            new RotatingFileTransport({
-              path: rendererPath,
-              daily: true,
+            new FileTransport({
+              mode: 'rotate-time',
+              unit: 'day',
+              appName: 'renderer',
+              dir,
               // Renderer entries only.
               filter: (entry) => entry.metadata?.[RENDERER_PROCESS_MARKER] === 'renderer',
               ...options.fileTransportOptions,

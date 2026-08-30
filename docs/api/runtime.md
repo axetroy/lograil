@@ -76,23 +76,22 @@ createElectronRendererRuntime(options?);
 | Runtime            | Default transports                                  |
 | ------------------ | --------------------------------------------------- |
 | Web                | `ConsoleTransport`                                  |
-| Node.js            | `ConsoleTransport` + `RotatingFileTransport` (daily) |
-| Electron main      | `ConsoleTransport` + `RotatingFileTransport` (daily), receives renderer IPC |
+| Node.js            | `ConsoleTransport` + `FileTransport` (`rotate-time`, daily) |
+| Electron main      | `ConsoleTransport` + `FileTransport` (`rotate-time`, daily), receives renderer IPC |
 | Electron renderer  | `ConsoleTransport` (forward to main via IPC)         |
 
 ## Options
 
 ```ts
 interface NodeRuntimeOptions {
-  logFile?: string;
-  appName?: string;
-  fileTransportOptions?: Partial<RotatingFileTransportOptions>;
+  appName?: string; // required by FileTransport; inferred from the entry script if omitted
+  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>; // forwarded to the default `FileTransport`
   disableFile?: boolean;
 }
 
 interface ElectronMainRuntimeOptions {
-  // logFile paths are fixed: <appData>/Lograil/{main,renderer}.{date}.{index}.log
-  fileTransportOptions?: Partial<RotatingFileTransportOptions>;
+  // log file names always contain the app name; fixed dir: <appData>/Lograil
+  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>;
   disableFile?: boolean;
   receiveFromRenderer?: boolean; // default true
 }

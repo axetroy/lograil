@@ -13,8 +13,8 @@ export type RuntimeOptions = ElectronRuntimeOptions & NodeRuntimeOptions;
  *  - Plain Node.js when a Node process is present (has filesystem + pid);
  *  - Web (browser) otherwise.
  *
- * `ElectronRuntimeOptions`/`NodeRuntimeOptions` (e.g. `logFile`) are forwarded
- * to the matching adapter.
+ * `ElectronRuntimeOptions`/`NodeRuntimeOptions` (e.g. `appName`, `fileTransportOptions`) are
+ * forwarded to the matching adapter.
  */
 export function detectRuntime(options: RuntimeOptions = {}): RuntimeAdapter {
   const versions =

@@ -40,44 +40,65 @@ Override `methodMap` to route a level to a different `console` method, or to
 prefix its output. By default each level maps to the like-named `console` method,
 and `fatal` maps to `console.error` (so it appears on `stderr` in most terminals).
 
-### RotatingFileTransport
+### FileTransport
 
-File transport with rotation, for Node.js and the Electron main process.
+File transport with several modes, for Node.js and the Electron main process.
+`appName` is required and is always part of the file name. The mode is a
+discriminated union, so each mode exposes only its own fields:
 
 ```ts
-import { RotatingFileTransport, createJsonFormatter } from 'lograil';
+import { FileTransport, createJsonFormatter } from 'lograil';
 
-new RotatingFileTransport({
-  path: '/var/log/app.log',
-  daily: true, // default: one dated file per day
-  maxFiles: 99, // daily ring buffer size (default 99 / size 5)
-  maxSize: 10 * 1024 * 1024, // size-mode threshold (size mode only)
+// 1.1 / 1.2 — single file (append forever, or truncate when maxSize is hit)
+new FileTransport({
+  mode: 'single', // or 'single-truncate'
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024, // required for 'single-truncate'
+  formatter: createJsonFormatter(),
+});
+
+// 2.1 — roll by size; fileName() shapes the archived names
+new FileTransport({
+  mode: 'rotate-size',
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024,
+  maxFiles: 5,
+  fileName: (app, index, ext) => `${app}.${index}.${ext}`,
+  formatter: createJsonFormatter(),
+});
+
+// 2.2 — roll by time; one dated file per day
+new FileTransport({
+  mode: 'rotate-time',
+  appName: 'my-app',
+  unit: 'day',
+  fileName: (app, stamp, ext) => `${app}.${stamp}.${ext}`,
+  formatter: createJsonFormatter(),
+});
+
+// 2.3 — roll on your own predicate
+new FileTransport({
+  mode: 'rotate-custom',
+  appName: 'my-app',
+  shouldRotate: (entry) => entry.levelName === 'error',
+  fileName: (app, seq, ext) => `${app}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 ```
 
-- **Daily mode** (default): active file is `app.{YYYY-MM-DD}.{01..maxFiles}.log`.
-  When the index would exceed `maxFiles` it wraps back to `01` and clears it — a
-  per-day ring buffer.
-- **Size mode** (`daily: false`): classic generation rotation
-  `app.log` → `app.1.log` → `app.2.log` … when the active file exceeds
-  `maxSize`.
+- **`single`** — one `<appName>.log` file, appended forever (until the disk fills).
+- **`single-truncate`** — same single file, but once `maxSize` would be exceeded the
+  current content is renamed to `<appName>.bak` and the original is truncated.
+- **`rotate-size`** — when `size + bytes > maxSize`, shift generations
+  (`app.log` → `app.1.log` → …) bounded by `maxFiles`.
+- **`rotate-time`** — at each `hour`/`day` boundary open a new file named with a
+  timestamp.
+- **`rotate-custom`** — `shouldRotate(entry, ctx)` decides when to cut; `fileName`
+  names every file. Total control over rotation.
 
-Use the `filter` option to split one logger's output across multiple files. The
-built-in Electron main runtime already uses it to separate main-process logs
-(`main.{date}.{idx}.log`) from renderer logs (`renderer.{date}.{idx}.log`):
-
-```ts
-import { RotatingFileTransport, createJsonFormatter } from 'lograil';
-
-// Only renderer entries (tagged via metadata by the IPC bridge).
-new RotatingFileTransport({
-  path: '/var/log/renderer.log',
-  daily: true,
-  filter: (e) => e.metadata?.renderer === 'renderer',
-  formatter: createJsonFormatter(),
-});
-```
+Use the `filter` option to split one logger's output across multiple files — e.g.
+the built-in Electron main runtime separates main-process logs from renderer logs
+by giving each its own `FileTransport` with `appName: 'main'` / `'renderer'`.
 
 ### ElectronIpcTransport
 

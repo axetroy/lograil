@@ -8,7 +8,7 @@ import { PluginManager } from '../src/plugin/index.js';
 import type { RuntimeAdapter } from '../src/runtime/index.js';
 import type { Transport } from '../src/transport/transport.js';
 import { createLineFormatter } from '../src/pipeline/formatter.js';
-import { RotatingFileTransport } from '../src/transport/rotating-file.js';
+import { FileTransport } from '../src/transport/file.js';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -171,7 +171,7 @@ describe('Logger - async transport (RotatingFile)', () => {
 
   it('awaits the transport write queue, flush and close via destroy', async () => {
     const file = join(dir, 'app.log');
-    const transport = new RotatingFileTransport({ path: file, daily: false });
+    const transport = new FileTransport({ mode: 'single', appName: 'app', dir, ext: 'log' });
     const log = new Logger({ transports: [transport], level: 'debug', runtime: makeRuntime() });
     log.info('one');
     log.info('two');

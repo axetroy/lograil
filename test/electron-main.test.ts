@@ -18,7 +18,7 @@ vi.mock('../src/runtime/electron-binding.js', () => ({
 
 import { createElectronMainRuntime } from '../src/runtime/electron-main.js';
 import { ConsoleTransport } from '../src/transport/console.js';
-import { RotatingFileTransport } from '../src/transport/rotating-file.js';
+import { FileTransport } from '../src/transport/file.js';
 import { RENDERER_PROCESS_MARKER } from '../src/transport/electron-ipc.js';
 import type { LogEntry } from '../src/types.js';
 
@@ -41,17 +41,16 @@ describe('createElectronMainRuntime', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
     expect(ts.some((t) => t instanceof ConsoleTransport)).toBe(true);
-    expect(ts.some((t) => t instanceof RotatingFileTransport)).toBe(true);
+    expect(ts.some((t) => t instanceof FileTransport)).toBe(true);
   });
 
   it('derives the default log path from app.getPath("appData")', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
-    const file = ts.find((t) => t instanceof RotatingFileTransport) as RotatingFileTransport;
-    // Fixed `main.log` base under `<appData>/Lograil`, no appName involved.
+    const file = ts.find((t) => t instanceof FileTransport) as FileTransport;
+    // appName 'main' under `<appData>/Lograil`.
     expect(getPath).toHaveBeenCalledWith('appData');
-    expect(file.name).toContain('Lograil');
-    expect(file.name).toContain('main.log');
+    expect(file.name).toContain('file:main');
   });
 
   it('disableFile yields console only', () => {
@@ -77,27 +76,25 @@ describe('createElectronMainRuntime', () => {
   it('uses fixed main.log / renderer.log base names under <appData>/Lograil', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
-    const files = ts.filter((t): t is RotatingFileTransport => t instanceof RotatingFileTransport);
-    expect(files[0].name).toContain('Lograil');
-    expect(files[0].name).toContain('main.log');
-    expect(files[1].name).toContain('Lograil');
-    expect(files[1].name).toContain('renderer.log');
+    const files = ts.filter((t): t is FileTransport => t instanceof FileTransport);
+    expect(files[0].name).toContain('file:main');
+    expect(files[1].name).toContain('file:renderer');
   });
 
   it('emits separate main + renderer log files when receiving from renderer', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
-    const files = ts.filter((t): t is RotatingFileTransport => t instanceof RotatingFileTransport);
+    const files = ts.filter((t): t is FileTransport => t instanceof FileTransport);
     // main.log + renderer.log (formatted as main.{date}.{index}.log etc.)
     expect(files).toHaveLength(2);
-    expect(files[0].name).toContain('main.log');
-    expect(files[1].name).toContain('renderer.log');
+    expect(files[0].name).toContain('file:main');
+    expect(files[1].name).toContain('file:renderer');
   });
 
   it('renderer entries route to the renderer file and are excluded from main', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();
-    const files = ts.filter((t): t is RotatingFileTransport => t instanceof RotatingFileTransport);
+    const files = ts.filter((t): t is FileTransport => t instanceof FileTransport);
     const [mainFile, rendererFile] = files;
     const mainEntry: LogEntry = {
       level: 30,
@@ -124,6 +121,6 @@ describe('createElectronMainRuntime', () => {
   it('disableFile still omits the renderer file', () => {
     const rt = createElectronMainRuntime({ disableFile: true });
     const ts = rt.defaultTransports();
-    expect(ts.some((t) => t instanceof RotatingFileTransport)).toBe(false);
+    expect(ts.some((t) => t instanceof FileTransport)).toBe(false);
   });
 });

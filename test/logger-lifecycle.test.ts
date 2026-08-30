@@ -3,7 +3,7 @@ import { Logger } from '../src/core/logger.js';
 import { freezeEntry } from '../src/core/entry.js';
 import { createLineFormatter } from '../src/pipeline/formatter.js';
 import { formatMessage } from '../src/core/printf.js';
-import { RotatingFileTransport } from '../src/transport/rotating-file.js';
+import { FileTransport } from '../src/transport/file.js';
 import { ElectronIpcTransport, registerIpcReceiver } from '../src/transport/electron-ipc.js';
 import { EMPTY_RECORD } from '../src/context/context.js';
 import type { LogEntry } from '../src/types.js';
@@ -270,9 +270,9 @@ describe('formatter - safeStringify catch fallback', () => {
   }
 });
 
-describe('RotatingFileTransport - requires a path', () => {
-  it('throws when constructed without a path', () => {
-    expect(() => new RotatingFileTransport({ path: '' } as never)).toThrow(/path/);
+describe('FileTransport - requires an appName', () => {
+  it('throws when constructed without an appName', () => {
+    expect(() => new FileTransport({ mode: 'single' } as never)).toThrow(/appName/);
   });
 });
 

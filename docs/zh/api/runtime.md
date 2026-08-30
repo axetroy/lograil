@@ -71,23 +71,22 @@ createElectronRendererRuntime(options?);
 | 运行时               | 默认传输器                                                  |
 | -------------------- | ----------------------------------------------------------- |
 | Web                  | `ConsoleTransport`                                          |
-| Node.js              | `ConsoleTransport` + `RotatingFileTransport`（每日）        |
-| Electron 主进程      | `ConsoleTransport` + `RotatingFileTransport`（每日），并接收渲染进程 IPC |
+| Node.js              | `ConsoleTransport` + `FileTransport`（`rotate-time`，按日）        |
+| Electron 主进程      | `ConsoleTransport` + `FileTransport`（`rotate-time`，按日），并接收渲染进程 IPC |
 | Electron 渲染进程    | `ConsoleTransport`（经由 IPC 转发到主进程）                 |
 
 ## 选项
 
 ```ts
 interface NodeRuntimeOptions {
-  logFile?: string;
-  appName?: string;
-  fileTransportOptions?: Partial<RotatingFileTransportOptions>;
+  appName?: string; // FileTransport 必填；省略时从入口脚本推断
+  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>; // 透传给默认 `FileTransport`
   disableFile?: boolean;
 }
 
 interface ElectronMainRuntimeOptions {
-  // 日志文件路径固定：<appData>/Lograil/{main,renderer}.{date}.{index}.log
-  fileTransportOptions?: Partial<RotatingFileTransportOptions>;
+  // 日志文件名始终包含应用名；固定目录：<appData>/Lograil
+  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>;
   disableFile?: boolean;
   receiveFromRenderer?: boolean; // 默认 true
 }

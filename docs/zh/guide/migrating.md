@@ -60,7 +60,7 @@ registerIpcReceiver((entry) => logger.ingestEntry(entry));
 
 | `winston` | `lograil` |
 | --- | --- |
-| `createLogger({ transports: [new transports.Console(), new transports.File()] })` | `createLogger({ transports: [new ConsoleTransport(), new RotatingFileTransport({ path })] })` |
+| `createLogger({ transports: [new transports.Console(), new transports.File()] })` | `createLogger({ transports: [new ConsoleTransport(), new FileTransport({ mode: 'rotate-time', appName, unit: 'day' })] })` |
 | `logger.log('info', msg, meta)` | `logger.info(msg, meta)` |
 | `format.combine(format.json(), …)` | `createJsonFormatter()`（或 `createJsonFormatter({ flatten: true })`） |
 | `format.timestamp()` / `format.colorize()` | 内置于 `createLineFormatter()` |
@@ -80,11 +80,11 @@ registerIpcReceiver((entry) => logger.ingestEntry(entry));
 | `pino` | `lograil` |
 | --- | --- |
 | `pino({ level })` | `createLogger({ level })` |
-| `pino({ transport: { target: 'pino/file', options: { destination } } })` | `new RotatingFileTransport({ path })` |
+| `pino({ transport: { target: 'pino/file', options: { destination } } })` | `new FileTransport({ mode: 'rotate-time', appName, unit: 'day', dir })` |
 | `pino-pretty` | `ConsoleTransport` + `createLineFormatter()` |
 | `logger.child({ reqId })` | `logger.child({ context: { reqId } })` |
 | `logger.info({ foo }, 'msg')` | `logger.info('msg', { foo })`（或 `logger.child({ context: { foo } })`） |
-| `pino.destination` / `sonic-boom` | `RotatingFileTransport`（Node `fs`） |
+| `pino.destination` / `sonic-boom` | `FileTransport`（Node `fs`） |
 | `pino` transports（worker 线程） | `ElectronIpcTransport` / `OtlpTransport` |
 
 **差异**

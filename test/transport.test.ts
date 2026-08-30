@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ConsoleTransport } from '../src/transport/console.js';
-import { RotatingFileTransport } from '../src/transport/rotating-file.js';
+import { FileTransport } from '../src/transport/file.js';
 import { ElectronIpcTransport } from '../src/transport/electron-ipc.js';
 import { createJsonFormatter } from '../src/pipeline/formatter.js';
 import type { LogEntry } from '../src/types.js';
@@ -97,7 +97,7 @@ describe('ConsoleTransport', () => {
   });
 });
 
-describe('RotatingFileTransport (no rotation, daily:false)', () => {
+describe('FileTransport (single mode)', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -109,9 +109,11 @@ describe('RotatingFileTransport (no rotation, daily:false)', () => {
 
   it('appends JSON lines and can be flushed/closed', async () => {
     const file = join(dir, 'app.log');
-    const t = new RotatingFileTransport({
-      path: file,
-      daily: false,
+    const t = new FileTransport({
+      mode: 'single',
+      appName: 'app',
+      dir,
+      ext: 'log',
       formatter: createJsonFormatter(),
     });
     t.write(makeEntry({ message: 'one' }), t.formatter(makeEntry({ message: 'one' })));
@@ -127,7 +129,7 @@ describe('RotatingFileTransport (no rotation, daily:false)', () => {
 
   it('writes in order under concurrency (buffered queue)', async () => {
     const file = join(dir, 'order.log');
-    const t = new RotatingFileTransport({ path: file, daily: false });
+    const t = new FileTransport({ mode: 'single', appName: 'order', dir, ext: 'log' });
     const writes: Promise<void>[] = [];
     for (let i = 0; i < 50; i++) {
       writes.push(Promise.resolve(t.write(makeEntry({ message: String(i) }), `line-${i}`)));
@@ -143,17 +145,10 @@ describe('RotatingFileTransport (no rotation, daily:false)', () => {
   });
 });
 
-describe('RotatingFileTransport (daily mode)', () => {
+describe('FileTransport (rotate-time mode)', () => {
   let dir: string;
   let clock: Date;
   const day = (y: number, m: number, d: number) => new Date(y, m - 1, d, 0, 0, 0, 0);
-  const pathFor = (d: Date, idx: number) =>
-    join(
-      dir,
-      `app.${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-        d.getDate(),
-      ).padStart(2, '0')}.${String(idx).padStart(2, '0')}.log`,
-    );
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'elog-d-'));
@@ -163,27 +158,29 @@ describe('RotatingFileTransport (daily mode)', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('writes to a dated index-01 file by default', async () => {
-    const t = new RotatingFileTransport({
-      path: join(dir, 'app.log'),
+  it('writes to a dated file by default', async () => {
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'app',
+      dir,
       now: () => clock,
-      maxSize: 1 << 30,
-      maxFiles: 99,
     });
     const e = makeEntry({ message: 'one' });
     t.write(e, t.formatter(e));
     await t.close();
-    const content = (await readFile(pathFor(clock, 1), 'utf8')).trim();
+    const content = (await readFile(join(dir, 'app.2024-01-01.log'), 'utf8')).trim();
     expect(content.split('\n')).toHaveLength(1);
     expect(JSON.parse(content).message).toBe('one');
   });
 
-  it('resets to index 01 on a new day, keeping the previous day file', async () => {
-    const t = new RotatingFileTransport({
-      path: join(dir, 'app.log'),
+  it('opens a new dated file on a new day, keeping the previous day file', async () => {
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'app',
+      dir,
       now: () => clock,
-      maxSize: 1 << 30,
-      maxFiles: 99,
     });
     const d1 = makeEntry({ message: 'd1' });
     await t.write(d1, t.formatter(d1));
@@ -192,51 +189,26 @@ describe('RotatingFileTransport (daily mode)', () => {
     await t.write(d2, t.formatter(d2));
     await t.close();
 
-    const c1 = (await readFile(pathFor(day(2024, 1, 1), 1), 'utf8')).trim();
-    const c2 = (await readFile(pathFor(day(2024, 1, 2), 1), 'utf8')).trim();
+    const c1 = (await readFile(join(dir, 'app.2024-01-01.log'), 'utf8')).trim();
+    const c2 = (await readFile(join(dir, 'app.2024-01-02.log'), 'utf8')).trim();
     expect(c1).toContain('d1');
     expect(c2).toContain('d2');
   });
 
-  it('wraps to index 01 and clears the stale 01 slot when maxFiles is exceeded', async () => {
-    // Tiny maxSize => every write rotates; maxFiles=3 => 01,02,03 then wrap to 01.
-    const t = new RotatingFileTransport({
-      path: join(dir, 'app.log'),
+  it('honors a custom fileName', async () => {
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'app',
+      dir,
       now: () => clock,
-      maxSize: 10,
-      maxFiles: 3,
+      fileName: (app, stamp, ext) => `${app}-${stamp}.${ext}`,
     });
-    for (const label of ['a', 'b', 'c', 'd']) {
-      const e = makeEntry({ message: label });
-      t.write(e, t.formatter(e));
-    }
+    const e = makeEntry({ message: 'x' });
+    t.write(e, t.formatter(e));
     await t.close();
-
-    const c1 = (await readFile(pathFor(clock, 1), 'utf8')).trim().split('\n');
-    const c2 = (await readFile(pathFor(clock, 2), 'utf8')).trim().split('\n');
-    const c3 = (await readFile(pathFor(clock, 3), 'utf8')).trim().split('\n');
-    // Only the 4th ('d') must remain in the wrapped 01 slot.
-    expect(c1).toHaveLength(1);
-    expect(JSON.parse(c1[0]).message).toBe('d');
-    expect(JSON.parse(c2[0]).message).toBe('b');
-    expect(JSON.parse(c3[0]).message).toBe('c');
-  });
-
-  it('daily mode with maxFiles=1 wraps to 01 and clears on the 2nd write', async () => {
-    const t = new RotatingFileTransport({
-      path: join(dir, 'app.log'),
-      now: () => clock,
-      maxSize: 10,
-      maxFiles: 1,
-    });
-    const a = makeEntry({ message: 'a' });
-    t.write(a, t.formatter(a));
-    const b = makeEntry({ message: 'b' });
-    t.write(b, t.formatter(b));
-    await t.close();
-    const lines = (await readFile(pathFor(clock, 1), 'utf8')).trim().split('\n');
-    expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0]).message).toBe('b');
+    const content = (await readFile(join(dir, 'app-2024-01-01.log'), 'utf8')).trim();
+    expect(JSON.parse(content).message).toBe('x');
   });
 });
 
@@ -250,7 +222,7 @@ describe('ConsoleTransport - methodMap', () => {
   });
 });
 
-describe('RotatingFileTransport (size mode)', () => {
+describe('FileTransport (rotate-size mode)', () => {
   let dir: string;
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'elog-size-'));
@@ -261,7 +233,14 @@ describe('RotatingFileTransport (size mode)', () => {
 
   it('rotates generations when maxSize is exceeded', async () => {
     const file = join(dir, 'app.log');
-    const t = new RotatingFileTransport({ path: file, daily: false, maxSize: 10, maxFiles: 3 });
+    const t = new FileTransport({
+      mode: 'rotate-size',
+      appName: 'app',
+      dir,
+      ext: 'log',
+      maxSize: 10,
+      maxFiles: 3,
+    });
     for (let i = 0; i < 5; i++) {
       const e = makeEntry({ message: `m${i}` });
       t.write(e, t.formatter(e));
@@ -269,14 +248,20 @@ describe('RotatingFileTransport (size mode)', () => {
     await t.close();
 
     expect((await readFile(file, 'utf8')).trim()).toContain('m4');
-    expect((await readFile(`${file}.1`, 'utf8')).trim()).toContain('m3');
-    expect((await readFile(`${file}.2`, 'utf8')).trim()).toContain('m2');
+    expect((await readFile(join(dir, 'app.1.log'), 'utf8')).trim()).toContain('m3');
+    expect((await readFile(join(dir, 'app.2.log'), 'utf8')).trim()).toContain('m2');
   });
 
   it('clamps size-mode maxFiles to >= 2', async () => {
     const file = join(dir, 'clamp.log');
-    // maxFiles:1 is clamped to 2 at construction time.
-    const t = new RotatingFileTransport({ path: file, daily: false, maxSize: 1, maxFiles: 1 });
+    const t = new FileTransport({
+      mode: 'rotate-size',
+      appName: 'clamp',
+      dir,
+      ext: 'log',
+      maxSize: 1,
+      maxFiles: 1,
+    });
     const a = makeEntry({ message: 'a' });
     t.write(a, t.formatter(a));
     const b = makeEntry({ message: 'b' });
@@ -285,7 +270,7 @@ describe('RotatingFileTransport (size mode)', () => {
     t.write(c, t.formatter(c));
     await t.close();
     expect((await readFile(file, 'utf8')).trim()).toContain('c');
-    expect((await readFile(`${file}.1`, 'utf8')).trim()).toContain('b');
+    expect((await readFile(join(dir, 'clamp.1.log'), 'utf8')).trim()).toContain('b');
   });
 });
 

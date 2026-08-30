@@ -34,28 +34,78 @@ class ConsoleTransport implements Transport;
 
 将每个级别映射到某个 `console` 方法（可通过 `methodMap` 覆盖）。列在 `stderrLevels` 中的级别会被额外路由到 `console.error`（stderr）——便于把 warning/error 引到单独的流。
 
-## RotatingFileTransport
+## FileTransport
 
 ```ts
-interface RotatingFileTransportOptions {
-  path: string; // 例如 '/var/log/app.log'
-  maxSize?: number; // 体积模式阈值（字节）
-  maxFiles?: number; // 环形缓冲大小（每日默认 99，体积默认 5）
-  daily?: boolean; // 默认 true
-  now?: () => Date; // 时钟覆盖（用于测试）
+interface FileBaseOptions {
+  appName: string; // 必填；日志文件名始终包含它
+  dir?: string; // 默认 os.tmpdir()
   formatter?: Formatter;
+  filter?: (entry: LogEntry) => boolean; // 返回 false 时丢弃该条目
   name?: string;
-  /**
-   * 可选的按条目谓词。返回 `false` 时该条目被丢弃（不写入）。便于把单个 logger 的
-   * 输出拆分到多个文件——例如主进程与渲染进程日志，或"仅错误"与"完整归档"。
-   */
-  filter?: (entry: LogEntry) => boolean;
 }
 
-class RotatingFileTransport implements Transport;
+// 1.1 — 单文件，一直追加到磁盘满
+interface SingleFileOptions extends FileBaseOptions {
+  mode: 'single';
+  ext?: string; // 默认 'log'
+}
+
+// 1.2 — 单文件；超出 maxSize 时备份后原地截断
+interface SingleTruncateOptions extends FileBaseOptions {
+  mode: 'single-truncate';
+  maxSize: number; // 必填
+  backupName?: string; // 备份文件名；默认 `${appName}.bak`
+  ext?: string;
+}
+
+// 2.1 — 按体积轮转；文件名是代际序号的函数
+interface RotateSizeOptions extends FileBaseOptions {
+  mode: 'rotate-size';
+  maxSize: number; // 必填
+  maxFiles: number; // 必填；保留多少代
+  fileName?: (app: string, index: number, ext: string) => string; // 默认 `${app}.${index}.${ext}`
+  ext?: string;
+}
+
+// 2.2 — 按时间轮转；文件名是时间戳的函数
+interface RotateTimeOptions extends FileBaseOptions {
+  mode: 'rotate-time';
+  unit: 'hour' | 'day'; // 必填
+  maxFiles?: number; // 可选环形上限
+  now?: () => Date; // 时钟覆盖（用于测试）
+  fileName?: (app: string, stamp: string, ext: string) => string; // 默认 `${app}.${stamp}.${ext}`
+  ext?: string;
+}
+
+// 2.3 — 自定义何时轮转；文件名是序号的函数
+interface RotateCustomOptions extends FileBaseOptions {
+  mode: 'rotate-custom';
+  shouldRotate: (entry: LogEntry, ctx: RotateContext) => boolean; // 必填
+  fileName: (app: string, seq: number, ext: string) => string; // 必填
+  maxFiles?: number;
+  ext?: string;
+}
+
+type FileTransportOptions =
+  | SingleFileOptions
+  | SingleTruncateOptions
+  | RotateSizeOptions
+  | RotateTimeOptions
+  | RotateCustomOptions;
+
+class FileTransport implements Transport;
 ```
 
-滚动行为详见 [传输器指南](/zh/guide/transports)。
+`FileTransport` 取代了旧的 `RotatingFileTransport`。`appName` 必填，且始终是文件名的一部分，因此日志文件可凭其归属的应用识别。`mode` 是一个判别联合（discriminated union）——选定一种后只需填该模式的字段，绝不会漏填所选模式需要的参数。
+
+- `single` — 单个 `dir/<appName>.<ext>` 文件，一直追加（直到磁盘写满）。
+- `single-truncate` — 同样是单文件，但一旦即将超过 `maxSize`，当前内容被改名为 `backupName`，原文件原地截断（环形缓冲）。一个主文件加一个备份。
+- `rotate-size` — 当 `size + bytes > maxSize` 时，按 `maxFiles` 推移代际（`app.log` → `app.1.log` → …）；`fileName(app, index, ext)` 让你自定义归档名。
+- `rotate-time` — 在每个 `unit` 边界（`hour`/`day`）开启新文件，并以时间戳命名；`fileName(app, stamp, ext)` 控制其形态。
+- `rotate-custom` — `shouldRotate(entry, ctx)` 决定何时切分；`fileName(app, seq, ext)` 为每个文件命名。对轮转拥有完全控制。
+
+所有模式共用同一套 `open`/`queue`/`mkdir`/`flush`/`close` 机制，仅在\"何时切换、下一个文件如何命名\"上各模式不同。
 
 ## ElectronIpcTransport
 

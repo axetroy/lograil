@@ -32,16 +32,16 @@ describe('Node runtime', () => {
     const names = rt.defaultTransports().map((t) => t.name);
     expect(names).toHaveLength(2);
     expect(names).toContain('console');
-    expect(names.some((n) => n.startsWith('rotating-file:'))).toBe(true);
+    expect(names.some((n) => n.startsWith('file:'))).toBe(true);
   });
 
-  it('adds a rotating file transport when a logFile is provided', () => {
-    const rt = createNodeRuntime({ logFile: '/tmp/node.log' });
-    expect(rt.defaultTransports().map((t) => t.name)).toContain('rotating-file:/tmp/node.log');
+  it('adds a file transport named after appName', () => {
+    const rt = createNodeRuntime({ appName: 'myapp' });
+    expect(rt.defaultTransports().map((t) => t.name)).toContain('file:myapp');
   });
 
   it('can disable the file transport', () => {
-    const rt = createNodeRuntime({ logFile: '/tmp/x.log', disableFile: true });
+    const rt = createNodeRuntime({ appName: 'x', disableFile: true });
     expect(rt.defaultTransports()).toHaveLength(1);
   });
 });
@@ -54,8 +54,8 @@ describe('Electron main runtime', () => {
     expect(rt.pid()).toBe(process.pid);
     expect(rt.hasFileSystem()).toBe(true);
     const names = rt.defaultTransports().map((t) => t.name);
-    // Fixed path: <dir>/main.log (plus the renderer file when receiving).
-    expect(names.some((n) => n.startsWith('rotating-file:') && n.includes('main.log'))).toBe(true);
+    // Fixed path: <dir>/main.{date}.log (appName 'main').
+    expect(names.some((n) => n.includes('file:main'))).toBe(true);
   });
 
   it('can disable the file transport explicitly', () => {
@@ -128,7 +128,7 @@ describe('Electron runtime (auto-detect)', () => {
     const rt = createElectronRuntime();
     expect(rt.processType).toBe('main');
     const names = rt.defaultTransports().map((t) => t.name);
-    expect(names.some((n) => n.startsWith('rotating-file:') && n.includes('main.log'))).toBe(true);
+    expect(names.some((n) => n.includes('file:main'))).toBe(true);
   });
 
   it('treats an Electron process without an explicit renderer type as main', () => {
@@ -179,6 +179,6 @@ describe('detectRuntime', () => {
     const rt: RuntimeAdapter = detectRuntime();
     expect(rt.processType).toBe('main');
     const names = rt.defaultTransports().map((t: Transport) => t.name);
-    expect(names.some((n) => n.startsWith('rotating-file:') && n.includes('main.log'))).toBe(true);
+    expect(names.some((n) => n.includes('file:main'))).toBe(true);
   });
 });

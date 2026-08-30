@@ -176,7 +176,7 @@ import { createLogger, createElectronMainRuntime } from 'lograil';
 
 const log = createLogger({
   runtime: createElectronMainRuntime({
-    // logFile paths are fixed: <appData>/Lograil/{main,renderer}.log
+    // log file names always contain the app name; fixed dir: <appData>/Lograil
     receiveFromRenderer: true, // default — receive renderer logs over IPC
   }),
 });
@@ -196,7 +196,7 @@ const log = createLogger({
 
 | Factory                       | Option               | Effect                                         |
 | ----------------------------- | -------------------- | ---------------------------------------------- |
-| `createElectronMainRuntime`   | `fileTransportOptions` | Forwarded to `RotatingFileTransport`         |
+| `createElectronMainRuntime`   | `fileTransportOptions` | Forwarded to `FileTransport` (mode `rotate-time`) |
 | `createElectronMainRuntime`   | `disableFile`        | Console only (no file)                         |
 | `createElectronMainRuntime`   | `receiveFromRenderer` | Receive renderer logs over IPC (default `true`)| |
 | `createElectronRendererRuntime` | `forwardToMain`    | Forward to main over IPC (default `true`)      |
@@ -231,7 +231,7 @@ renderer ──ElectronIpcTransport──▶ IPC ──▶ main: registerIpcRece
                                             log.ingestEntry(entry)
                                                      │
                                                      ▼
-                              main: ConsoleTransport + RotatingFileTransport
+                              main: ConsoleTransport + FileTransport
 ```
 
 - Renderer logs never touch disk directly — the main process persists them.

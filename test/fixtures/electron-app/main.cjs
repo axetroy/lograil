@@ -1,12 +1,11 @@
 'use strict';
 
 const { app, ipcMain } = require('electron');
-const { join } = require('node:path');
 const {
   createLogger,
   createElectronMainRuntime,
   ElectronIpcTransport,
-  RotatingFileTransport,
+  FileTransport,
   RENDERER_PROCESS_MARKER,
 } = require('lograil');
 
@@ -20,14 +19,18 @@ async function main() {
     level: 'debug',
     runtime: createElectronMainRuntime({ receiveFromRenderer: true, disableFile: true }),
     transports: [
-      new RotatingFileTransport({
-        path: join(dir, 'main.log'),
-        daily: false,
+      new FileTransport({
+        mode: 'single',
+        appName: 'main',
+        dir,
+        ext: 'log',
         filter: (e) => e.metadata?.[RENDERER_PROCESS_MARKER] !== 'renderer',
       }),
-      new RotatingFileTransport({
-        path: join(dir, 'renderer.log'),
-        daily: false,
+      new FileTransport({
+        mode: 'single',
+        appName: 'renderer',
+        dir,
+        ext: 'log',
         filter: (e) => e.metadata?.[RENDERER_PROCESS_MARKER] === 'renderer',
       }),
     ],
