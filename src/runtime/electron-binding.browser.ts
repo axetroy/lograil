@@ -15,3 +15,7 @@ export function isElectronProcess(): boolean {
 export function getElectron(): ElectronModule {
   throw new Error('electron is not available in browser builds');
 }
+
+export function getElectronApp(): undefined {
+  return undefined;
+}

@@ -4,8 +4,8 @@ import type { RotateTimeOptions } from '../transport/file.js';
 import { FileTransport } from '../transport/file.js';
 import type { RuntimeAdapter } from './adapter.js';
 import { createProcessLifecycle } from './process-lifecycle.js';
-import { tmpdir } from 'node:os';
-import { basename } from 'node:path';
+import { tmpdir } from '../shims/index.js';
+import { basename } from '../shims/index.js';
 
 export interface NodeRuntimeOptions {
   /** Application name; embedded in the log file name (required). */

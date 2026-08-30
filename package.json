@@ -49,7 +49,15 @@
     "./dist/esm/runtime/electron-binding.js": "./dist/esm/runtime/electron-binding.browser.js",
     "./dist/cjs/context/async-context.js": "./dist/cjs/context/async-context.browser.js",
     "./dist/esm/context/async-context.js": "./dist/esm/context/async-context.browser.js",
-    "electron": false
+    "./dist/cjs/shims/index.js": "./dist/cjs/shims/index.browser.js",
+    "./dist/esm/shims/index.js": "./dist/esm/shims/index.browser.js",
+    "./dist/cjs/runtime/process.js": "./dist/cjs/runtime/process.browser.js",
+    "./dist/esm/runtime/process.js": "./dist/esm/runtime/process.browser.js",
+    "electron": false,
+    "node:fs/promises": "./dist/esm/shims/index.browser.js",
+    "node:path": "./dist/esm/shims/index.browser.js",
+    "node:os": "./dist/esm/shims/index.browser.js",
+    "process": "./dist/esm/runtime/process.browser.js"
   },
   "files": [
     "dist",

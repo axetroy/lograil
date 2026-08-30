@@ -6,8 +6,8 @@ import { FileTransport } from '../transport/file.js';
 import { registerIpcReceiver, RENDERER_PROCESS_MARKER } from '../transport/electron-ipc.js';
 import { getElectronApp } from './electron-binding.js';
 import { createElectronLifecycle } from './electron-lifecycle.js';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { tmpdir } from '../shims/index.js';
+import { join } from '../shims/index.js';
 
 export interface ElectronMainRuntimeOptions {
   /** Forwarded to the main/renderer `FileTransport` (mode `rotate-time`). */

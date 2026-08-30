@@ -1,6 +1,6 @@
-import { mkdir, open, rename, rm, stat, readdir } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { mkdir, open, rename, rm, stat, readdir } from '../shims/index.js';
+import { basename, dirname, join } from '../shims/index.js';
+import { tmpdir } from '../shims/index.js';
 import type { LogEntry } from '../types.js';
 import type { Formatter } from '../pipeline/formatter.js';
 import { createJsonFormatter } from '../pipeline/formatter.js';
