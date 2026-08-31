@@ -62,6 +62,10 @@ export default tseslint.config(
               name: 'node:async_hooks',
               message: 'Do not import node:* directly. Use src/shims/index.js instead.',
             },
+            {
+              name: 'node:cluster',
+              message: 'Do not import node:* directly. Use src/shims/index.js instead.',
+            },
           ],
         },
       ],

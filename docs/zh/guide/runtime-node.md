@@ -115,3 +115,34 @@ const log = createLogger({ autoFlushOnExit: true }); // 默认
 // 或显式调用：
 log.attachExitHandlers();
 ```
+
+## Cluster 支持
+
+在 `node:cluster` 中运行时，运行时会自动检测当前进程是工作进程还是主进程，
+并相应调整行为：
+
+| 角色 | 文件传输器 | IPC 传输器 |
+| --- | --- | --- |
+| **主进程**（`cluster.isPrimary`） | ✅ `FileTransport`（rotate-time，按日轮转） | ✅ 自动挂载 `registerClusterReceiver` |
+| **工作进程**（`cluster.isWorker`） | ❌ 已禁用 | ✅ `ClusterIpcTransport`（通过 `process.send`） |
+
+工作进程不写文件——它们通过 cluster IPC 通道把每条条目发送到主进程，
+由主进程的 logger 统一持久化。这避免了多进程同时写入导致的文件损坏，
+所有日志文件统一归一个 `appName` 所有。
+
+```ts
+// cluster.ts — 零配置，自动检测
+import cluster from 'node:cluster';
+import { logger } from 'lograil';
+
+if (cluster.isPrimary) {
+  // 主进程：console + file + 接收工作进程日志
+  for (let i = 0; i < 4; i++) cluster.fork();
+} else {
+  // 工作进程：console + 通过 process.send 发送到主进程
+  logger.info('worker started');
+}
+```
+
+无需手动调用 `registerClusterReceiver`——`createNodeRuntime()` 在主进程侧
+会自动挂载。

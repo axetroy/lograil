@@ -9,7 +9,7 @@ This page explains what `lograil` is, why it exists, when to reach for it, and t
 Most logging libraries treat Electron as an afterthought: you wire up IPC by hand, duplicate config across processes, and hope the renderer's logs actually reach a file. `lograil` is built for that reality from the ground up:
 
 - **One logger, every runtime.** The same `import { logger } from 'lograil'` works untouched in the main process, the renderer, Node, and the browser. The runtime adapter detects where it runs and binds to the right transport automatically.
-- **Secure by default in Electron.** Renderer logs are forwarded to the main process over IPC — they never touch the filesystem from an untrusted context. This fits Electron's `contextIsolation` + preload security model (see [Electron](./electron)).
+- **Secure by default in Electron.** Renderer logs are forwarded to the main process over IPC — they never touch the filesystem from an untrusted context. This fits Electron's `contextIsolation` + preload security model (see [Electron](./runtime-electron)).
 - **Structured, not stringly-typed.** Every log is a frozen `LogEntry` carrying a level, message, timestamp, context, and arbitrary structured fields. Transports can render it as JSON, a console line, or a live UI without re-parsing.
 - **Composable pipeline.** Filter → process → format → transport. Add sampling, redaction, or custom fields without forking the library.
 - **Hot-path safe.** Logging never throws into your application code. A failing transport or subscriber is isolated and reported, never breaks the caller.
@@ -53,4 +53,4 @@ These concepts are explored in depth in [Architecture](./architecture). The [API
 - [Getting Started](./getting-started) — install and emit your first structured logs.
 - [Configuration](./configuration) — levels, pipeline, and transports.
 - [Transports](./transports) — built-in and custom destinations.
-- [Electron](./electron) — secure main/renderer logging setup.
+- [Electron](./runtime-electron) — secure main/renderer logging setup.

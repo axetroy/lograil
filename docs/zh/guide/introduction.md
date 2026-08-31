@@ -9,7 +9,7 @@
 多数日志库把 Electron 当作事后补丁：你得手写 IPC、在多个进程间重复配置，还得祈祷渲染进程的日志真的能落盘。`lograil` 从一开始就为这种现实而设计：
 
 - **一个 logger，跑遍所有运行时。** 同样的 `import { logger } from 'lograil'` 在主进程、渲染进程、Node 与浏览器中都能原样运行。运行时适配器会自动探测所处环境，并绑定正确的传输器。
-- **Electron 下默认安全。** 渲染进程的日志通过 IPC 转发到主进程——它们绝不会在不受信任的上下文中触碰文件系统。这契合 Electron 的 `contextIsolation` + preload 安全模型（见 [Electron](./electron)）。
+- **Electron 下默认安全。** 渲染进程的日志通过 IPC 转发到主进程——它们绝不会在不受信任的上下文中触碰文件系统。这契合 Electron 的 `contextIsolation` + preload 安全模型（见 [Electron](./runtime-electron)）。
 - **结构化，而非字符串拼接。** 每条日志都是一个被冻结的 `LogEntry`，携带级别、消息、时间戳、上下文与任意结构化字段。传输器可将其渲染为 JSON、控制台行或实时 UI，无需重新解析。
 - **可组合的管线。** 过滤 → 处理 → 格式化 → 传输。无需 fork 库即可加入采样、脱敏或自定义字段。
 - **热路径安全。** 日志调用绝不会向你的业务代码抛出异常。某个传输器或订阅者出错会被隔离并上报，绝不会中断调用方。
@@ -53,4 +53,4 @@ flowchart LR
 - [快速开始](./getting-started) —— 安装并发出你的第一条结构化日志。
 - [配置](./configuration) —— 级别、管线与传输器。
 - [传输器](./transports) —— 内置与自定义目的地。
-- [Electron](./electron) —— 安全的主/渲染进程日志配置。
+- [Electron](./runtime-electron) —— 安全的主/渲染进程日志配置。

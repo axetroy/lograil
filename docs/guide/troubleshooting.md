@@ -69,10 +69,10 @@ silently fell back to the Web runtime.
   renderer can't `require('electron')`, so lograil can't detect Electron and falls
   back to the Web runtime (console only). Use a preload bridge and pass it via
   `createElectronRendererRuntime({ ipcRenderer })` (see the
-  [Electron guide](./electron.md)).
+  [Electron guide](./runtime-electron.md)).
 - Rule out a level filter: `logger.setLevel('trace')` temporarily.
 
-See the [Electron guide](./electron.md).
+See the [Electron guide](./runtime-electron.md).
 
 ## 4. OTLP endpoint doesn't receive anything
 

@@ -121,3 +121,35 @@ const log = createLogger({ autoFlushOnExit: true }); // default
 // or call explicitly:
 log.attachExitHandlers();
 ```
+
+## Cluster support
+
+When running inside `node:cluster`, the runtime automatically detects whether
+the current process is a worker or the primary and adjusts behavior:
+
+| Role | File transport | IPC transport |
+| --- | --- | --- |
+| **Primary** (`cluster.isPrimary`) | ✅ `FileTransport` (rotate-time, daily) | ✅ `registerClusterReceiver` auto-attached |
+| **Worker** (`cluster.isWorker`) | ❌ disabled | ✅ `ClusterIpcTransport` (via `process.send`) |
+
+Workers do not write files — they send every entry to the primary process over
+the cluster IPC channel, where entries are fed into the primary's logger. This
+avoids file corruption from concurrent writes and keeps the log files unified
+under one `appName`.
+
+```ts
+// cluster.ts — zero-config, auto-detected
+import cluster from 'node:cluster';
+import { logger } from 'lograil';
+
+if (cluster.isPrimary) {
+  // primary: console + file + receives worker logs
+  for (let i = 0; i < 4; i++) cluster.fork();
+} else {
+  // worker: console + sends to primary via process.send()
+  logger.info('worker started');
+}
+```
+
+No manual `registerClusterReceiver` call is needed — `createNodeRuntime()`
+attaches it automatically on the primary side.

@@ -50,10 +50,10 @@ console 的 transport。
 - 打包后 `contextIsolation: true` + `nodeIntegration: false` 的环境下，渲染端无法
   `require('electron')`，于是 lograil 无法识别 Electron 并回退到 Web runtime（仅本地 console）。
   用 preload 桥接，并通过 `createElectronRendererRuntime({ ipcRenderer })` 传入（见
-  [Electron 指南](./electron.md)）。
+  [Electron 指南](./runtime-electron.md)）。
 - 临时把级别调低（`logger.setLevel('trace')`）排除级别过滤问题。
 
-详见 [Electron 指南](./electron.md)。
+详见 [Electron 指南](./runtime-electron.md)。
 
 ## 4. OTLP 端点收不到任何数据
 

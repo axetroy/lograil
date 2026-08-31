@@ -12,6 +12,11 @@ export function tmpdir(): string {
   return '/tmp';
 }
 
+// --- cluster ---
+export function isClusterWorker(): boolean {
+  return false;
+}
+
 // --- path ---
 export function basename(p: string, ext?: string): string {
   const seg =

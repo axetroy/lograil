@@ -17,3 +17,9 @@ export { basename, dirname, join } from 'node:path';
 
 // --- fs/promises ---
 export { mkdir, open, rename, rm, stat, readdir } from 'node:fs/promises';
+
+// --- cluster ---
+import cluster from 'node:cluster';
+export function isClusterWorker(): boolean {
+  return cluster.isWorker === true;
+}
