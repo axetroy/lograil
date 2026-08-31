@@ -5,3 +5,4 @@ export * from './electron-ipc.js';
 export * from './file.js';
 export * from './otlp.js';
 export * from './live.js';
+export * from './worker-ipc.js';

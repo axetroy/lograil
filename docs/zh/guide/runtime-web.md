@@ -67,6 +67,35 @@ const log = createLogger({ runtime: createWebRuntime() });
 log.info('输出到控制台和/或 OTLP，不写磁盘');
 ```
 
+## Worker 支持
+
+在 Web Worker 或 Node `worker_threads` 工作线程中运行时，运行时会自动检测
+Worker 上下文，并通过 `postMessage()` 把条目发送到主线程/父线程。主线程通过
+`registerWorkerReceiver()` 接收——由 `createWebRuntime()` 自动挂载。
+
+| 角色 | 控制台 | IPC 传输器 |
+| --- | --- | --- |
+| **Worker**（Web Worker 或 `worker_threads`） | ✅ | ✅ `WorkerIpcTransport`（`self.postMessage`） |
+| **主线程/父线程** | ✅ | ✅ 自动挂载 `registerWorkerReceiver` |
+
+```ts
+// worker.ts — 零配置，自动检测
+import { logger } from 'lograil';
+
+logger.info('hello from worker'); // → 控制台 + 转发到主线程
+```
+
+```ts
+// main.ts — 自动接收 worker 日志
+import { createLogger, createWebRuntime } from 'lograil';
+
+const log = createLogger({ runtime: createWebRuntime() });
+// Worker 日志自动到达并注入此 logger
+```
+
+无需手动调用 `registerWorkerReceiver`——`createWebRuntime()` 在主线程侧
+会自动挂载。
+
 ## 覆盖 `now()`
 
 时钟可注入——适用于测试或单调时间戳：

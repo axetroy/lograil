@@ -146,3 +146,35 @@ if (cluster.isPrimary) {
 
 无需手动调用 `registerClusterReceiver`——`createNodeRuntime()` 在主进程侧
 会自动挂载。
+
+## Worker threads 支持
+
+在 `worker_threads` 工作线程中运行时，运行时会自动检测 Worker 上下文，
+并通过 `postMessage()` 把条目发送到父线程。父线程通过 `registerWorkerReceiver()`
+接收——由 `createNodeRuntime()` 自动挂载。
+
+| 角色 | 文件传输器 | IPC 传输器 |
+| --- | --- | --- |
+| **父线程**（主线程） | ✅ `FileTransport` | ✅ 自动挂载 `registerWorkerReceiver` |
+| **Worker**（`worker_threads`） | ❌ 禁用 | ✅ `WorkerIpcTransport`（`self.postMessage`） |
+
+复用与 Web Worker 相同的 `WorkerIpcTransport`——Web 和 Node Worker 共享同一套
+`postMessage` 协议。
+
+```ts
+// parent.ts
+import { createLogger, createNodeRuntime } from 'lograil';
+
+const log = createLogger({ runtime: createNodeRuntime() });
+
+// Worker 线程日志自动到达
+```
+
+```ts
+// worker.ts — 零配置，自动检测
+import { createLogger, createWebRuntime } from 'lograil';
+
+// 在 worker_threads 工作线程中，createWebRuntime() 会检测到上下文
+const log = createLogger({ runtime: createWebRuntime() });
+logger.info('hello from worker_threads'); // → 控制台 + 转发到父线程
+```

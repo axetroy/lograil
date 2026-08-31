@@ -73,6 +73,36 @@ const log = createLogger({ runtime: createWebRuntime() });
 log.info('sent to console and/or OTLP, never to disk');
 ```
 
+## Worker support
+
+When running inside a Web Worker or Node `worker_threads` worker, the runtime
+automatically detects the Worker context and sends entries to the main/parent
+thread via `postMessage()`. The main thread receives them via
+`registerWorkerReceiver()` — attached automatically by `createWebRuntime()`.
+
+| Role | Console | IPC transport |
+| --- | --- | --- |
+| **Worker** (Web Worker or `worker_threads`) | ✅ | ✅ `WorkerIpcTransport` (`self.postMessage`) |
+| **Main/parent thread** | ✅ | ✅ `registerWorkerReceiver` auto-attached |
+
+```ts
+// worker.ts — zero-config, auto-detected
+import { logger } from 'lograil';
+
+logger.info('hello from worker'); // → console + forwarded to main thread
+```
+
+```ts
+// main.ts — receives worker logs automatically
+import { createLogger, createWebRuntime } from 'lograil';
+
+const log = createLogger({ runtime: createWebRuntime() });
+// Worker logs arrive and are fed into this logger automatically
+```
+
+No manual `registerWorkerReceiver` call is needed — `createWebRuntime()`
+attaches it automatically on the main thread side.
+
 ## Overriding `now()`
 
 The clock is injectable — useful for testing or monotonic timestamps:

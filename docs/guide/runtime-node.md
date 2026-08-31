@@ -153,3 +153,36 @@ if (cluster.isPrimary) {
 
 No manual `registerClusterReceiver` call is needed — `createNodeRuntime()`
 attaches it automatically on the primary side.
+
+## Worker threads support
+
+When running inside a `worker_threads` worker, the runtime automatically
+detects the worker context and sends entries to the parent thread via
+`postMessage()`. The parent thread receives them via `registerWorkerReceiver()`
+(attached automatically by `createNodeRuntime()`).
+
+| Role | File transport | IPC transport |
+| --- | --- | --- |
+| **Parent** (main thread) | ✅ `FileTransport` | ✅ `registerWorkerReceiver` auto-attached |
+| **Worker** (`worker_threads`) | ❌ disabled | ✅ `WorkerIpcTransport` (`self.postMessage`) |
+
+This uses the same `WorkerIpcTransport` as Web Workers — both Web and Node
+workers share the same `postMessage` protocol.
+
+```ts
+// parent.ts
+import { createLogger, createNodeRuntime } from 'lograil';
+
+const log = createLogger({ runtime: createNodeRuntime() });
+
+// Worker thread logs arrive automatically
+```
+
+```ts
+// worker.ts — zero-config, auto-detected
+import { createLogger, createWebRuntime } from 'lograil';
+
+// In a worker_threads worker, createWebRuntime() detects the context
+const log = createLogger({ runtime: createWebRuntime() });
+logger.info('hello from worker_threads'); // → console + forwarded to parent
+```

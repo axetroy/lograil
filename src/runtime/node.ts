@@ -3,12 +3,28 @@ import { ConsoleTransport } from '../transport/console.js';
 import type { RotateTimeOptions } from '../transport/file.js';
 import { FileTransport } from '../transport/file.js';
 import { ClusterIpcTransport, registerClusterReceiver } from '../transport/cluster-ipc.js';
+import { WorkerIpcTransport } from '../transport/worker-ipc.js';
 import type { RuntimeAdapter } from './adapter.js';
 import { createProcessLifecycle } from './process-lifecycle.js';
 import { tmpdir } from '../shims/index.js';
 import { basename } from '../shims/index.js';
 import { isClusterWorker } from '../shims/index.js';
 import { DEFAULT_FILE_CAPS } from './defaults.js';
+
+/**
+ * Detect whether the current context is a Node worker_threads worker.
+ * Uses `typeof` on `globalThis.parentPort` — safe in all environments.
+ */
+function isNodeWorkerThread(): boolean {
+  try {
+    return (
+      typeof (globalThis as { parentPort?: { postMessage: unknown } }).parentPort?.postMessage ===
+      'function'
+    );
+  } catch {
+    return false;
+  }
+}
 
 export interface NodeRuntimeOptions {
   /** Application name; embedded in the log file name (required). */
@@ -86,6 +102,18 @@ export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdap
       hasFileSystem: () => false,
       defaultTransports: (): Transport[] => [new ConsoleTransport(), new ClusterIpcTransport()],
       lifecycle: createClusterWorkerLifecycle(),
+    };
+  }
+
+  // ── Node worker_threads worker: no file, send to parent via postMessage ──
+  if (isNodeWorkerThread()) {
+    return {
+      name: 'node',
+      now: () => Date.now(),
+      pid: () => pid,
+      hasFileSystem: () => false,
+      defaultTransports: (): Transport[] => [new ConsoleTransport(), new WorkerIpcTransport()],
+      lifecycle: createClusterWorkerLifecycle(), // reuse: flush on disconnect/exit
     };
   }
 
