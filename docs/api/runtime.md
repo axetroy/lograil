@@ -76,9 +76,15 @@ createElectronRendererRuntime(options?);
 | Runtime            | Default transports                                  |
 | ------------------ | --------------------------------------------------- |
 | Web                | `ConsoleTransport`                                  |
-| Node.js            | `ConsoleTransport` + `FileTransport` (`rotate-time`, daily) |
-| Electron main      | `ConsoleTransport` + `FileTransport` (`rotate-time`, daily), receives renderer IPC |
+| Node.js            | `ConsoleTransport` + `FileTransport` (`rotate-time`, daily, with disk-safety defaults) |
+| Electron main      | `ConsoleTransport` + `FileTransport` (`rotate-time`, daily, with disk-safety defaults), receives renderer IPC |
 | Electron renderer  | `ConsoleTransport` (forward to main via IPC)         |
+
+**Disk-safety defaults**: the default file transport on Node and Electron main
+ships with capacity caps so a zero-config logger never eats the disk — at most
+10 MB per file (`maxSize`), about two weeks of daily files (`maxFiles: 14`),
+and 200 MB total across all log files (`maxTotalSize`). Override any of them
+via `fileTransportOptions`.
 
 ## Web runtime
 
@@ -101,7 +107,7 @@ createLogger({ runtime: createWebRuntime() });
 ```ts
 interface NodeRuntimeOptions {
   appName?: string; // required by FileTransport; inferred from the entry script if omitted
-  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>; // forwarded to the default `FileTransport`
+  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>; // forwarded to the default `FileTransport` (overrides the disk-safety defaults)
   disableFile?: boolean;
 }
 

@@ -8,6 +8,7 @@ import { getElectronApp } from './electron-binding.js';
 import { createElectronLifecycle } from './electron-lifecycle.js';
 import { tmpdir } from '../shims/index.js';
 import { join } from '../shims/index.js';
+import { DEFAULT_FILE_CAPS } from './defaults.js';
 
 export interface ElectronMainRuntimeOptions {
   /** Forwarded to the main/renderer `FileTransport` (mode `rotate-time`). */
@@ -75,6 +76,9 @@ export function createElectronMainRuntime(
             unit: 'day',
             appName: 'main',
             dir,
+            // Disk-safety defaults so a zero-config logger never eats the
+            // disk; explicit `fileTransportOptions` values win.
+            ...DEFAULT_FILE_CAPS,
             // Main-process entries only: renderer entries are routed to the
             // dedicated renderer log file below.
             filter: (entry) => entry.metadata?.[RENDERER_PROCESS_MARKER] !== 'renderer',
@@ -89,6 +93,9 @@ export function createElectronMainRuntime(
               unit: 'day',
               appName: 'renderer',
               dir,
+              // Disk-safety defaults so a zero-config logger never eats the
+              // disk; explicit `fileTransportOptions` values win.
+              ...DEFAULT_FILE_CAPS,
               // Renderer entries only.
               filter: (entry) => entry.metadata?.[RENDERER_PROCESS_MARKER] === 'renderer',
               ...options.fileTransportOptions,

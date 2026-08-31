@@ -36,6 +36,8 @@ logger.error(new Error('boom'));
 
 在 **Node.js** 与 **Electron 主进程**中，默认 logger 除输出到控制台外，还会写入一个滚动文件。在 **Web** 与 **Electron 渲染进程**中则输出到控制台（在 Electron 环境下，渲染进程会通过 IPC 转发到主进程）。
 
+默认文件传输器开箱即磁盘安全：单文件最多 10 MB，保留约两周的按日文件，所有日志文件总体积最多 200 MB。可通过 `fileTransportOptions` 调整或放开这些上限（见 [Runtime](/zh/api/runtime)）。
+
 ## 浏览器构建与打包器
 
 `lograil` **开箱即用地支持浏览器打包**。在 Web 页面中引入它——无论用 webpack、Vite、Rollup、esbuild 还是其他打包器——都无需额外配置：

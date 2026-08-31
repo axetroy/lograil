@@ -293,6 +293,62 @@ describe('FileTransport - rotate-time mode (2.2)', () => {
     expect(existsSync(join(dir, 'tb.2026-08-02.0.log'))).toBe(true);
     expect(existsSync(join(dir, 'tb.2026-08-03.0.log'))).toBe(true);
   });
+  it('caps seq files within a single bucket via maxFilesPerBucket (inner ring)', async () => {
+    const clock = { now: new Date(2026, 7, 1) }; // Aug 1, single day
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'tb',
+      dir,
+      ext: 'log',
+      maxSize: 8, // ~2 entries per file → forces splitting
+      maxFilesPerBucket: 3, // keep at most 3 seq files inside the bucket
+      now: () => clock.now,
+    });
+    // 7 entries × 3 bytes each; maxSize 8 fits 2 per file → splits at m3/m5/m7
+    // → seq 0..3 (4 files) → oldest 1 trimmed
+    for (let i = 1; i <= 7; i++) t.write(entry(`m${i}`), `m${i}`);
+    await t.flush();
+    await t.close();
+    // seq 0 deleted (oldest within the bucket)
+    expect(existsSync(join(dir, 'tb.2026-08-01.0.log'))).toBe(false);
+    // seq 1..3 kept, including the active file (highest seq)
+    expect(existsSync(join(dir, 'tb.2026-08-01.1.log'))).toBe(true);
+    expect(existsSync(join(dir, 'tb.2026-08-01.2.log'))).toBe(true);
+    expect(existsSync(join(dir, 'tb.2026-08-01.3.log'))).toBe(true);
+    expect(readFileSync(join(dir, 'tb.2026-08-01.3.log'), 'utf8')).toContain('m7');
+  });
+  it('maxFilesPerBucket does not touch other buckets', async () => {
+    const clock = { now: new Date(2026, 7, 1) };
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'tb',
+      dir,
+      ext: 'log',
+      maxSize: 8,
+      maxFilesPerBucket: 1, // aggressive: only the newest seq per bucket
+      now: () => clock.now,
+    });
+    // Day 1: 3 entries → split at a3 → seq 0..1 → seq 0 trimmed, only seq 1 survives
+    t.write(entry('a1'), 'a1');
+    t.write(entry('a2'), 'a2');
+    t.write(entry('a3'), 'a3');
+    // Day 2: 2 entries fit in one file (6 ≤ 8) → no split → only seq 0
+    clock.now = new Date(2026, 7, 2);
+    t.write(entry('b1'), 'b1');
+    t.write(entry('b2'), 'b2');
+    await t.flush();
+    await t.close();
+    // Day 1: only the newest seq file remains
+    expect(existsSync(join(dir, 'tb.2026-08-01.0.log'))).toBe(false);
+    expect(existsSync(join(dir, 'tb.2026-08-01.1.log'))).toBe(true);
+    expect(readFileSync(join(dir, 'tb.2026-08-01.1.log'), 'utf8')).toContain('a3');
+    // Day 2: untouched by the inner-ring trim (different bucket)
+    expect(existsSync(join(dir, 'tb.2026-08-02.0.log'))).toBe(true);
+    expect(existsSync(join(dir, 'tb.2026-08-02.1.log'))).toBe(false);
+    expect(readFileSync(join(dir, 'tb.2026-08-02.0.log'), 'utf8')).toContain('b2');
+  });
 });
 
 describe('FileTransport - rotate-custom mode (2.3)', () => {

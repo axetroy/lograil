@@ -71,9 +71,13 @@ createElectronRendererRuntime(options?);
 | 运行时               | 默认传输器                                                  |
 | -------------------- | ----------------------------------------------------------- |
 | Web                  | `ConsoleTransport`                                          |
-| Node.js              | `ConsoleTransport` + `FileTransport`（`rotate-time`，按日）        |
-| Electron 主进程      | `ConsoleTransport` + `FileTransport`（`rotate-time`，按日），并接收渲染进程 IPC |
+| Node.js              | `ConsoleTransport` + `FileTransport`（`rotate-time`，按日，含磁盘安全默认上限）        |
+| Electron 主进程      | `ConsoleTransport` + `FileTransport`（`rotate-time`，按日，含磁盘安全默认上限），并接收渲染进程 IPC |
 | Electron 渲染进程    | `ConsoleTransport`（经由 IPC 转发到主进程）                 |
+
+**磁盘安全默认值**：Node 与 Electron 主进程的默认文件传输器自带容量上限，零配置也不会吃满磁盘——
+单文件最多 10 MB（`maxSize`）、保留约两周的按日文件（`maxFiles: 14`）、所有日志文件总体积最多 200 MB（`maxTotalSize`）。
+全部可通过 `fileTransportOptions` 覆盖。
 
 ## Web 运行时
 
@@ -95,7 +99,7 @@ createLogger({ runtime: createWebRuntime() });
 ```ts
 interface NodeRuntimeOptions {
   appName?: string; // FileTransport 必填；省略时从入口脚本推断
-  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>; // 透传给默认 `FileTransport`
+  fileTransportOptions?: Partial<Omit<RotateTimeOptions, 'mode'>>; // 透传给默认 `FileTransport`（覆盖磁盘安全默认值）
   disableFile?: boolean;
 }
 

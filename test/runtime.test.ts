@@ -9,6 +9,7 @@ import {
 } from '../src/runtime/index.js';
 import type { RuntimeAdapter } from '../src/runtime/index.js';
 import type { Transport } from '../src/transport/transport.js';
+import { FileTransport } from '../src/transport/file.js';
 import type { LogEntry } from '../src/types.js';
 
 describe('Web runtime', () => {
@@ -33,6 +34,29 @@ describe('Node runtime', () => {
     expect(names).toHaveLength(2);
     expect(names).toContain('console');
     expect(names.some((n) => n.startsWith('file:'))).toBe(true);
+  });
+
+  it('applies disk-safety defaults to the file transport', () => {
+    const rt = createNodeRuntime({ appName: 'myapp' });
+    const file = rt
+      .defaultTransports()
+      .find((t): t is FileTransport => t instanceof FileTransport)!;
+    expect(file.caps).toMatchObject({
+      maxSize: 10 * 1024 * 1024,
+      maxFiles: 14,
+      maxTotalSize: 200 * 1024 * 1024,
+    });
+  });
+
+  it('lets fileTransportOptions override the disk-safety defaults', () => {
+    const rt = createNodeRuntime({
+      appName: 'myapp',
+      fileTransportOptions: { maxFiles: 3, maxTotalSize: 1024 },
+    });
+    const file = rt
+      .defaultTransports()
+      .find((t): t is FileTransport => t instanceof FileTransport)!;
+    expect(file.caps).toMatchObject({ maxFiles: 3, maxTotalSize: 1024 });
   });
 
   it('adds a file transport named after appName', () => {

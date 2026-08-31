@@ -87,6 +87,7 @@ interface RotateTimeOptions extends FileBaseOptions {
   unit: 'hour' | 'day'; // required
   maxFiles?: number; // optional: cap on time buckets (stamps), not individual files
   maxSize?: number; // optional: split within the same time bucket when exceeded
+  maxFilesPerBucket?: number; // optional: max seq files kept within one time bucket (inner ring)
   now?: () => Date; // clock override (testing)
   fileName?: (app: string, stamp: string, seq: number, ext: string) => string; // default `${app}.${stamp}.${seq}.${ext}`
   ext?: string;
@@ -133,7 +134,11 @@ required, so you can never forget a parameter the chosen mode needs.
   When `maxSize` is set, files within the same time bucket are split by size
   (e.g. `app.2026-08-31.0.log`, `app.2026-08-31.1.log`). `maxFiles` counts
   **time buckets**, not individual files — when a bucket is trimmed, all its
-  seq files are deleted together.
+  seq files are deleted together. `maxFilesPerBucket` caps the number of seq
+  files **within one bucket** — the oldest are deleted (the bucket forms an
+  inner ring; the active file is never deleted). Combined, the three options
+  bound total disk usage at roughly `maxFiles × maxFilesPerBucket × maxSize`
+  bytes.
 - `rotate-custom` — `shouldRotate(entry, ctx)` decides when to cut; `fileName(app,
   seq, ext)` names every file. Total control over rotation.
 

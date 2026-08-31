@@ -83,6 +83,7 @@ interface RotateTimeOptions extends FileBaseOptions {
   unit: 'hour' | 'day'; // 必填
   maxFiles?: number; // 可选：时间桶（stamp）上限，按桶计数而非按文件
   maxSize?: number; // 可选：同一时间桶内超过此大小时自动拆分
+  maxFilesPerBucket?: number; // 可选：单个时间桶内最多保留多少个 seq 文件（桶内成环）
   now?: () => Date; // 时钟覆盖（用于测试）
   fileName?: (app: string, stamp: string, seq: number, ext: string) => string; // 默认 `${app}.${stamp}.${seq}.${ext}`
   ext?: string;
@@ -116,7 +117,7 @@ class FileTransport implements Transport;
 - `single` — 单个 `dir/<appName>.<ext>` 文件，一直追加（直到磁盘写满）。
 - `single-truncate` — 同样是单文件，但一旦即将超过 `maxSize`，当前内容被改名为 `backupName`，原文件原地截断（环形缓冲）。一个主文件加一个备份。
 - `rotate-size` — 当 `size + bytes > maxSize` 时，按 `maxFiles` 推移代际（`app.log` → `app.1.log` → …）；`fileName(app, seq, ext)` 让你自定义归档名。
-- `rotate-time` — 在每个 `unit` 边界（`hour`/`day`）开启新文件，并以时间戳命名；`fileName(app, stamp, seq, ext)` 控制其形态。设置 `maxSize` 后，同一时间桶内的文件会按体积拆分（如 `app.2026-08-31.0.log`、`app.2026-08-31.1.log`）。`maxFiles` 按**时间桶**计数，而非按文件——删除某个桶时，其下所有 seq 文件一并删除。
+- `rotate-time` — 在每个 `unit` 边界（`hour`/`day`）开启新文件，并以时间戳命名；`fileName(app, stamp, seq, ext)` 控制其形态。设置 `maxSize` 后，同一时间桶内的文件会按体积拆分（如 `app.2026-08-31.0.log`、`app.2026-08-31.1.log`）。`maxFiles` 按**时间桶**计数，而非按文件——删除某个桶时，其下所有 seq 文件一并删除。`maxFilesPerBucket` 限制**单个桶内**的 seq 文件数，超出时删除桶内最旧的（桶内成环，活动文件永不删除）。三者组合后磁盘占用上界约为 `maxFiles × maxFilesPerBucket × maxSize` 字节。
 - `rotate-custom` — `shouldRotate(entry, ctx)` 决定何时切分；`fileName(app, seq, ext)` 为每个文件命名。对轮转拥有完全控制。
 
 所有模式共用同一套 `open`/`queue`/`mkdir`/`flush`/`close` 机制，仅在\"何时切换、下一个文件如何命名\"上各模式不同。

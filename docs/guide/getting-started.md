@@ -40,6 +40,10 @@ to a rotating file in addition to the console. On the **Web** and **Electron
 renderer** it logs to the console (renderers forward to the main process over
 IPC when running in Electron).
 
+The default file transport is disk-safe out of the box: at most 10 MB per file,
+about two weeks of daily files, and 200 MB total. Tune or lift these caps via
+`fileTransportOptions` (see [Runtime](/api/runtime)).
+
 ## Browser builds & bundlers
 
 `lograil` is **bundle-safe for the browser out of the box**. Importing it in a

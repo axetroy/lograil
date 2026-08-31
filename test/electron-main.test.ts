@@ -44,6 +44,33 @@ describe('createElectronMainRuntime', () => {
     expect(ts.some((t) => t instanceof FileTransport)).toBe(true);
   });
 
+  it('applies disk-safety defaults to both file transports', () => {
+    const rt = createElectronMainRuntime();
+    const files = rt
+      .defaultTransports()
+      .filter((t): t is FileTransport => t instanceof FileTransport);
+    expect(files.length).toBe(2);
+    for (const f of files) {
+      expect(f.caps).toMatchObject({
+        maxSize: 10 * 1024 * 1024,
+        maxFiles: 14,
+        maxTotalSize: 200 * 1024 * 1024,
+      });
+    }
+  });
+
+  it('lets fileTransportOptions override the disk-safety defaults', () => {
+    const rt = createElectronMainRuntime({
+      fileTransportOptions: { maxFiles: 3, maxTotalSize: 1024 },
+    });
+    const files = rt
+      .defaultTransports()
+      .filter((t): t is FileTransport => t instanceof FileTransport);
+    for (const f of files) {
+      expect(f.caps).toMatchObject({ maxFiles: 3, maxTotalSize: 1024 });
+    }
+  });
+
   it('derives the default log path from app.getPath("logs")', () => {
     const rt = createElectronMainRuntime();
     const ts = rt.defaultTransports();

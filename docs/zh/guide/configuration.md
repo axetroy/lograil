@@ -141,7 +141,7 @@ const log = createLogger({
 | 运行时                  | 选项                    | 作用                                          |
 | ----------------------- | ----------------------- | --------------------------------------------- |
 | Node / Electron 主进程  | `appName`               | `FileTransport` 必填；始终是日志文件名的一部分        |
-| Node / Electron 主进程  | `fileTransportOptions`  | 透传给 `FileTransport`（模式 `rotate-time`）        |
+| Node / Electron 主进程  | `fileTransportOptions`  | 透传给 `FileTransport`（模式 `rotate-time`）；覆盖磁盘安全默认值（单文件 10 MB、14 个按日文件、总体积 200 MB）        |
 | Node / Electron 主进程  | `disableFile`           | 仅控制台（不写文件）                          |
 | Electron 主进程         | `receiveFromRenderer`   | 通过 IPC 接收渲染进程日志（默认 `true`）      |
 

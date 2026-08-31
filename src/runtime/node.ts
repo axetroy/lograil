@@ -6,6 +6,7 @@ import type { RuntimeAdapter } from './adapter.js';
 import { createProcessLifecycle } from './process-lifecycle.js';
 import { tmpdir } from '../shims/index.js';
 import { basename } from '../shims/index.js';
+import { DEFAULT_FILE_CAPS } from './defaults.js';
 
 export interface NodeRuntimeOptions {
   /** Application name; embedded in the log file name (required). */
@@ -57,6 +58,9 @@ export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdap
             unit: 'day',
             appName,
             dir: tmpdir(),
+            // Disk-safety defaults so a zero-config logger never eats the
+            // disk; explicit `fileTransportOptions` values win.
+            ...DEFAULT_FILE_CAPS,
             ...options.fileTransportOptions,
           }),
         );

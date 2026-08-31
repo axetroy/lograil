@@ -150,7 +150,7 @@ const log = createLogger({
 | Runtime                 | Option              | Effect                                            |
 | ----------------------- | ------------------- | ------------------------------------------------- |
 | Node / Electron main    | `appName`           | Required by `FileTransport`; always part of the log file name |
-| Node / Electron main    | `fileTransportOptions` | Forwarded to `FileTransport` (mode `rotate-time`) |
+| Node / Electron main    | `fileTransportOptions` | Forwarded to `FileTransport` (mode `rotate-time`); overrides the disk-safety defaults (10 MB/file, 14 daily files, 200 MB total) |
 | Node / Electron main    | `disableFile`       | Console-only (no file)                            |
 | Electron main           | `receiveFromRenderer` | Receive renderer logs over IPC (default `true`) |
 

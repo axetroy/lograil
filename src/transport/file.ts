@@ -80,6 +80,13 @@ export interface RotateTimeOptions extends FileBaseOptions {
    * Omit = no size cap (time-only rotation).
    */
   maxSize?: number;
+  /** Max number of seq files kept **within a single time bucket**. When a
+   * bucket would exceed this count, the oldest seq files inside that bucket
+   * are deleted (the bucket forms an inner ring). Combined with `maxFiles`
+   * and `maxSize`, this bounds total disk usage at roughly
+   * `maxFiles × maxFilesPerBucket × maxSize` bytes. Omit = unbounded.
+   */
+  maxFilesPerBucket?: number;
   /** Name a file for a time bucket. Defaults to `${app}.${stamp}.${seq}.${ext}`. */
   fileName?: (app: string, stamp: string, seq: number, ext: string) => string;
   /** Override the clock (mainly for testing). Defaults to `new Date()`. */
@@ -231,6 +238,35 @@ async function trimTimeRing(
         await rm(join(dir, f), { force: true }).catch(() => {});
         owned.delete(f);
       }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Best-effort cap on the number of seq files **within one time bucket**.
+ * Deletes the oldest seq files of `stamp` when the bucket holds more than
+ * `maxPerBucket` files, so a bucket forms an inner ring. The active file
+ * (highest seq) is never deleted. Iterates the `owned` set (not the
+ * directory) so the just-rotated-to active file — which may not exist on
+ * disk yet — is still counted. Best-effort: any fs error is swallowed. */
+async function trimBucketSeq(
+  dir: string,
+  appName: string,
+  ext: string,
+  stamp: string,
+  maxPerBucket: number,
+  owned: Set<string>,
+): Promise<void> {
+  if (maxPerBucket <= 0) return;
+  const prefix = `${appName}.${stamp}.`;
+  const suffix = `.${ext}`;
+  try {
+    const files = [...owned].filter((f) => f.startsWith(prefix) && f.endsWith(suffix)).sort();
+    const excess = files.length - maxPerBucket;
+    for (let i = 0; i < excess; i++) {
+      await rm(join(dir, files[i]), { force: true }).catch(() => {});
+      owned.delete(files[i]);
     }
   } catch {
     /* ignore */
@@ -437,6 +473,7 @@ class TimeRotator implements Rotator {
   private readonly unit: 'hour' | 'day';
   private readonly maxFiles?: number;
   private readonly maxSize?: number;
+  private readonly maxFilesPerBucket?: number;
   private readonly fileName: (app: string, stamp: string, seq: number, ext: string) => string;
   private currentStamp: string | undefined;
   private seq = 0;
@@ -449,6 +486,7 @@ class TimeRotator implements Rotator {
     this.unit = opts.unit;
     this.maxFiles = opts.maxFiles;
     this.maxSize = opts.maxSize;
+    this.maxFilesPerBucket = opts.maxFilesPerBucket;
     this.fileName = opts.fileName ?? ((app, s, seq, e) => `${app}.${s}.${seq}.${e}`);
     this.path = join(dir, `${opts.appName}.${ext}`);
   }
@@ -548,6 +586,15 @@ class TimeRotator implements Rotator {
         this.path = this.stampPath(this.currentStamp, this.seq);
         io.owned.add(basename(this.path));
         await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+        // Cap the seq count inside the current bucket (inner ring).
+        await trimBucketSeq(
+          io.dir,
+          io.appName,
+          io.ext,
+          this.currentStamp,
+          this.maxFilesPerBucket ?? 0,
+          io.owned,
+        );
         return true;
       }
     }
@@ -625,6 +672,27 @@ export class FileTransport implements Transport {
   readonly formatter: Formatter;
   readonly filter?: (entry: LogEntry) => boolean;
 
+  /** Effective capacity limits, for diagnostics (e.g. "why was my log file
+   * deleted?"). `maxSize`/`maxFiles` reflect the active rotation mode;
+   * `maxTotalSize`/`maxAge` are the global caps (`Infinity`/`-1` = unset). */
+  get caps(): {
+    maxSize?: number;
+    maxFiles?: number;
+    maxFilesPerBucket?: number;
+    maxTotalSize: number;
+    maxAge: number;
+  } {
+    const o = this.options;
+    return {
+      maxSize: 'maxSize' in o ? o.maxSize : undefined,
+      maxFiles: 'maxFiles' in o ? o.maxFiles : undefined,
+      maxFilesPerBucket: 'maxFilesPerBucket' in o ? o.maxFilesPerBucket : undefined,
+      maxTotalSize: this.maxTotalSize,
+      maxAge: this.maxAge,
+    };
+  }
+
+  private readonly options: FileTransportOptions;
   private readonly dir: string;
   private readonly ext: string;
   private readonly io: FileIo;
@@ -650,6 +718,7 @@ export class FileTransport implements Transport {
     if (!options.appName) {
       throw new Error('FileTransport requires an "appName"');
     }
+    this.options = options;
     this.dir = options.dir ?? tmpdir();
     this.ext = options.ext ?? 'log';
     this.name = options.name ?? `file:${options.appName}`;
