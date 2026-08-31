@@ -38,20 +38,11 @@ logger.error(new Error('boom'));
 
 默认文件传输器开箱即磁盘安全：单文件最多 10 MB，保留约两周的按日文件，所有日志文件总体积最多 200 MB。可通过 `fileTransportOptions` 调整或放开这些上限（见 [Runtime](/zh/api/runtime)）。
 
-## 浏览器构建与打包器
+请参阅各运行时专属指南了解详情：
 
-`lograil` **开箱即用地支持浏览器打包**。在 Web 页面中引入它——无论用 webpack、Vite、Rollup、esbuild 还是其他打包器——都无需额外配置：
-
-- Node 内置模块（`node:fs`、`node:path`、`node:os`、`node:async_hooks`）从不被直接解析。它们被路由到内部的 `shims` 层，`package.json` 的 `browser` 字段会在构建时把该层替换为浏览器 stub。
-- stub 保证了**引入**在任何环境下都能成功。运行时专属的能力仍需要真实宿主：在浏览器里调用 `FileTransport` 写文件会抛错（浏览器没有文件系统），环境上下文为空操作（见 [Context](/zh/api/context)）。
-
-如果只需要控制台 + 远程传输器，用 `createWebRuntime()` —— 它完全绕开文件传输器：
-
-```ts
-import { createLogger, createWebRuntime } from 'lograil';
-
-const log = createLogger({ runtime: createWebRuntime() });
-```
+- [Web 运行时](/zh/guide/runtime-web) — 浏览器打包安全、`createWebRuntime()`
+- [Node 运行时](/zh/guide/runtime-node) — 磁盘安全默认值、`appName`、退出时刷新
+- [Electron](/zh/guide/runtime-electron) — 双进程模型、preload 桥接、IPC 频道
 
 ## 结构化日志
 

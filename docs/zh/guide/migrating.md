@@ -52,7 +52,7 @@ import { registerIpcReceiver } from 'lograil';
 registerIpcReceiver((entry) => logger.ingestEntry(entry));
 ```
 
-完整零配置流程与安全 preload 配置见 [Electron 指南](../guide/electron.md)。
+完整零配置流程与安全 preload 配置见 [Electron 指南](../guide/runtime-electron.md)。
 
 ## 从 `winston` 迁移
 

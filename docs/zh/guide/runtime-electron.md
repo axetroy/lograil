@@ -1,6 +1,8 @@
 # Electron
 
-`lograil` 为 Electron 的双进程模型而生，并且 **开箱即用**：直接导入默认的 `logger` 即可，它在主进程与渲染进程中都能正确工作。通常你不需要 `createLogger`，也不需要任何运行时配置。
+`lograil` 专为 Electron 双进程模型设计，**开箱即用**：只需导入默认的 `logger`，它在主进程与渲染进程中都能表现正确。通常不需要 `createLogger` 或任何运行时配置。
+
+> **另请参阅：** [Web 运行时](/zh/guide/runtime-web) · [Node 运行时](/zh/guide/runtime-node) —— 三个运行时共享相同的 API 面；本页涵盖 Electron 特有的行为。
 
 ## 零配置（推荐）
 
@@ -56,9 +58,9 @@ new BrowserWindow({
 
 ## 安全配置（preload + contextIsolation）
 
-在 Electron 推荐的安全默认值下（`nodeIntegration: false`、`contextIsolation: true`），渲染进程的主世界 **没有 `require`，也没有 `process`**，因此库内置的 `ElectronIpcTransport`（内部调用 `require('electron')`）无法访问 `ipcRenderer`。解决办法是借助一个 **preload** 脚本通过 `contextBridge` 暴露一个精简的 `send` 函数，再用一个自定义传输器来调用它。无需改动库本身——只用公开 API（`addTransport` + `LOGRAIL_CHANNEL`）即可。
+采用推荐的 Electron 默认值（`nodeIntegration: false`、`contextIsolation: true`）时，渲染进程的主世界**没有 `require`，也没有 `process`**，因此内置的 `ElectronIpcTransport`（会调用 `require('electron')`）无法拿到 `ipcRenderer`。解决方法是写一个 **preload** 通过 `contextBridge` 暴露一个精简的 `send` 函数，再用一个小型自定义传输器调用它。完全不需要改动库代码——只用公开 API（`addTransport` + `LOGRAIL_CHANNEL`）。
 
-**preload.ts**（运行在特权上下文，拥有 `require`）：
+**preload.ts**（运行在有 `require` 的特权上下文）：
 
 ```ts
 import { contextBridge, ipcRenderer } from 'electron';
@@ -68,7 +70,7 @@ contextBridge.exposeInMainWorld('electronLogger', {
 });
 ```
 
-在窗口上启用该 preload：
+让窗口加载该 preload：
 
 ```ts
 import { app, BrowserWindow, path } from 'electron';
@@ -84,15 +86,19 @@ app.whenReady().then(() => {
 });
 ```
 
-**main.ts** —— 默认的 `logger` 已经会自动接收渲染进程的日志；若想更显式也可以这样写：
+**main.ts**——默认 `logger` 已通过 `createElectronMainRuntime({ receiveFromRenderer: true })`（默认值）自动监听渲染进程条目。无需手动调用 `registerIpcReceiver`，除非需要覆盖 IPC 频道：
 
 ```ts
-import { logger, registerIpcReceiver } from 'lograil';
+// 仅在需要自定义频道时才需要：
+import { createLogger, createElectronMainRuntime, registerIpcReceiver } from 'lograil';
 
-registerIpcReceiver((entry) => logger.ingestEntry(entry));
+const log = createLogger({
+  runtime: createElectronMainRuntime({ receiveFromRenderer: false }),
+});
+registerIpcReceiver((entry) => log.ingestEntry(entry), { channel: 'my-app:log' });
 ```
 
-**renderer.ts** —— 把 preload 桥接作为 `ipcRenderer` 注入，构建渲染进程 logger。这是第一方推荐方式，无需手写传输器：
+**renderer.ts**——把 preload 桥接暴露的 `ipcRenderer` 注入渲染进程运行时。这是一等公民用法；无需手写传输器：
 
 ```ts
 import { createLogger, createElectronRendererRuntime } from 'lograil';
@@ -103,17 +109,17 @@ declare global {
   }
 }
 
-// 桥接只在 preload 运行后才存在；缺失时回退为普通（仅控制台）logger
+// 桥接仅在 preload 运行后存在；不存在时退回纯控制台 logger。
 const log = window.electronLogger
   ? createLogger({
       runtime: createElectronRendererRuntime({ ipcRenderer: window.electronLogger }),
     })
   : createLogger();
 
-log.warn('UI 事件'); // → 控制台 + 经 preload 桥接转发到主进程
+log.warn('UI event'); // → 控制台 + 经 preload 桥接转发到主进程
 ```
 
-如果你更想保留默认的 `logger` 单例，也可以把桥接注册成一个传输器：
+若想保留默认的 `logger` 单例，也可以把桥接注册为一个传输器：
 
 ```ts
 import { logger, LOGRAIL_CHANNEL, type Transport } from 'lograil';
@@ -130,32 +136,32 @@ if (bridge) {
 }
 ```
 
-两种方式都会在渲染进程保留一条控制台日志（DevTools 可见），同时满足 Electron 的安全默认值。
+两种方式都能在渲染进程保留控制台日志（DevTools 可见），同时满足 Electron 的安全默认值。
 
-## 自定义（进阶）
+## 进阶自定义
 
-只有当你想修改日志路径、关闭文件，或停止接收渲染进程日志时，才需要使用 `createLogger` + 显式运行时。
+只有想改日志路径、禁用文件、或停止接收渲染进程日志时，才需要 `createLogger` + 显式运行时。
 
 ```ts
-// main.ts —— 关闭文件 / 停止接收渲染进程日志
+// main.ts —— 禁用文件、或不接收渲染进程日志
 import { createLogger, createElectronMainRuntime } from 'lograil';
 
 const log = createLogger({
   runtime: createElectronMainRuntime({
     // 日志文件用 appName main/renderer；默认目录：app.getPath('logs')
     // （可用 fileTransportOptions: { dir } 覆盖）
-    receiveFromRenderer: true, // 默认 —— 通过 IPC 接收渲染进程日志
+    receiveFromRenderer: true, // 默认 true —— 通过 IPC 接收渲染进程日志
   }),
 });
 ```
 
 ```ts
-// renderer.ts —— 仅本地日志，或更换频道
+// renderer.ts —— 仅本地日志，或改频道
 import { createLogger, createElectronRendererRuntime } from 'lograil';
 
 const log = createLogger({
   runtime: createElectronRendererRuntime({
-    forwardToMain: true, // 默认 —— 通过 IPC 转发到主进程
+    forwardToMain: true, // 默认 true —— 经 IPC 转发到主进程
     // channel: 'my-app:log',
   }),
 });

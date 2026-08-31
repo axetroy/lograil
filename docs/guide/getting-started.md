@@ -44,29 +44,11 @@ The default file transport is disk-safe out of the box: at most 10 MB per file,
 about two weeks of daily files, and 200 MB total. Tune or lift these caps via
 `fileTransportOptions` (see [Runtime](/api/runtime)).
 
-## Browser builds & bundlers
+See the runtime-specific guides for details:
 
-`lograil` is **bundle-safe for the browser out of the box**. Importing it in a
-Web page — via webpack, Vite, Rollup, esbuild, or any other bundler — works
-without extra configuration:
-
-- Node built-ins (`node:fs`, `node:path`, `node:os`, `node:async_hooks`) are
-  never resolved directly. Instead they are routed through an internal
-  `shims` layer, and the `browser` field in `package.json` swaps that layer for
-  a browser stub at build time.
-- The stubs make the **import** succeed everywhere. Runtime-only pieces still
-  need a real host: `FileTransport` throws if you try to write a file in a
-  browser (there is no filesystem), and the ambient async context is a no-op
-  (see [Context](/api/context)).
-
-If you only need console + remote transports, use `createWebRuntime()` — it
-avoids file transports entirely:
-
-```ts
-import { createLogger, createWebRuntime } from 'lograil';
-
-const log = createLogger({ runtime: createWebRuntime() });
-```
+- [Web Runtime](/guide/runtime-web) — browser bundle safety, `createWebRuntime()`
+- [Node Runtime](/guide/runtime-node) — disk-safety defaults, `appName`, exit flushing
+- [Electron](/guide/runtime-electron) — two-process model, preload bridge, IPC channel
 
 ## Structured logging
 

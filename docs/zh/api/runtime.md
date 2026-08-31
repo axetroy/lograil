@@ -145,6 +145,6 @@ interface ElectronRendererRuntimeOptions {
 
 提供 `ipcRenderer` 时直接使用它；否则传输器回退到
 `require('electron').ipcRenderer`，而这在受限渲染进程中不可用。详见
-[Electron 指南](/zh/guide/electron#安全配置preload-contextisolation) 中的 preload 模式。
+[Electron 指南](/zh/guide/runtime-electron#安全配置preload-contextisolation) 中的 preload 模式。
 
 `RuntimeName` / `ElectronProcessType` / `IngestFn` 属于 `RuntimeAdapter` 契约（见 [运行时适配器接口](/zh/api/runtime)），在编写自定义适配器或自定义 IPC 桥时很有用。

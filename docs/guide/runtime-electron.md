@@ -1,9 +1,11 @@
 # Electron
 
-`lograil` is built for Electron's two-process model and works **out of the
-box**: just import the default `logger` and it behaves correctly in both the main
-and renderer processes. You usually don't need `createLogger` or any runtime
+`lograil` is built for Electron's two-process model and works **out of the box**:
+just import the default `logger` and it behaves correctly in both the main and
+renderer processes. You usually don't need `createLogger` or any runtime
 configuration.
+
+> **See also:** [Web Runtime](/guide/runtime-web) · [Node Runtime](/guide/runtime-node) — the three runtimes share the same API surface; this page covers Electron-specific behaviors.
 
 ## Zero-config (recommended)
 
@@ -24,8 +26,8 @@ app.whenReady().then(() => {
 
 That's all. The main process logs to the console **and** a daily rotating file
 under the app's `logs` directory (`app.getPath('logs')`, namespaced by the app
-name). Renderer logs arrive over IPC and are written to a
-**separate** daily rotating file so the two processes never mix:
+name). Renderer logs arrive over IPC and are written to a **separate** daily
+rotating file so the two processes never mix:
 
 - `main.{YYYY-MM-DD}.log` — entries from the **main** process
 - `renderer.{YYYY-MM-DD}.log` — entries from **renderer** processes
@@ -57,9 +59,9 @@ access the `electron` module** (`require('electron')`).
 
 Modern Electron ships with `nodeIntegration` disabled and `contextIsolation`
 enabled by default, so the renderer's main world has **no `require` and no Node
-globals** (including `process`). In that case `lograil` can't detect
-Electron in the renderer and silently falls back to the **Web runtime** — logs
-print to the console only and never reach the main process.
+globals** (including `process`). In that case `lograil` can't detect Electron
+in the renderer and silently falls back to the **Web runtime** — logs print to
+the console only and never reach the main process.
 
 Enable Node in the renderer (simplest):
 
@@ -113,17 +115,23 @@ app.whenReady().then(() => {
 });
 ```
 
-**main.ts** — the default `logger` already listens for renderer entries; be
-explicit if you prefer:
+**main.ts** — the default `logger` already listens for renderer entries via
+`createElectronMainRuntime({ receiveFromRenderer: true })` (the default).
+No manual `registerIpcReceiver` call is needed unless you want to override the
+IPC channel:
 
 ```ts
-import { logger, registerIpcReceiver } from 'lograil';
+// Only needed if you change the renderer's channel:
+import { createLogger, createElectronMainRuntime, registerIpcReceiver } from 'lograil';
 
-registerIpcReceiver((entry) => logger.ingestEntry(entry));
+const log = createLogger({
+  runtime: createElectronMainRuntime({ receiveFromRenderer: false }),
+});
+registerIpcReceiver((entry) => log.ingestEntry(entry), { channel: 'my-app:log' });
 ```
 
-**renderer.ts** — build the renderer logger with the preload bridge injected
-as the `ipcRenderer`. This is the first-class way; no manual transport needed:
+**renderer.ts** — build the renderer logger with the preload bridge injected as
+the `ipcRenderer`. This is the first-class way; no manual transport needed:
 
 ```ts
 import { createLogger, createElectronRendererRuntime } from 'lograil';
@@ -200,7 +208,7 @@ const log = createLogger({
 | ----------------------------- | -------------------- | ---------------------------------------------- |
 | `createElectronMainRuntime`   | `fileTransportOptions` | Forwarded to `FileTransport` (mode `rotate-time`) |
 | `createElectronMainRuntime`   | `disableFile`        | Console only (no file)                         |
-| `createElectronMainRuntime`   | `receiveFromRenderer` | Receive renderer logs over IPC (default `true`)| |
+| `createElectronMainRuntime`   | `receiveFromRenderer` | Receive renderer logs over IPC (default `true`)|
 | `createElectronRendererRuntime` | `forwardToMain`    | Forward to main over IPC (default `true`)      |
 | `createElectronRendererRuntime` | `channel`          | Override the IPC channel                       |
 

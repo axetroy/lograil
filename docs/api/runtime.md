@@ -155,7 +155,7 @@ interface ElectronRendererRuntimeOptions {
 
 When `ipcRenderer` is provided it is used directly; otherwise the transport falls
 back to `require('electron').ipcRenderer`, which is unavailable in a locked-down
-renderer. See the [Electron guide](/guide/electron#secure-setup-preload-contextisolation)
+renderer. See the [Electron guide](/guide/runtime-electron#secure-setup-preload-contextisolation)
 for the preload pattern.
 
 `RuntimeName` / `ElectronProcessType` / `IngestFn` are part of the `RuntimeAdapter`

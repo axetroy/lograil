@@ -26,8 +26,14 @@ function themeConfig(locale: 'en' | 'zh') {
             { text: locale === 'zh' ? '配置' : 'Configuration', link: `${p}/guide/configuration` },
             { text: locale === 'zh' ? '传输器' : 'Transports', link: `${p}/guide/transports` },
             { text: locale === 'zh' ? '插件' : 'Plugins', link: `${p}/guide/plugins` },
-            { text: locale === 'zh' ? '示例' : 'Examples', link: `${p}/guide/examples` },
-            { text: 'Electron', link: `${p}/guide/electron` },
+            {
+              text: locale === 'zh' ? '运行时' : 'Runtimes',
+              items: [
+                { text: locale === 'zh' ? 'Web' : 'Web', link: `${p}/guide/runtime-web` },
+                { text: locale === 'zh' ? 'Node' : 'Node', link: `${p}/guide/runtime-node` },
+                { text: 'Electron', link: `${p}/guide/runtime-electron` },
+              ],
+            },
             { text: locale === 'zh' ? '架构' : 'Architecture', link: `${p}/guide/architecture` },
             { text: locale === 'zh' ? '基准测试' : 'Benchmarks', link: `${p}/guide/benchmarks` },
             { text: locale === 'zh' ? '迁移指南' : 'Migrating', link: `${p}/guide/migrating` },

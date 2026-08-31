@@ -61,7 +61,7 @@ import { registerIpcReceiver } from 'lograil';
 registerIpcReceiver((entry) => logger.ingestEntry(entry));
 ```
 
-See the [Electron guide](../guide/electron.md) for the full zero-config flow and the
+See the [Electron guide](../guide/runtime-electron.md) for the full zero-config flow and the
 secure preload setup.
 
 ## From `winston`
