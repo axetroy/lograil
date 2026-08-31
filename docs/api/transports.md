@@ -46,7 +46,7 @@ interface FileBaseOptions {
   dir?: string; // default os.tmpdir()
   formatter?: Formatter;
   filter?: (entry: LogEntry) => boolean; // drop entries when it returns false
-  name?: string;
+  name?: string; // transport name for diagnostics & removeTransport; default `file:<appName>` (never part of file names)
   /** Global cap on total bytes of all owned files (active + history). Default Infinity. */
   maxTotalSize?: number;
   /** 
@@ -112,7 +112,9 @@ class FileTransport implements Transport;
 
 `FileTransport` replaces the old `RotatingFileTransport`. `appName` is required and
 is always part of the file name, so a log file is identifiable by its owning
-application. The mode is a discriminated union — pick one and only its fields are
+application. The optional `name` is separate — it only labels the transport
+instance for diagnostics and `removeTransport()`, defaults to `file:<appName>`,
+and never appears in file names. The mode is a discriminated union — pick one and only its fields are
 required, so you can never forget a parameter the chosen mode needs.
 
 > **Node / Electron main only.** `FileTransport` writes with the real `node:fs`

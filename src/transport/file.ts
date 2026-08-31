@@ -16,6 +16,9 @@ export interface FileBaseOptions {
   formatter?: Formatter;
   /** Drop entries for which this returns `false`. */
   filter?: (entry: LogEntry) => boolean;
+  /** Transport name for diagnostics and `removeTransport()`. Defaults to
+   * `file:<appName>`. Unlike `appName`, it never appears in generated file
+   * names — it only identifies this transport instance in memory. */
   name?: string;
   /** File extension without the dot. Defaults to `'log'`. */
   ext?: string;

@@ -42,7 +42,7 @@ interface FileBaseOptions {
   dir?: string; // 默认 os.tmpdir()
   formatter?: Formatter;
   filter?: (entry: LogEntry) => boolean; // 返回 false 时丢弃该条目
-  name?: string;
+  name?: string; // 传输器名，用于诊断与 removeTransport；默认 `file:<appName>`（不参与文件名）
   /** 所有文件（活动 + 历史）的总体积上限。默认 Infinity。 */
   maxTotalSize?: number;
   /** 
@@ -106,7 +106,7 @@ type FileTransportOptions =
 class FileTransport implements Transport;
 ```
 
-`FileTransport` 取代了旧的 `RotatingFileTransport`。`appName` 必填，且始终是文件名的一部分，因此日志文件可以按所属应用识别。模式是一个判别联合——选一种模式，就只有该模式的字段是必填的，绝不会忘记所选模式需要的参数。
+`FileTransport` 取代了旧的 `RotatingFileTransport`。`appName` 必填，且始终是文件名的一部分，因此日志文件可以按所属应用识别。可选的 `name` 与之无关——它只给传输器实例打标签，用于诊断和 `removeTransport()`，默认 `file:<appName>`，不会出现在文件名里。模式是一个判别联合——选一种模式，就只有该模式的字段是必填的，绝不会忘记所选模式需要的参数。
 
 > **仅 Node / Electron 主进程可用。** `FileTransport` 使用真实的 `node:fs` API 写入。
 > 在浏览器打包中，其 fs 函数被替换为调用即抛错的 stub——**引入是安全的**，但在浏览器中写文件会失败。
