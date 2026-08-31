@@ -60,8 +60,8 @@ export interface RotateSizeOptions extends FileBaseOptions {
   maxSize: number;
   /** Number of generations to keep (active file + N-1 backups). */
   maxFiles: number;
-  /** Name the i-th generation file. Defaults to `${app}.${i}.${ext}`. */
-  fileName?: (app: string, index: number, ext: string) => string;
+  /** Name the i-th generation file. Defaults to `${app}.${seq}.${ext}`. */
+  fileName?: (app: string, seq: number, ext: string) => string;
 }
 
 /** 2.2 — roll by time (hour or day), naming each file with a timestamp. */
@@ -69,10 +69,19 @@ export interface RotateTimeOptions extends FileBaseOptions {
   mode: 'rotate-time';
   /** Time granularity of a new file. */
   unit: 'hour' | 'day';
-  /** Number of time-bucketed files to keep (ring buffer). Omit = unbounded. */
+  /** Number of time buckets (stamps) to keep. When a bucket contains
+   *  multiple seq files (via `maxSize`), the entire bucket is kept or
+   *  deleted as a unit. Omit = unbounded. */
   maxFiles?: number;
-  /** Name a file for a time bucket. Defaults to `${app}.${stamp}.${ext}`. */
-  fileName?: (app: string, stamp: string, ext: string) => string;
+  /**
+   * Max bytes per time bucket. When the active file within the same time
+   * bucket would exceed this limit, a new numbered part is created
+   * (e.g. `app.2026-08-31-14.0.log`, `app.2026-08-31-14.1.log`).
+   * Omit = no size cap (time-only rotation).
+   */
+  maxSize?: number;
+  /** Name a file for a time bucket. Defaults to `${app}.${stamp}.${seq}.${ext}`. */
+  fileName?: (app: string, stamp: string, seq: number, ext: string) => string;
   /** Override the clock (mainly for testing). Defaults to `new Date()`. */
   now?: () => Date;
 }
@@ -137,33 +146,91 @@ interface FileIo {
   appName: string;
   /** Close the current file handle so a rotator can reopen a new path. */
   closeHandle(): Promise<void>;
-  /** Files this transport has created — trimRing/caps only touch these. */
+  /** Files this transport has created — trimRing/trimTimeRing/caps only touch these. */
   owned: Set<string>;
 }
 
 // ---- shared helpers -------------------------------------------------------
 
 /** Best-effort cap: delete the oldest bucket/generation files beyond `maxFiles`.
- * Only touches files the transport has explicitly created (tracked in `owned`). */
+ * Only touches files the transport has explicitly created (tracked in `owned`).
+ * When `exclude` is provided, files matching its basename are also kept (used
+ * to protect the just-rotated-away file so it survives until the next bucket). */
 async function trimRing(
   dir: string,
   appName: string,
   ext: string,
   maxFiles: number,
   owned: Set<string>,
+  exclude?: string,
 ): Promise<void> {
   // maxFiles<=1 → no cap configured; skip trimming.
   if (maxFiles <= 1) return;
   const keep = maxFiles - 1;
+  const excludeName = exclude ? basename(exclude) : undefined;
   try {
     const backups = (await readdir(dir))
-      .filter((f) => owned.has(f) && f !== `${appName}.${ext}`)
+      .filter(
+        (f) =>
+          owned.has(f) &&
+          f !== `${appName}.${ext}` &&
+          (excludeName === undefined || f !== excludeName),
+      )
       .sort();
     const excess = backups.length - keep;
     for (let i = 0; i < excess; i++) {
       const toDelete = backups[i];
       await rm(join(dir, toDelete), { force: true }).catch(() => {});
       owned.delete(toDelete);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Best-effort cap that counts by **time buckets** (stamps) rather than files.
+ * Groups owned files by their timestamp stamp, then deletes the oldest
+ * complete bucket(s) when the number of distinct stamps exceeds `maxFiles`.
+ * This is the correct trimming strategy for `rotate-time` with `maxSize`,
+ * where a single bucket may produce multiple seq-numbered files. */
+async function trimTimeRing(
+  dir: string,
+  appName: string,
+  ext: string,
+  maxFiles: number,
+  owned: Set<string>,
+): Promise<void> {
+  if (maxFiles <= 1) return;
+  const prefix = `${appName}.`;
+  const suffix = `.${ext}`;
+  const stampRe = /^\d{4}-\d{2}-\d{2}(?:-\d{2})?/;
+  try {
+    // Group owned files by stamp.
+    const groups = new Map<string, string[]>();
+    for (const f of owned) {
+      if (f === `${appName}.${ext}`) continue;
+      if (!f.startsWith(prefix) || !f.endsWith(suffix)) continue;
+      const body = f.slice(prefix.length, -suffix.length);
+      const m = body.match(stampRe);
+      if (m) {
+        const stamp = m[0];
+        let arr = groups.get(stamp);
+        if (!arr) {
+          arr = [];
+          groups.set(stamp, arr);
+        }
+        arr.push(f);
+      }
+    }
+    const stamps = [...groups.keys()].sort();
+    const excess = stamps.length - maxFiles;
+    if (excess <= 0) return;
+    for (let i = 0; i < excess; i++) {
+      const files = groups.get(stamps[i])!;
+      for (const f of files) {
+        await rm(join(dir, f), { force: true }).catch(() => {});
+        owned.delete(f);
+      }
     }
   } catch {
     /* ignore */
@@ -308,7 +375,7 @@ class SizeRotator implements Rotator {
   private readonly active: string;
   private readonly maxSize: number;
   private readonly maxFiles: number;
-  private readonly fileName: (app: string, index: number, ext: string) => string;
+  private readonly fileName: (app: string, seq: number, ext: string) => string;
 
   constructor(opts: RotateSizeOptions, dir: string, ext: string) {
     this.active = join(dir, `${opts.appName}.${ext}`);
@@ -319,8 +386,8 @@ class SizeRotator implements Rotator {
   activePath(): string {
     return this.active;
   }
-  private genPath(index: number, io: FileIo): string {
-    return join(io.dir, this.fileName(io.appName, index, io.ext));
+  private genPath(seq: number, io: FileIo): string {
+    return join(io.dir, this.fileName(io.appName, seq, io.ext));
   }
   async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
     io.owned.add(basename(this.active));
@@ -369,8 +436,10 @@ class TimeRotator implements Rotator {
   private readonly appName: string;
   private readonly unit: 'hour' | 'day';
   private readonly maxFiles?: number;
-  private readonly fileName: (app: string, stamp: string, ext: string) => string;
+  private readonly maxSize?: number;
+  private readonly fileName: (app: string, stamp: string, seq: number, ext: string) => string;
   private currentStamp: string | undefined;
+  private seq = 0;
   private path: string;
 
   constructor(opts: RotateTimeOptions, dir: string, ext: string) {
@@ -379,14 +448,15 @@ class TimeRotator implements Rotator {
     this.appName = opts.appName;
     this.unit = opts.unit;
     this.maxFiles = opts.maxFiles;
-    this.fileName = opts.fileName ?? ((app, s, e) => `${app}.${s}.${e}`);
+    this.maxSize = opts.maxSize;
+    this.fileName = opts.fileName ?? ((app, s, seq, e) => `${app}.${s}.${seq}.${e}`);
     this.path = join(dir, `${opts.appName}.${ext}`);
   }
   activePath(): string {
     return this.path;
   }
-  private stampPath(stamp: string): string {
-    return join(this.dir, this.fileName(this.appName, stamp, this.ext));
+  private stampPath(stamp: string, seq: number): string {
+    return join(this.dir, this.fileName(this.appName, stamp, seq, this.ext));
   }
   /** Most recent existing bucket at or before `upTo`, so a restart continues
    * the ring instead of orphaning yesterday's file. */
@@ -395,12 +465,15 @@ class TimeRotator implements Rotator {
       const files = (await readdir(this.dir)).filter(
         (f) => f.startsWith(`${this.appName}.`) && f.endsWith(`.${this.ext}`),
       );
-      const stampRe = this.unit === 'hour' ? /^\d{4}-\d{2}-\d{2}-\d{2}$/ : /^\d{4}-\d{2}-\d{2}$/;
+      const stampRe = this.unit === 'hour' ? /^\d{4}-\d{2}-\d{2}-\d{2}/ : /^\d{4}-\d{2}-\d{2}/;
       const prefix = `${this.appName}.`;
       const suffix = `.${this.ext}`;
       files.sort();
       for (let i = files.length - 1; i >= 0; i--) {
-        const stamp = files[i].slice(prefix.length, -suffix.length);
+        const body = files[i].slice(prefix.length, -suffix.length);
+        // body is either `${stamp}` or `${stamp}.${seq}` — extract stamp
+        const dotIdx = body.lastIndexOf('.');
+        const stamp = dotIdx > 0 ? body.slice(0, dotIdx) : body;
         if (stampRe.test(stamp) && stamp <= upTo) return stamp;
       }
     } catch {
@@ -408,37 +481,81 @@ class TimeRotator implements Rotator {
     }
     return undefined;
   }
-  async prepare(_bytes: number, _entry: LogEntry, now: Date, io: FileIo): Promise<boolean> {
+  /** Find the highest seq number among files in the given time bucket. */
+  private async latestExistingSeq(stamp: string): Promise<number> {
+    if (!this.maxSize) return 0;
+    try {
+      const prefix = `${this.appName}.${stamp}.`;
+      const suffix = `.${this.ext}`;
+      const files = (await readdir(this.dir)).filter(
+        (f) => f.startsWith(prefix) && f.endsWith(suffix),
+      );
+      let maxSeq = 0;
+      for (const f of files) {
+        const body = f.slice(this.appName.length + 1, -this.ext.length - 1);
+        // body is `${stamp}.${seq}`
+        const parts = body.split('.');
+        const seq = Number(parts[parts.length - 1]);
+        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+      }
+      return maxSeq;
+    } catch {
+      return 0;
+    }
+  }
+  async prepare(bytes: number, _entry: LogEntry, now: Date, io: FileIo): Promise<boolean> {
     const stamp = timeStamp(now, this.unit);
     if (this.currentStamp === undefined) {
       const existing = await this.latestExistingStamp(stamp);
       this.currentStamp = existing ?? stamp;
-      this.path = this.stampPath(this.currentStamp);
+      this.seq = await this.latestExistingSeq(this.currentStamp);
+      this.path = this.stampPath(this.currentStamp, this.seq);
       io.owned.add(basename(this.path));
       if (existing && existing !== stamp) {
         // Bucket already rolled over; open the new one and drop stale files.
         this.currentStamp = stamp;
+        this.seq = 0;
         await io.closeHandle();
-        this.path = this.stampPath(stamp);
+        this.path = this.stampPath(stamp, 0);
         io.owned.add(basename(this.path));
-        await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+        await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
         return true;
       }
-      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+      await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
       return false;
     }
     if (stamp !== this.currentStamp) {
+      // Time bucket changed — archive the previous file and open a new one.
       this.currentStamp = stamp;
+      this.seq = 0;
       await io.closeHandle();
-      this.path = this.stampPath(stamp);
+      this.path = this.stampPath(stamp, 0);
       io.owned.add(basename(this.path));
-      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+      await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
       return true;
+    }
+    // Same time bucket — check size-based splitting within the bucket.
+    if (this.maxSize !== undefined) {
+      let size = 0;
+      try {
+        size = (await stat(this.path)).size;
+      } catch {
+        /* file not written yet */
+      }
+      if (size + bytes > this.maxSize) {
+        this.seq += 1;
+        await io.closeHandle();
+        this.path = this.stampPath(this.currentStamp, this.seq);
+        io.owned.add(basename(this.path));
+        await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+        return true;
+      }
     }
     return false;
   }
   reset(): void {
     this.currentStamp = undefined;
+    this.seq = 0;
     this.path = join(this.dir, `${this.appName}.${this.ext}`);
   }
 }

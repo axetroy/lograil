@@ -169,7 +169,7 @@ describe('FileTransport (rotate-time mode)', () => {
     const e = makeEntry({ message: 'one' });
     t.write(e, t.formatter(e));
     await t.close();
-    const content = (await readFile(join(dir, 'app.2024-01-01.log'), 'utf8')).trim();
+    const content = (await readFile(join(dir, 'app.2024-01-01.0.log'), 'utf8')).trim();
     expect(content.split('\n')).toHaveLength(1);
     expect(JSON.parse(content).message).toBe('one');
   });
@@ -189,8 +189,8 @@ describe('FileTransport (rotate-time mode)', () => {
     await t.write(d2, t.formatter(d2));
     await t.close();
 
-    const c1 = (await readFile(join(dir, 'app.2024-01-01.log'), 'utf8')).trim();
-    const c2 = (await readFile(join(dir, 'app.2024-01-02.log'), 'utf8')).trim();
+    const c1 = (await readFile(join(dir, 'app.2024-01-01.0.log'), 'utf8')).trim();
+    const c2 = (await readFile(join(dir, 'app.2024-01-02.0.log'), 'utf8')).trim();
     expect(c1).toContain('d1');
     expect(c2).toContain('d2');
   });
@@ -202,7 +202,7 @@ describe('FileTransport (rotate-time mode)', () => {
       appName: 'app',
       dir,
       now: () => clock,
-      fileName: (app, stamp, ext) => `${app}-${stamp}.${ext}`,
+      fileName: (app, stamp, _seq, ext) => `${app}-${stamp}.${ext}`,
     });
     const e = makeEntry({ message: 'x' });
     t.write(e, t.formatter(e));

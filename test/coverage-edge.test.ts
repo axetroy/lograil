@@ -75,7 +75,7 @@ describe('FileTransport - custom now and extension base', () => {
         transport.formatter!(makeEntry({ message: 'one' })),
       );
       await transport.close();
-      const content = (await readFile(join(dir, 'app.2024-01-01.log'), 'utf8')).trim();
+      const content = (await readFile(join(dir, 'app.2024-01-01.0.log'), 'utf8')).trim();
       expect(content).toContain('one');
     } finally {
       await rm(dir, { recursive: true, force: true });

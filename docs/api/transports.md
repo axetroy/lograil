@@ -72,12 +72,12 @@ interface SingleTruncateOptions extends FileBaseOptions {
   ext?: string;
 }
 
-// 2.1 — roll by size; file name is a function of the generation index
+// 2.1 — roll by size; file name is a function of the generation seq
 interface RotateSizeOptions extends FileBaseOptions {
   mode: 'rotate-size';
   maxSize: number; // required
   maxFiles: number; // required; how many generations to keep
-  fileName?: (app: string, index: number, ext: string) => string; // default `${app}.${index}.${ext}`
+  fileName?: (app: string, seq: number, ext: string) => string; // default `${app}.${seq}.${ext}`
   ext?: string;
 }
 
@@ -85,9 +85,10 @@ interface RotateSizeOptions extends FileBaseOptions {
 interface RotateTimeOptions extends FileBaseOptions {
   mode: 'rotate-time';
   unit: 'hour' | 'day'; // required
-  maxFiles?: number; // optional ring cap
+  maxFiles?: number; // optional: cap on time buckets (stamps), not individual files
+  maxSize?: number; // optional: split within the same time bucket when exceeded
   now?: () => Date; // clock override (testing)
-  fileName?: (app: string, stamp: string, ext: string) => string; // default `${app}.${stamp}.${ext}`
+  fileName?: (app: string, stamp: string, seq: number, ext: string) => string; // default `${app}.${stamp}.${seq}.${ext}`
   ext?: string;
 }
 
@@ -125,10 +126,14 @@ required, so you can never forget a parameter the chosen mode needs.
   current content is renamed to `backupName` and the original is truncated (ring
   buffer). One main file plus one backup.
 - `rotate-size` — when `size + bytes > maxSize`, shift generations
-  (`app.log` → `app.1.log` → …) via `maxFiles`; `fileName(app, index, ext)` lets
+  (`app.log` → `app.1.log` → …) via `maxFiles`; `fileName(app, seq, ext)` lets
   you shape the archived names.
 - `rotate-time` — at each `unit` boundary (`hour`/`day`) a new file is opened and
-  named with a timestamp; `fileName(app, stamp, ext)` controls the shape.
+  named with a timestamp; `fileName(app, stamp, seq, ext)` controls the shape.
+  When `maxSize` is set, files within the same time bucket are split by size
+  (e.g. `app.2026-08-31.0.log`, `app.2026-08-31.1.log`). `maxFiles` counts
+  **time buckets**, not individual files — when a bucket is trimmed, all its
+  seq files are deleted together.
 - `rotate-custom` — `shouldRotate(entry, ctx)` decides when to cut; `fileName(app,
   seq, ext)` names every file. Total control over rotation.
 

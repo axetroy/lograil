@@ -58,7 +58,7 @@ new FileTransport({
   appName: 'my-app',
   maxSize: 10 * 1024 * 1024,
   maxFiles: 5,
-  fileName: (app, index, ext) => `${app}.${index}.${ext}`,
+  fileName: (app, seq, ext) => `${app}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 
@@ -67,7 +67,7 @@ new FileTransport({
   mode: 'rotate-time',
   appName: 'my-app',
   unit: 'day',
-  fileName: (app, stamp, ext) => `${app}.${stamp}.${ext}`,
+  fileName: (app, stamp, seq, ext) => `${app}.${stamp}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 
@@ -106,7 +106,7 @@ new FileTransport({
 - **`single`** — 单个 `<appName>.log` 文件，一直追加（直到磁盘写满）。
 - **`single-truncate`** — 同样是单文件，但一旦即将超过 `maxSize`，当前内容被改名为 `<appName>.bak`，原文件原地截断。
 - **`rotate-size`** — 当 `size + bytes > maxSize` 时，按 `maxFiles` 推移代际（`app.log` → `app.1.log` → …）。
-- **`rotate-time`** — 在每个 `hour`/`day` 边界开启新文件，并以时间戳命名。
+- **`rotate-time`** — 在每个 `hour`/`day` 边界开启新文件，并以时间戳命名。设置 `maxSize` 后，同一时间桶内的文件超大时会自动拆分（如 `app.2026-08-31.0.log`、`app.2026-08-31.1.log`）。
 - **`rotate-custom`** — `shouldRotate(entry, ctx)` 决定何时切分；`fileName` 为每个文件命名。对轮转拥有完全控制。
 
 利用 `filter` 选项可把单个 logger 的输出拆分到多个文件——例如内置的 Electron 主进程运行时给主进程与渲染进程各分配一个 `FileTransport`（`appName: 'main'` / `'renderer'`），从而分开两者日志。

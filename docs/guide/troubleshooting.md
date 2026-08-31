@@ -98,7 +98,7 @@ See the [Electron guide](./electron.md).
 **Check**
 - `FileTransport` only works where the Node `fs` API exists — the
   **main** process / Node runtime, not a browser or renderer Web Worker.
-- `rotate-time` mode (default) writes `<appName>.{YYYY-MM-DD}.log`. Check the date
+- `rotate-time` mode (default) writes `<appName>.{YYYY-MM-DD}.0.log`. Check the date
   stamp format and that the directory is writable. The directory is created
   automatically (`mkdir -p`).
 - Rotation triggers when a write would exceed `maxSize` (`rotate-size` / `single-truncate`),

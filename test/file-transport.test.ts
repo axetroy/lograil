@@ -175,8 +175,8 @@ describe('FileTransport - rotate-time mode (2.2)', () => {
     t.write(entry('d2'), 'd2');
     await t.flush();
     await t.close();
-    expect(readFileSync(join(dir, 'day.2024-01-01.log'), 'utf8')).toContain('d1');
-    expect(readFileSync(join(dir, 'day.2024-01-02.log'), 'utf8')).toContain('d2');
+    expect(readFileSync(join(dir, 'day.2024-01-01.0.log'), 'utf8')).toContain('d1');
+    expect(readFileSync(join(dir, 'day.2024-01-02.0.log'), 'utf8')).toContain('d2');
   });
 
   it('honors a custom fileName', async () => {
@@ -187,7 +187,7 @@ describe('FileTransport - rotate-time mode (2.2)', () => {
       dir,
       ext: 'log',
       now: () => new Date(2024, 2, 3),
-      fileName: (app, stamp, ext) => `${app}_${stamp}.${ext}`,
+      fileName: (app, stamp, _seq, ext) => `${app}_${stamp}.${ext}`,
     });
     t.write(entry('x'), 'x');
     await t.flush();
@@ -197,7 +197,7 @@ describe('FileTransport - rotate-time mode (2.2)', () => {
 
   it('adopts the most recent existing bucket file on (re)start', async () => {
     // Simulate a previous run that left a dated file on disk.
-    writeFileSync(join(dir, 'restart.2024-01-01.log'), 'old day\n');
+    writeFileSync(join(dir, 'restart.2024-01-01.0.log'), 'old day\n');
     const t = new FileTransport({
       mode: 'rotate-time',
       unit: 'day',
@@ -210,8 +210,88 @@ describe('FileTransport - rotate-time mode (2.2)', () => {
     await t.flush();
     await t.close();
     // Continues writing into the existing bucket file, not a fresh one.
-    expect(readFileSync(join(dir, 'restart.2024-01-01.log'), 'utf8')).toContain('new');
-    expect(readFileSync(join(dir, 'restart.2024-01-01.log'), 'utf8')).toContain('old day');
+    expect(readFileSync(join(dir, 'restart.2024-01-01.0.log'), 'utf8')).toContain('new');
+    expect(readFileSync(join(dir, 'restart.2024-01-01.0.log'), 'utf8')).toContain('old day');
+  });
+
+  it('splits within a time bucket when maxSize is exceeded', async () => {
+    const clock = { now: new Date(2024, 0, 1) };
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'sz',
+      dir,
+      ext: 'log',
+      maxSize: 8, // each entry is 3 bytes ('m1\n') → fits 2 entries per file
+      now: () => clock.now,
+    });
+    t.write(entry('m1'), 'm1');
+    t.write(entry('m2'), 'm2');
+    t.write(entry('m3'), 'm3'); // triggers split
+    await t.flush();
+    await t.close();
+    // First bucket file should have the first 2 entries
+    const file0 = readFileSync(join(dir, 'sz.2024-01-01.0.log'), 'utf8');
+    expect(file0).toContain('m1');
+    expect(file0).toContain('m2');
+    // Second bucket file should have the third entry
+    const file1 = readFileSync(join(dir, 'sz.2024-01-01.1.log'), 'utf8');
+    expect(file1).toContain('m3');
+  });
+
+  it('resets seq when the time bucket changes with maxSize', async () => {
+    const clock = { now: new Date(2024, 0, 1) };
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'seq',
+      dir,
+      ext: 'log',
+      maxSize: 8,
+      now: () => clock.now,
+    });
+    t.write(entry('a1'), 'a1');
+    t.write(entry('a2'), 'a2');
+    t.write(entry('a3'), 'a3'); // split → seq.2024-01-01.1.log
+    clock.now = new Date(2024, 0, 2);
+    t.write(entry('b1'), 'b1'); // new day → seq.2024-01-02.0.log (seq resets)
+    await t.flush();
+    await t.close();
+    expect(existsSync(join(dir, 'seq.2024-01-01.0.log'))).toBe(true);
+    expect(existsSync(join(dir, 'seq.2024-01-01.1.log'))).toBe(true);
+    expect(existsSync(join(dir, 'seq.2024-01-02.0.log'))).toBe(true);
+    expect(readFileSync(join(dir, 'seq.2024-01-02.0.log'), 'utf8')).toContain('b1');
+  });
+  it('trims entire oldest time buckets (not individual files) when maxFiles is set', async () => {
+    const clock = { now: new Date(2026, 7, 1) }; // Aug 1
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'tb',
+      dir,
+      ext: 'log',
+      maxSize: 8, // ~2 entries per file → forces splitting
+      maxFiles: 2, // keep 2 time buckets
+      now: () => clock.now,
+    });
+    // Day 1 — two entries, then split on third → 2 files for day 1
+    t.write(entry('a1'), 'a1');
+    t.write(entry('a2'), 'a2');
+    t.write(entry('a3'), 'a3'); // split → tb.2026-08-01.1.log
+    // Day 2 — one entry
+    clock.now = new Date(2026, 7, 2);
+    t.write(entry('b1'), 'b1');
+    // Day 3 — triggers trimTimeRing; day 1 should be fully removed
+    clock.now = new Date(2026, 7, 3);
+    t.write(entry('c1'), 'c1');
+    await t.flush();
+    await t.close();
+    // Day 1 (oldest bucket) — both seq files deleted
+    expect(existsSync(join(dir, 'tb.2026-08-01.0.log'))).toBe(false);
+    expect(existsSync(join(dir, 'tb.2026-08-01.1.log'))).toBe(false);
+    // Day 2 and Day 3 kept
+    expect(existsSync(join(dir, 'tb.2026-08-02.0.log'))).toBe(true);
+    expect(existsSync(join(dir, 'tb.2026-08-03.0.log'))).toBe(true);
   });
 });
 

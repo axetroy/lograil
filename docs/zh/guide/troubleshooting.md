@@ -76,7 +76,7 @@ console 的 transport。
 **自查**
 - `FileTransport` 仅在具备 Node `fs` 的环境生效——即**主进程** / Node 运行时，而非
   浏览器或渲染进程 Web Worker。
-- `rotate-time` 模式（默认）写入 `<appName>.{YYYY-MM-DD}.log`。检查日期戳格式与目录可写性；
+- `rotate-time` 模式（默认）写入 `<appName>.{YYYY-MM-DD}.0.log`。检查日期戳格式与目录可写性；
   目录会自动创建（`mkdir -p`）。
 - 轮转触发条件：写入将导致超过 `maxSize`（`rotate-size` / `single-truncate`），或跨越
   `hour`/`day` 边界（`rotate-time`），或你的 `shouldRotate` 谓词返回 `true`（`rotate-custom`）。

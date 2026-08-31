@@ -63,7 +63,7 @@ new FileTransport({
   appName: 'my-app',
   maxSize: 10 * 1024 * 1024,
   maxFiles: 5,
-  fileName: (app, index, ext) => `${app}.${index}.${ext}`,
+  fileName: (app, seq, ext) => `${app}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 
@@ -72,7 +72,7 @@ new FileTransport({
   mode: 'rotate-time',
   appName: 'my-app',
   unit: 'day',
-  fileName: (app, stamp, ext) => `${app}.${stamp}.${ext}`,
+  fileName: (app, stamp, seq, ext) => `${app}.${stamp}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 
@@ -120,7 +120,8 @@ new FileTransport({
 - **`rotate-size`** — when `size + bytes > maxSize`, shift generations
   (`app.log` → `app.1.log` → …) bounded by `maxFiles`.
 - **`rotate-time`** — at each `hour`/`day` boundary open a new file named with a
-  timestamp.
+  timestamp. Set `maxSize` to also split within the same time bucket when a
+  single file grows too large (e.g. `app.2026-08-31.0.log`, `app.2026-08-31.1.log`).
 - **`rotate-custom`** — `shouldRotate(entry, ctx)` decides when to cut; `fileName`
   names every file. Total control over rotation.
 
