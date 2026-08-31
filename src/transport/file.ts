@@ -60,8 +60,6 @@ export interface RotateSizeOptions extends FileBaseOptions {
   maxSize: number;
   /** Number of generations to keep (active file + N-1 backups). */
   maxFiles: number;
-  /** Name the i-th generation file. Defaults to `${app}.${seq}.${ext}`. */
-  fileName?: (app: string, seq: number, ext: string) => string;
 }
 
 /** 2.2 — roll by time (hour or day), naming each file with a timestamp. */
@@ -87,8 +85,6 @@ export interface RotateTimeOptions extends FileBaseOptions {
    * `maxFiles × maxFilesPerBucket × maxSize` bytes. Omit = unbounded.
    */
   maxFilesPerBucket?: number;
-  /** Name a file for a time bucket. Defaults to `${app}.${stamp}.${seq}.${ext}`. */
-  fileName?: (app: string, stamp: string, seq: number, ext: string) => string;
   /** Override the clock (mainly for testing). Defaults to `new Date()`. */
   now?: () => Date;
 }
@@ -411,19 +407,17 @@ class SizeRotator implements Rotator {
   private readonly active: string;
   private readonly maxSize: number;
   private readonly maxFiles: number;
-  private readonly fileName: (app: string, seq: number, ext: string) => string;
 
   constructor(opts: RotateSizeOptions, dir: string, ext: string) {
     this.active = join(dir, `${opts.appName}.${ext}`);
     this.maxSize = opts.maxSize;
     this.maxFiles = opts.maxFiles;
-    this.fileName = opts.fileName ?? ((app, i, e) => `${app}.${i}.${e}`);
   }
   activePath(): string {
     return this.active;
   }
   private genPath(seq: number, io: FileIo): string {
-    return join(io.dir, this.fileName(io.appName, seq, io.ext));
+    return join(io.dir, `${io.appName}.${seq}.${io.ext}`);
   }
   async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
     io.owned.add(basename(this.active));
@@ -474,7 +468,6 @@ class TimeRotator implements Rotator {
   private readonly maxFiles?: number;
   private readonly maxSize?: number;
   private readonly maxFilesPerBucket?: number;
-  private readonly fileName: (app: string, stamp: string, seq: number, ext: string) => string;
   private currentStamp: string | undefined;
   private seq = 0;
   private path: string;
@@ -487,14 +480,13 @@ class TimeRotator implements Rotator {
     this.maxFiles = opts.maxFiles;
     this.maxSize = opts.maxSize;
     this.maxFilesPerBucket = opts.maxFilesPerBucket;
-    this.fileName = opts.fileName ?? ((app, s, seq, e) => `${app}.${s}.${seq}.${e}`);
     this.path = join(dir, `${opts.appName}.${ext}`);
   }
   activePath(): string {
     return this.path;
   }
   private stampPath(stamp: string, seq: number): string {
-    return join(this.dir, this.fileName(this.appName, stamp, seq, this.ext));
+    return join(this.dir, `${this.appName}.${stamp}.${seq}.${this.ext}`);
   }
   /** Most recent existing bucket at or before `upTo`, so a restart continues
    * the ring instead of orphaning yesterday's file. */

@@ -52,22 +52,20 @@ new FileTransport({
   formatter: createJsonFormatter(),
 });
 
-// 2.1 — 按体积轮转；fileName() 自定义归档名
+// 2.1 — 按体积轮转；归档名遵循 `${app}.${seq}.${ext}`
 new FileTransport({
   mode: 'rotate-size',
   appName: 'my-app',
   maxSize: 10 * 1024 * 1024,
   maxFiles: 5,
-  fileName: (app, seq, ext) => `${app}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 
-// 2.2 — 按时间轮转；每天一个带日期的文件
+// 2.2 — 按时间轮转；每天一个带日期的文件，命名为 `${app}.${stamp}.${seq}.${ext}`
 new FileTransport({
   mode: 'rotate-time',
   appName: 'my-app',
   unit: 'day',
-  fileName: (app, stamp, seq, ext) => `${app}.${stamp}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 

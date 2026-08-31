@@ -77,7 +77,6 @@ interface RotateSizeOptions extends FileBaseOptions {
   mode: 'rotate-size';
   maxSize: number; // required
   maxFiles: number; // required; how many generations to keep
-  fileName?: (app: string, seq: number, ext: string) => string; // default `${app}.${seq}.${ext}`
   ext?: string;
 }
 
@@ -89,7 +88,6 @@ interface RotateTimeOptions extends FileBaseOptions {
   maxSize?: number; // optional: split within the same time bucket when exceeded
   maxFilesPerBucket?: number; // optional: max seq files kept within one time bucket (inner ring)
   now?: () => Date; // clock override (testing)
-  fileName?: (app: string, stamp: string, seq: number, ext: string) => string; // default `${app}.${stamp}.${seq}.${ext}`
   ext?: string;
 }
 
@@ -127,10 +125,10 @@ required, so you can never forget a parameter the chosen mode needs.
   current content is renamed to `backupName` and the original is truncated (ring
   buffer). One main file plus one backup.
 - `rotate-size` — when `size + bytes > maxSize`, shift generations
-  (`app.log` → `app.1.log` → …) via `maxFiles`; `fileName(app, seq, ext)` lets
-  you shape the archived names.
+  (`app.log` → `app.1.log` → …) via `maxFiles`; archived names follow the
+  default `${app}.${seq}.${ext}` pattern.
 - `rotate-time` — at each `unit` boundary (`hour`/`day`) a new file is opened and
-  named with a timestamp; `fileName(app, stamp, seq, ext)` controls the shape.
+  named with a timestamp (`${app}.${stamp}.${seq}.${ext}`).
   When `maxSize` is set, files within the same time bucket are split by size
   (e.g. `app.2026-08-31.0.log`, `app.2026-08-31.1.log`). `maxFiles` counts
   **time buckets**, not individual files — when a bucket is trimmed, all its

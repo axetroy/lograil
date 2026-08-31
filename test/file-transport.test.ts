@@ -135,22 +135,6 @@ describe('FileTransport - rotate-size mode (2.1)', () => {
     // beyond maxFiles is pruned
     expect(existsSync(join(dir, 'sz.3.log'))).toBe(false);
   });
-
-  it('honors a custom fileName', async () => {
-    const t = new FileTransport({
-      mode: 'rotate-size',
-      appName: 'sz',
-      dir,
-      ext: 'log',
-      maxSize: 5,
-      maxFiles: 2,
-      fileName: (app, i, ext) => `${app}-gen${i}.${ext}`,
-    });
-    for (let i = 0; i < 4; i++) t.write(entry(`m${i}`), `m${i}`);
-    await t.flush();
-    await t.close();
-    expect(existsSync(join(dir, 'sz-gen1.log'))).toBe(true);
-  });
 });
 
 describe('FileTransport - rotate-time mode (2.2)', () => {
@@ -177,22 +161,6 @@ describe('FileTransport - rotate-time mode (2.2)', () => {
     await t.close();
     expect(readFileSync(join(dir, 'day.2024-01-01.0.log'), 'utf8')).toContain('d1');
     expect(readFileSync(join(dir, 'day.2024-01-02.0.log'), 'utf8')).toContain('d2');
-  });
-
-  it('honors a custom fileName', async () => {
-    const t = new FileTransport({
-      mode: 'rotate-time',
-      unit: 'day',
-      appName: 'day',
-      dir,
-      ext: 'log',
-      now: () => new Date(2024, 2, 3),
-      fileName: (app, stamp, _seq, ext) => `${app}_${stamp}.${ext}`,
-    });
-    t.write(entry('x'), 'x');
-    await t.flush();
-    await t.close();
-    expect(readFileSync(join(dir, 'day_2024-03-03.log'), 'utf8')).toContain('x');
   });
 
   it('adopts the most recent existing bucket file on (re)start', async () => {

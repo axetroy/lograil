@@ -194,22 +194,6 @@ describe('FileTransport (rotate-time mode)', () => {
     expect(c1).toContain('d1');
     expect(c2).toContain('d2');
   });
-
-  it('honors a custom fileName', async () => {
-    const t = new FileTransport({
-      mode: 'rotate-time',
-      unit: 'day',
-      appName: 'app',
-      dir,
-      now: () => clock,
-      fileName: (app, stamp, _seq, ext) => `${app}-${stamp}.${ext}`,
-    });
-    const e = makeEntry({ message: 'x' });
-    t.write(e, t.formatter(e));
-    await t.close();
-    const content = (await readFile(join(dir, 'app-2024-01-01.log'), 'utf8')).trim();
-    expect(JSON.parse(content).message).toBe('x');
-  });
 });
 
 describe('ConsoleTransport - methodMap', () => {

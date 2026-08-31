@@ -57,22 +57,20 @@ new FileTransport({
   formatter: createJsonFormatter(),
 });
 
-// 2.1 — roll by size; fileName() shapes the archived names
+// 2.1 — roll by size; archives are named `${app}.${seq}.${ext}`
 new FileTransport({
   mode: 'rotate-size',
   appName: 'my-app',
   maxSize: 10 * 1024 * 1024,
   maxFiles: 5,
-  fileName: (app, seq, ext) => `${app}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 
-// 2.2 — roll by time; one dated file per day
+// 2.2 — roll by time; one dated file per day, named `${app}.${stamp}.${seq}.${ext}`
 new FileTransport({
   mode: 'rotate-time',
   appName: 'my-app',
   unit: 'day',
-  fileName: (app, stamp, seq, ext) => `${app}.${stamp}.${seq}.${ext}`,
   formatter: createJsonFormatter(),
 });
 
