@@ -31,7 +31,7 @@ logger.warn('UI 中发生了一些事');
 // → 本地控制台，并经由 IPC 转发到主进程
 ```
 
-默认的渲染进程 logger 会写入本地控制台（在 DevTools 中可见），并把条目转发到主进程，最终落到 **独立** 的 `renderer.{YYYY-MM-DD}.{01-99}.log` 文件中——与主进程的 `main.{YYYY-MM-DD}.{01-99}.log` 相互分离。
+默认的渲染进程 logger 会写入本地控制台（在 DevTools 中可见），并把条目转发到主进程，最终落到 **独立** 的 `renderer.{YYYY-MM-DD}.log` 文件中——与主进程的 `main.{YYYY-MM-DD}.log` 相互分离。
 
 无需配置，无需 `createLogger`，无需任何接线。
 

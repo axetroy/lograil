@@ -26,7 +26,24 @@ calls back into the logger → loop.
 **Fix:** in error handlers and custom sinks, write to `process.stderr`/a file, or
 use a transport that doesn't round-trip through the redirected console.
 
-## 2. Renderer process produces no logs
+## 2. Browser bundler error: can't resolve `node:fs` / `node:path` / `node:os`
+
+**Symptom:** webpack / Vite / Rollup reports `Module not found: Can't resolve
+'node:fs'` or `Failed to resolve import "node:fs/promises"` when bundling a page
+that imports `lograil`.
+
+**Cause:** an outdated `lograil` version. Modern releases never resolve Node
+built-ins directly — they go through an internal `shims` layer that the
+`browser` field swaps for a browser stub at build time, so the import resolves
+cleanly (verified by bundler integration tests).
+
+**Fix:** upgrade `lograil` to the latest version. If you're already on a recent
+release and still see the error, check that your bundler doesn't force-resolve
+`browser` mappings off, or that you aren't importing `lograil` from an
+unbundled `node_modules` path outside your build (e.g. a CDN that bypasses the
+`browser` field).
+
+## 3. Renderer process produces no logs
 
 **Symptom:** logging works in the main process but the renderer is silent (or
 renderer logs never reach the main-process `renderer.log` file).
@@ -57,7 +74,7 @@ silently fell back to the Web runtime.
 
 See the [Electron guide](./electron.md).
 
-## 3. OTLP endpoint doesn't receive anything
+## 4. OTLP endpoint doesn't receive anything
 
 **Symptom:** `OtlpTransport` is added but the collector shows no logs.
 
@@ -74,7 +91,7 @@ See the [Electron guide](./electron.md).
   means the path or auth header is wrong.
 - Firewall / proxy: the request is a normal `fetch`; ensure egress is allowed.
 
-## 4. Log files aren't rotating
+## 5. Log files aren't rotating
 
 **Symptom:** a single file keeps growing, or no dated files appear.
 
@@ -91,7 +108,7 @@ See the [Electron guide](./electron.md).
 - The file handle opens on the **first actual** write. If nothing is logged, no
   file is created — that's expected.
 
-## 5. Logs appear out of order / duplicated across transports
+## 6. Logs appear out of order / duplicated across transports
 
 `lograil` shares one immutable, frozen entry across all transports (zero-copy).
 Per-transport async writes each have their own queue, so a slow transport may lag
@@ -100,7 +117,7 @@ transports. If you need strict global order, use a single transport or make all
 writes synchronous. Duplicate lines usually mean the same transport was added
 twice, or `redirectConsole()` is double-emitting — check `getTransports()`.
 
-## 6. Notes when passing entries across processes (IPC)
+## 7. Notes when passing entries across processes (IPC)
 
 Entries are structured-cloned when sent over Electron IPC (the renderer transport
 uses `postMessage` with a transferred `ArrayBuffer`, i.e. no copying). After an entry

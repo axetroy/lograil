@@ -45,8 +45,8 @@ logger.warn('something happened in the UI');
 
 The default renderer logger writes to the local console (visible in DevTools) and
 forwards entries to the main process, where they land in a **dedicated**
-`renderer.{YYYY-MM-DD}.{01-99}.log` file — separate from the main process's
-`main.{YYYY-MM-DD}.{01-99}.log`.
+`renderer.{YYYY-MM-DD}.log` file — separate from the main process's
+`main.{YYYY-MM-DD}.log`.
 
 No setup, no `createLogger`, no wiring required.
 

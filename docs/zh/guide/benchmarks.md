@@ -44,7 +44,7 @@ npm run bench          # 或： npx vitest bench --run
 | OTel trace 关联 | `createOtelTracePlugin` | 外部方案 |
 | 格式 | JSON（`flatten` 选项）+ 行格式 | JSON、pretty、自定义 |
 | 纯 Node 吞吐 | 很快（见上表） | 通常更快（C 层缓冲） |
-| 浏览器 / 打包安全 | 是（electron binding 可替换为 stub） | 否 |
+| 浏览器 / 打包安全 | 是（Node 内置模块经 `shims` 层 + `browser` 字段替换为 stub；并有打包器集成测试验证） | 否 |
 
 ### 如何选型
 

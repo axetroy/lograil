@@ -75,6 +75,21 @@ createElectronRendererRuntime(options?);
 | Electron 主进程      | `ConsoleTransport` + `FileTransport`（`rotate-time`，按日），并接收渲染进程 IPC |
 | Electron 渲染进程    | `ConsoleTransport`（经由 IPC 转发到主进程）                 |
 
+## Web 运行时
+
+```ts
+createWebRuntime();
+```
+
+Web 运行时面向浏览器。它**没有文件系统**（`hasFileSystem()` 返回 `false`），没有进程 id，
+默认传输器只有 `ConsoleTransport`。其生命周期钩子在 `pagehide` / `visibilitychange` 时
+flush，而非依赖 `process` 事件。由于 Node 内置模块经 `browser` 字段被替换为 stub，
+在浏览器打包中引入它总是安全的。
+
+```ts
+createLogger({ runtime: createWebRuntime() });
+```
+
 ## 选项
 
 ```ts

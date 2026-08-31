@@ -40,6 +40,30 @@ to a rotating file in addition to the console. On the **Web** and **Electron
 renderer** it logs to the console (renderers forward to the main process over
 IPC when running in Electron).
 
+## Browser builds & bundlers
+
+`lograil` is **bundle-safe for the browser out of the box**. Importing it in a
+Web page — via webpack, Vite, Rollup, esbuild, or any other bundler — works
+without extra configuration:
+
+- Node built-ins (`node:fs`, `node:path`, `node:os`, `node:async_hooks`) are
+  never resolved directly. Instead they are routed through an internal
+  `shims` layer, and the `browser` field in `package.json` swaps that layer for
+  a browser stub at build time.
+- The stubs make the **import** succeed everywhere. Runtime-only pieces still
+  need a real host: `FileTransport` throws if you try to write a file in a
+  browser (there is no filesystem), and the ambient async context is a no-op
+  (see [Context](/api/context)).
+
+If you only need console + remote transports, use `createWebRuntime()` — it
+avoids file transports entirely:
+
+```ts
+import { createLogger, createWebRuntime } from 'lograil';
+
+const log = createLogger({ runtime: createWebRuntime() });
+```
+
 ## Structured logging
 
 The first argument can be a string, an `Error`, or any value. Objects are kept

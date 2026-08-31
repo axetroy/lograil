@@ -22,7 +22,15 @@
 **解决：** 在错误处理与自定义 sink 中写 `process.stderr`/文件，或改用不会回灌到被重定向
 console 的 transport。
 
-## 2. 渲染进程没有日志
+## 2. 浏览器打包报错：无法解析 `node:fs` / `node:path` / `node:os`
+
+**现象：** webpack / Vite / Rollup 在打包引入 `lograil` 的页面时报 `Module not found: Can't resolve 'node:fs'` 或 `Failed to resolve import "node:fs/promises"`。
+
+**原因：** `lograil` 版本过旧。新版本从不直接解析 Node 内置模块——它们经过内部的 `shims` 层，构建时由 `browser` 字段替换为浏览器 stub，因此引入能顺利解析（打包器集成测试已验证）。
+
+**修复：** 升级 `lograil` 到最新版。若已是最新版本仍报错，检查打包器是否关闭了 `browser` 映射，或是否从绕过 `browser` 字段的路径（如不走构建的 CDN）引入。
+
+## 3. 渲染进程没有日志
 
 **现象：** 主进程正常，渲染进程静默（或渲染日志始终到不了主进程的 `renderer.log` 文件）。
 
@@ -47,7 +55,7 @@ console 的 transport。
 
 详见 [Electron 指南](./electron.md)。
 
-## 3. OTLP 端点收不到任何数据
+## 4. OTLP 端点收不到任何数据
 
 **现象：** 已添加 `OtlpTransport`，但 collector 里没有日志。
 
@@ -61,7 +69,7 @@ console 的 transport。
 - 确认 collector URL：OTLP/HTTP JSON 期望 `…/v1/logs`。404/401 通常是路径或鉴权头错误。
 - 防火墙 / 代理：请求就是普通 `fetch`，确保允许出网。
 
-## 4. 日志文件不轮转
+## 5. 日志文件不轮转
 
 **现象：** 单个文件持续增大，或没有出现按日期的文件。
 
@@ -75,7 +83,7 @@ console 的 transport。
   `maxSize` 过小 / 写入量大时轮转会很频繁；请确认 `maxFiles` 允许保留多于一代。
 - 文件句柄会在**第一次**真正写入日志时才打开。若从未打过日志，就不会创建文件——这是预期行为。
 
-## 5. 日志乱序 / 在多个 transport 间重复
+## 6. 日志乱序 / 在多个 transport 间重复
 
 `lograil` 在多个 transport 间共享同一个不可变、冻结的条目（零拷贝）。每个 transport 的异步
 写入各有独立队列，因此慢 transport 可能落后于快 transport——**顺序仅在单个 transport 内
@@ -83,7 +91,7 @@ console 的 transport。
 重复行通常是同一 transport 被加了两次，或 `redirectConsole()` 重复发出——用 `getTransports()`
 核对。
 
-## 6. 跨进程（IPC）传递时的注意事项
+## 7. 跨进程（IPC）传递时的注意事项
 
 条目经 Electron IPC 发送时会做结构化克隆（渲染端 transport 用 `postMessage` 并转移
 `ArrayBuffer`，也就是不复制数据）。条目越过边界后，在另一端是**全新的独立对象**。不要依赖对象同一性；

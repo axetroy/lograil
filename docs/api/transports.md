@@ -115,6 +115,11 @@ is always part of the file name, so a log file is identifiable by its owning
 application. The mode is a discriminated union — pick one and only its fields are
 required, so you can never forget a parameter the chosen mode needs.
 
+> **Node / Electron main only.** `FileTransport` writes with the real `node:fs`
+> API. In a browser bundle its fs functions are replaced by a stub that throws
+> on use — importing is safe, but writing a file in the browser is not. Use a
+> console or remote transport (or `createWebRuntime()`) on the Web.
+
 - `single` — one `dir/<appName>.<ext>` file, appended forever (until the disk fills).
 - `single-truncate` — same single file, but once `maxSize` would be exceeded the
   current content is renamed to `backupName` and the original is truncated (ring

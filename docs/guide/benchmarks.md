@@ -49,7 +49,7 @@ for raw ops/sec rerun `npm run bench` and compare against `pino` on your hardwar
 | OTel trace correlation | `createOtelTracePlugin` | external |
 | Formats | JSON (`flatten` option) + line | JSON, pretty, custom |
 | Raw Node throughput | very fast (see table above) | typically faster (C-level buffering) |
-| Browser / bundle-safe | yes (electron binding swapped for a stub) | no |
+| Browser / bundle-safe | yes (Node built-ins stubbed via a `shims` layer + `browser` field; verified by bundler integration tests) | no |
 
 ### When to choose which
 

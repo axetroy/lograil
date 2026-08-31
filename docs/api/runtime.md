@@ -80,6 +80,22 @@ createElectronRendererRuntime(options?);
 | Electron main      | `ConsoleTransport` + `FileTransport` (`rotate-time`, daily), receives renderer IPC |
 | Electron renderer  | `ConsoleTransport` (forward to main via IPC)         |
 
+## Web runtime
+
+```ts
+createWebRuntime();
+```
+
+The Web runtime targets browsers. It has **no filesystem** (`hasFileSystem()`
+returns `false`), no process id, and its default transport is `ConsoleTransport`
+only. Its lifecycle hooks flush on `pagehide` / `visibilitychange` instead of
+`process` events. Because Node built-ins are stubbed via the `browser` field,
+importing it in a browser bundle is always safe.
+
+```ts
+createLogger({ runtime: createWebRuntime() });
+```
+
 ## Options
 
 ```ts

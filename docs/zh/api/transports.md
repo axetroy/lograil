@@ -106,7 +106,11 @@ type FileTransportOptions =
 class FileTransport implements Transport;
 ```
 
-`FileTransport` 取代了旧的 `RotatingFileTransport`。`appName` 必填，且始终是文件名的一部分，因此日志文件可凭其归属的应用识别。`mode` 是一个判别联合（discriminated union）——选定一种后只需填该模式的字段，绝不会漏填所选模式需要的参数。
+`FileTransport` 取代了旧的 `RotatingFileTransport`。`appName` 必填，且始终是文件名的一部分，因此日志文件可以按所属应用识别。模式是一个判别联合——选一种模式，就只有该模式的字段是必填的，绝不会忘记所选模式需要的参数。
+
+> **仅 Node / Electron 主进程可用。** `FileTransport` 使用真实的 `node:fs` API 写入。
+> 在浏览器打包中，其 fs 函数被替换为调用即抛错的 stub——**引入是安全的**，但在浏览器中写文件会失败。
+> Web 端请使用控制台或远程传输器（或 `createWebRuntime()`）。
 
 - `single` — 单个 `dir/<appName>.<ext>` 文件，一直追加（直到磁盘写满）。
 - `single-truncate` — 同样是单文件，但一旦即将超过 `maxSize`，当前内容被改名为 `backupName`，原文件原地截断（环形缓冲）。一个主文件加一个备份。
