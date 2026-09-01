@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "packageManager": "yarn@1.22.22",
   "description": "High-performance, secure universal logging library for Web, Node.js and Electron — first-class runtime support, extensible to other platforms via plugins.",
+  "author": "Axetroy <axetroy.dev@gmail.com>",
   "type": "module",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
