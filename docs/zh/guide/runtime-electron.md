@@ -226,6 +226,8 @@ import { logger } from 'lograil';
 logger.setLevel('trace'); // 主进程也会收到此命令
 ```
 
+收到对等方级别命令时，`getLevel()` 返回对等方的级别——跨进程查询保持一致。
+
 此功能对默认的 `logger` 单例和使用 `createLogger()` 创建的 logger 均适用。
 若需在应用前拦截或拒绝级别命令，可注册自定义回调：
 

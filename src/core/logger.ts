@@ -261,6 +261,12 @@ export class Logger implements LoggerMethods {
   private namespaceFilter?: NamespaceFilter;
   /** True for loggers created via `scope`/`child` (share the parent's plumbing). */
   private isChild = false;
+  /** Cached peer process level. When set, takes precedence over local `level` in `getLevel()`. */
+  private peerLevel?: number;
+  /** Original local level before any peer command modifies it. Restored on destroy. */
+  private originalLevel?: number;
+  /** Tracks whether the local level was explicitly set via setLevel(). */
+  private hasExplicitLocalLevel = false;
 
   constructor(options: LoggerOptions | ChildOptions = {}) {
     // Lightweight child path: reuse the parent's runtime, pipeline, plugins,
@@ -287,6 +293,7 @@ export class Logger implements LoggerMethods {
     const levelInput: LogLevelInput =
       envLevelName && isLogLevelName(envLevelName) ? envLevelName : (options.level ?? 'info');
     this.level = normalizeLevel(levelInput);
+    this.originalLevel = this.level;
     this.scopeName = options.scope;
 
     const nsInput =
@@ -301,7 +308,9 @@ export class Logger implements LoggerMethods {
       this.detachReceiver = this.runtime.attachReceiver((entry: LogEntry) =>
         this.ingestEntry(entry),
       );
-      this.runtime.onLevelCommand = (level) => this.setLevel(level);
+      this.runtime.onLevelCommand = (level) => {
+        this.peerLevel = level;
+      };
     }
 
     if (options.autoFlushOnExit) this.attachExitHandlers();
@@ -354,13 +363,21 @@ export class Logger implements LoggerMethods {
   getLevel(): number {
     if (this.levelOverride !== undefined) return this.levelOverride;
     if (this.parent) return this.parent.getLevel();
+    // If local level was explicitly set (via constructor or setLevel), use it.
+    // Otherwise fall back to the cached peer level.
+    if (this.hasExplicitLocalLevel) return this.level;
+    if (this.peerLevel !== undefined) return this.peerLevel;
     return this.level;
   }
 
   setLevel(level: LogLevelInput): void {
     const v = normalizeLevel(level);
-    if (this.parent) this.levelOverride = v;
-    else this.level = v;
+    if (this.parent) {
+      this.levelOverride = v;
+    } else {
+      this.level = v;
+      this.hasExplicitLocalLevel = true;
+    }
   }
 
   /**
@@ -902,6 +919,11 @@ export class Logger implements LoggerMethods {
     await this.flushWithTimeout(this.exitFlushTimeoutMs).catch(() => {});
     await this.plugins.destroy().catch(() => {});
     this.detachReceiver?.();
+    this.peerLevel = undefined;
+    if (this.originalLevel !== undefined) {
+      this.level = this.originalLevel;
+      this.hasExplicitLocalLevel = false;
+    }
     for (const transport of this.transports) {
       if (transport.close) {
         await Promise.resolve(transport.close()).catch(() => {});

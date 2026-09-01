@@ -3,6 +3,7 @@ import { Logger } from '../src/core/index.js';
 import type { LogEntry } from '../src/types.js';
 import type { Transport } from '../src/transport/transport.js';
 import { createLineFormatter } from '../src/pipeline/formatter.js';
+import { LOG_LEVELS } from '../src/types.js';
 
 class MemoryTransport implements Transport {
   readonly name = 'memory';
@@ -14,6 +15,19 @@ class MemoryTransport implements Transport {
     this.entries.push(entry);
     this.lines.push(formatted);
   }
+}
+
+function _entry(): LogEntry {
+  return {
+    level: LOG_LEVELS.info,
+    levelName: 'info',
+    message: 'hi',
+    args: [],
+    timestamp: 1,
+    time: '',
+    context: {},
+    metadata: {},
+  };
 }
 
 describe('Logger', () => {
@@ -39,6 +53,53 @@ describe('Logger', () => {
 
     expect(t.entries).toHaveLength(1);
     expect(t.entries[0].levelName).toBe('error');
+  });
+
+  it('getLevel reflects the peer level set by a cross-process command', async () => {
+    const t = new MemoryTransport();
+    // Simulate a runtime that has attachReceiver and calls onLevelCommand.
+    const runtime = {
+      name: 'node' as const,
+      now: () => 0,
+      pid: () => undefined,
+      hasFileSystem: () => false,
+      defaultTransports: () => [t],
+      attachReceiver: () => () => {},
+    } as unknown as Logger['runtime'];
+    const logger = new Logger({ transports: [t], level: 'info', runtime });
+    expect(logger.getLevel()).toBe(30); // info
+    // Simulate a peer setting the level to debug (20) via onLevelCommand.
+    runtime.onLevelCommand!(20);
+    expect(logger.getLevel()).toBe(20); // debug
+    // Local setLevel still wins (levelOverride takes precedence).
+    logger.setLevel('warn');
+    expect(logger.getLevel()).toBe(40);
+  });
+
+  it('getLevel falls back to local level when no peer has sent a command', async () => {
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'warn' });
+    expect(logger.getLevel()).toBe(40);
+  });
+
+  it('peerLevel is cleared on destroy', async () => {
+    const t = new MemoryTransport();
+    // Simulate a runtime that has attachReceiver and calls onLevelCommand.
+    const runtime = {
+      name: 'node' as const,
+      now: () => 0,
+      pid: () => undefined,
+      hasFileSystem: () => false,
+      defaultTransports: () => [t],
+      attachReceiver: () => () => {},
+    } as unknown as Logger['runtime'];
+    const logger = new Logger({ transports: [t], level: 'info', runtime });
+    // Simulate a peer setting the level to debug (20) via onLevelCommand.
+    runtime.onLevelCommand!(20);
+    expect(logger.getLevel()).toBe(20);
+    await logger.destroy();
+    // After destroy, getLevel should fall back to the original local level.
+    expect(logger.getLevel()).toBe(30);
   });
 
   it('attaches errors passed as the message', async () => {

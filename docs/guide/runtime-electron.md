@@ -267,6 +267,9 @@ import { logger } from 'lograil';
 logger.setLevel('trace'); // main process also receives this
 ```
 
+When a peer sends a level command, `getLevel()` on the receiving side returns
+the peer's level — so cross-process queries stay consistent.
+
 This works for both the default `logger` singleton and loggers created with
 `createLogger()`. If you need to intercept or reject level commands before they
 are applied, register a custom callback:

@@ -83,6 +83,15 @@ logger.setOnLevelCommand((level: number) => {
 });
 ```
 
+When a peer-level command is received, `getLevel()` returns the peer's level
+instead of the locally configured one — this keeps queries consistent across
+process boundaries:
+```ts
+import { logger } from 'lograil';
+// Main process sets debug; renderer.getLevel() now returns 20 (debug)
+logger.setLevel('debug');
+```
+
 ## Context
 
 ```ts

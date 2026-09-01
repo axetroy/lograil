@@ -68,6 +68,13 @@ logger.setOnLevelCommand((level: number) => {
 });
 ```
 
+当收到对等方的级别命令时，`getLevel()` 会返回对等方的级别而非本地配置的级别——这样跨进程查询时行为一致：
+```ts
+import { logger } from 'lograil';
+// 主进程设置为 debug；renderer.getLevel() 现在返回 20（debug）
+logger.setLevel('debug');
+```
+
 ## 上下文
 
 ```ts
