@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress';
+import { withMermaid } from 'vitepress-plugin-mermaid';
 
 const REPO = 'axetroy/lograil';
 
@@ -89,30 +90,32 @@ function localeRedirectScript(base: string): string {
 })();`;
 }
 
-export default defineConfig({
-  title: 'lograil',
-  description: 'High-performance, secure logging library for Electron and Web runtimes',
-  logo: '/logo.svg',
-  // Favicon for the browser tab. Note: VitePress does NOT rewrite `head` hrefs
-  // with `base`, so the path must be base-prefixed explicitly. `/lograil/logo.svg`
-  // is where public/logo.svg is served, and it exists in both the latest and the
-  // versioned (/<repo>/<tag>/) doc deployments.
-  head: [['link', { rel: 'icon', href: '/lograil/logo.svg', type: 'image/svg+xml' }]],
-  lastUpdated: true,
-  cleanUrls: true,
-  locales: {
-    root: { label: 'English', lang: 'en', themeConfig: themeConfig('en') },
-    zh: {
-      label: '简体中文',
-      lang: 'zh-CN',
-      link: '/zh/',
-      themeConfig: themeConfig('zh'),
+export default withMermaid(
+  defineConfig({
+    title: 'lograil',
+    description: 'High-performance, secure logging library for Electron and Web runtimes',
+    logo: '/logo.svg',
+    // Favicon for the browser tab. Note: VitePress does NOT rewrite `head` hrefs
+    // with `base`, so the path must be base-prefixed explicitly. `/lograil/logo.svg`
+    // is where public/logo.svg is served, and it exists in both the latest and the
+    // versioned (/<repo>/<tag>/) doc deployments.
+    head: [['link', { rel: 'icon', href: '/lograil/logo.svg', type: 'image/svg+xml' }]],
+    lastUpdated: true,
+    cleanUrls: true,
+    locales: {
+      root: { label: 'English', lang: 'en', themeConfig: themeConfig('en') },
+      zh: {
+        label: '简体中文',
+        lang: 'zh-CN',
+        link: '/zh/',
+        themeConfig: themeConfig('zh'),
+      },
     },
-  },
-  themeConfig: themeConfig('en'),
-  transformHead: (ctx: { site?: { base?: string }; head: unknown[] }) => {
-    const base = ctx.site?.base || '/';
-    (ctx.head as unknown[]).push(['script', { innerHTML: localeRedirectScript(base) }]);
-    return ctx.head;
-  },
-});
+    themeConfig: themeConfig('en'),
+    transformHead: (ctx: { site?: { base?: string }; head: unknown[] }) => {
+      const base = ctx.site?.base || '/';
+      (ctx.head as unknown[]).push(['script', { innerHTML: localeRedirectScript(base) }]);
+      return ctx.head;
+    },
+  }),
+);
