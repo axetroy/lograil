@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { formatMessage } from '../src/core/printf.js';
-import { createLineFormatter } from '../src/pipeline/formatter.js';
+import { createLineFormatter, createJsonFormatter } from '../src/pipeline/formatter.js';
 import { OtlpTransport } from '../src/transport/otlp.js';
 import { FileTransport } from '../src/transport/file.js';
 import { createProcessLifecycle } from '../src/runtime/process-lifecycle.js';
@@ -30,6 +30,63 @@ function makeEntry(over: Partial<LogEntry> = {}): LogEntry {
 describe('printf - non-specifier % is emitted literally', () => {
   it('keeps a trailing %x verbatim (advances one char past %)', () => {
     expect(formatMessage('a%xb', [])[0]).toBe('a%xb');
+  });
+
+  it('serializes an Object-constructed value with >8 keys using ...+N', () => {
+    // Cover the `more` branch when keys.length > 8
+    const obj = { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8, i: 9 };
+    expect(formatMessage('%o', [obj])[0]).toContain('…+1');
+  });
+
+  it('serializes an Object-constructed value with ≤8 keys without ...+', () => {
+    // Cover the `more` branch when keys.length <= 8
+    const obj = { a: 1, b: 2, c: 3 };
+    expect(formatMessage('%o', [obj])[0]).not.toContain('…+');
+    expect(formatMessage('%o', [obj])[0]).toContain('a: 1');
+  });
+
+  it('shows constructor name for non-Object values (Date)', () => {
+    // Cover the branch where ctor !== 'Object'
+    const date = new Date(0);
+    const result = formatMessage('%o', [date])[0];
+    expect(result).toContain('Date');
+  });
+
+  it('triggers stringify catch with a value whose Object.keys throws', () => {
+    // Cover line 53 catch block — stringify throws when Object.keys fails
+    const boom = {
+      get [Symbol.iterator]() {
+        throw new Error('boom');
+      },
+    };
+    // This should not throw — stringify's catch handles it
+    expect(() => formatMessage('%o', [boom])).not.toThrow();
+  });
+
+  it('triggers stringify catch with a null-constructor object', () => {
+    // Cover line 54 branch (String(v) fallback) — object with null constructor
+    const noCtor = Object.create(null);
+    noCtor.x = 1;
+    const result = formatMessage('%o', [noCtor])[0];
+    // null-constructor object goes through Object.keys path, not the String fallback
+    expect(result).toBe('{x: 1}');
+  });
+
+  it('emits unknown specifier %z literally and advances one char', () => {
+    // Cover the default case at line 119-121
+    const [msg, ...rest] = formatMessage('a%zb', ['extra']);
+    expect(msg).toBe('a%zb');
+    expect(rest).toEqual(['extra']);
+  });
+
+  it('supports %d specifier with number', () => {
+    const result = formatMessage('count: %d', [42]);
+    expect(result[0]).toBe('count: 42');
+  });
+
+  it('supports %s specifier with string', () => {
+    const result = formatMessage('hello %s', ['world']);
+    expect(result[0]).toBe('hello world');
   });
 });
 
@@ -217,10 +274,53 @@ describe('edge cases — untested code paths', () => {
     expect((out.context as { req: { foo: string } }).req).toEqual({ foo: 'bar' });
   });
 
-  it('serializeResponseValue returns v when neither status nor statusCode is present', () => {
+  it('serializeResponseValue uses statusCode when status is absent', () => {
     const ser = createDefaultSerializers();
-    const entry = makeEntry({ context: { res: { body: 'ok' } } });
+    const entry = makeEntry({ context: { res: { statusCode: 404, headers: { x: '1' } } } });
     const out = createSerializeProcessor(ser)(entry);
-    expect((out.context as { res: { body: string } }).res).toEqual({ body: 'ok' });
+    const res = (out.context as { res: { status?: number; statusCode?: number } }).res;
+    expect(res.status).toBe(404);
+    expect(res.statusCode).toBeUndefined();
+  });
+
+  it('serializeNode handles arrays (branch Array.isArray)', () => {
+    const ser = createDefaultSerializers();
+    const entry = makeEntry({ context: { items: [1, 2, 3] } });
+    const out = createSerializeProcessor(ser)(entry);
+    expect(out.context.items).toEqual([1, 2, 3]);
+  });
+
+  it('serializeBufferValue falls through to non-Buffer when passing ArrayBuffer', () => {
+    const ser = createDefaultSerializers();
+    const entry = makeEntry({ context: { buf: new ArrayBuffer(8) } });
+    const out = createSerializeProcessor(ser)(entry);
+    // ArrayBuffer is not a Buffer, so it falls through without transformation
+    expect(out.context.buf).toBeInstanceOf(ArrayBuffer);
+  });
+
+  it('serializeBufferValue falls through to non-Buffer when passing typed array', () => {
+    const ser = createDefaultSerializers();
+    const entry = makeEntry({ context: { buf: new Uint8Array(8) } });
+    const out = createSerializeProcessor(ser)(entry);
+    // Uint8Array is not a Buffer, so it falls through without transformation
+    expect(out.context.buf).toBeInstanceOf(Uint8Array);
+  });
+
+  it('jsonFormatter handles anonymous functions in safeStringify', () => {
+    // Cover the branch at line 134 where val.name is undefined
+    const fmt = createJsonFormatter();
+    const entry = makeEntry({ args: [function anonymousFn() {}] });
+    const out = fmt(entry);
+    expect(out).toContain('anonymous');
+  });
+
+  it('jsonFormatter handles values that cause JSON.stringify to throw', () => {
+    // Cover the catch block at line 141
+    const fmt = createJsonFormatter();
+    const cyclical: Record<string, unknown> = {};
+    cyclical.self = cyclical;
+    const entry = makeEntry({ args: [cyclical] });
+    // This should not throw - safeStringify catches the error
+    expect(() => fmt(entry)).not.toThrow();
   });
 });

@@ -50,6 +50,26 @@ describe('Pipeline', () => {
     const json = p.getFormatter()(out);
     expect(JSON.parse(json).message).toBe('x');
   });
+
+  it('uses the custom formatter when provided (pipeline.ts:37 true branch)', () => {
+    const customFmt = (e: LogEntry) => `CUSTOM:${e.message}`;
+    const p = new Pipeline({ formatter: customFmt });
+    const out = p.process(makeEntry({ message: 'hello' }))!;
+    expect(p.getFormatter()(out)).toBe('CUSTOM:hello');
+  });
+
+  it('returns null when a processor yields a falsy entry', () => {
+    const dropping = () => null as unknown as LogEntry;
+    const p = new Pipeline({ processors: [dropping] });
+    expect(p.process(makeEntry())).toBeNull();
+  });
+
+  it('falls through to default formatter when none is provided', () => {
+    const p = new Pipeline({});
+    const out = p.process(makeEntry({ message: 'default fmt' }))!;
+    // Default formatter is identity: entry → entry as string
+    expect(p.getFormatter()(out)).toBe(out as unknown as string);
+  });
 });
 
 describe('Pipeline: snapshot', () => {

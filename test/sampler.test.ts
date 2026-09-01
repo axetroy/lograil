@@ -43,6 +43,29 @@ describe('createSampler', () => {
     expect(f(entry('debug'))).toBe(true);
   });
 
+  it('works without levels option (levelSet is undefined, all levels sampled)', () => {
+    const f = createSampler({ rate: 0.5 });
+    // With no levels option, levelSet is undefined so the first check is skipped
+    // and all entries proceed to probabilistic sampling.
+    const rnd = vi.spyOn(Math, 'random');
+    rnd.mockReturnValue(0.3);
+    expect(f(entry('info'))).toBe(true);
+    expect(f(entry('error'))).toBe(true); // also sampled when no levelSet
+    rnd.mockRestore();
+  });
+
+  it('works without maxPerSecond (capacity is 0)', () => {
+    const f = createSampler({ rate: 1 });
+    expect(f(entry('info'))).toBe(true);
+    expect(f(entry('info'))).toBe(true);
+  });
+
+  it('covers maxPerSecond=undefined branch (capacity=0)', () => {
+    // Line 50: `maxPerSecond !== undefined ? ... : 0` — branch false (undefined)
+    const f = createSampler({ rate: 1, maxPerSecond: undefined as unknown as number });
+    expect(f(entry('info'))).toBe(true);
+  });
+
   it('probabilistic sampling is driven by Math.random', () => {
     const rnd = vi.spyOn(Math, 'random');
     const f = createSampler({ rate: 0.5, levels: ['info'] });
