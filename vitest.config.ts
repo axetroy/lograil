@@ -4,8 +4,8 @@ export default defineConfig({
   test: {
     // Per-file `@vitest-environment jsdom` is used where a DOM is needed
     // (e.g. web runtime tests); the default environment stays node.
-    include: ['test/**/*.test.ts'],
-    exclude: ['test/fixtures/**', 'node_modules/**', 'dist/**'],
+    include: ['test/**/*.test.ts', 'bench/**/*.bench.ts'],
+    exclude: ['test/fixtures/**', 'node_modules/**', 'dist/**', 'bench/**/*.bench.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov', 'clover'],

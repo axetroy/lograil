@@ -79,6 +79,15 @@ interface NamespaceFilter {
   excludes: NamespacePattern[];
 }
 
+/** Cache compiled namespace filters by normalized input to avoid recompiling regexes on every call. */
+const nsFilterCache = new Map<string, NamespaceFilter | undefined>();
+
+function serializeNsInput(input?: string | string[]): string {
+  if (!input) return '';
+  if (Array.isArray(input)) return input.join(',');
+  return input;
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -97,18 +106,30 @@ function toPattern(token: string): NamespacePattern {
  * `undefined` (no filtering).
  */
 function compileNamespaceFilter(input?: string | string[]): NamespaceFilter | undefined {
-  if (!input || (Array.isArray(input) && input.length === 0)) return undefined;
-  const tokens = (Array.isArray(input) ? input : input.split(/[ ,]+/))
-    .map((t) => t.trim())
-    .filter(Boolean);
-  if (tokens.length === 0) return undefined;
-  const includes: NamespacePattern[] = [];
-  const excludes: NamespacePattern[] = [];
-  for (const token of tokens) {
-    if (token.startsWith('-')) excludes.push(toPattern(token.slice(1)));
-    else includes.push(toPattern(token));
+  const key = serializeNsInput(input);
+  const cached = nsFilterCache.get(key);
+  if (cached !== undefined) return cached;
+  let result: NamespaceFilter | undefined;
+  if (!input || (Array.isArray(input) && input.length === 0)) {
+    result = undefined;
+  } else {
+    const tokens = (Array.isArray(input) ? input : input.split(/[ ,]+/))
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) {
+      result = undefined;
+    } else {
+      const includes: NamespacePattern[] = [];
+      const excludes: NamespacePattern[] = [];
+      for (const token of tokens) {
+        if (token.startsWith('-')) excludes.push(toPattern(token.slice(1)));
+        else includes.push(toPattern(token));
+      }
+      result = { includes, excludes };
+    }
   }
-  return { includes, excludes };
+  nsFilterCache.set(key, result);
+  return result;
 }
 
 function matchesNamespace(scope: string | undefined, filter: NamespaceFilter | undefined): boolean {

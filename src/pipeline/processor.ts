@@ -40,6 +40,16 @@ function compileMatcher(spec: string): Matcher {
   };
 }
 
+/**
+ * Recursively walk a value, replacing any node whose path matches one of
+ * `matchers` with `replacement`. Returns the original reference when nothing
+ * matched (structural equality), so callers can short-circuit without cloning.
+ *
+ * @param node   The value to walk (array, plain object, or primitive)
+ * @param path   Current path accumulator — mutated in place via push/pop
+ * @param matchers List of path-matchers; a match triggers replacement
+ * @param replacement Value to insert in place of a matched node
+ */
 function redactNode(
   node: unknown,
   path: (string | number)[],
@@ -50,15 +60,16 @@ function redactNode(
     let changed = false;
     const out: unknown[] = new Array(node.length);
     for (let i = 0; i < node.length; i++) {
-      const cp = [...path, i];
-      if (matchers.some((m) => m(cp))) {
+      path.push(i);
+      if (matchers.some((m) => m(path))) {
         out[i] = replacement;
         changed = true;
       } else {
-        const r = redactNode(node[i], cp, matchers, replacement);
+        const r = redactNode(node[i], path, matchers, replacement);
         out[i] = r;
         if (r !== node[i]) changed = true;
       }
+      path.pop();
     }
     return changed ? out : node;
   }
@@ -66,16 +77,17 @@ function redactNode(
     let changed = false;
     const out: Record<string, unknown> = {};
     for (const k of Object.keys(node as Record<string, unknown>)) {
-      const cp = [...path, k];
+      path.push(k);
       const v = (node as Record<string, unknown>)[k];
-      if (matchers.some((m) => m(cp))) {
+      if (matchers.some((m) => m(path))) {
         out[k] = replacement;
         changed = true;
       } else {
-        const r = redactNode(v, cp, matchers, replacement);
+        const r = redactNode(v, path, matchers, replacement);
         out[k] = r;
         if (r !== v) changed = true;
       }
+      path.pop();
     }
     return changed ? out : node;
   }
