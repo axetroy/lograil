@@ -4,7 +4,7 @@
 
 # lograil
 
-**发音**：/lɒɡ-reɪl/（log-rail）
+**Pronunciation**: /lɒɡ-reɪl/ (log-rail)
 
 Structured, secure logging for **Web**, **Node.js**, and **Electron** — three first-class runtimes, one zero-config `logger`, pluggable transports, filters, processors, formatters, and plugins. Extend to any other platform through the plugin and runtime-adapter APIs.
 
