@@ -108,6 +108,50 @@ class FileTransport implements Transport;
 
 `FileTransport` 取代了旧的 `RotatingFileTransport`。`appName` 必填，且始终是文件名的一部分，因此日志文件可以按所属应用识别。可选的 `name` 与之无关——它只给传输器实例打标签，用于诊断和 `removeTransport()`，默认 `file:<appName>`，不会出现在文件名里。模式是一个判别联合——选一种模式，就只有该模式的字段是必填的，绝不会忘记所选模式需要的参数。
 
+### 查看和获取日志文件
+
+```ts
+interface FileMeta {
+  name: string;       // 文件名，如 myapp.2026-09-01.0.log
+  path: string;       // 绝对路径
+  size: number;       // 字节数
+  mtime: number;      // 最后修改时间戳（毫秒）
+  active: boolean;    // 是否当前正在写入的文件
+}
+
+interface GetFilesOptions {
+  /** 只返回本次实例创建的文件（排除旧文件），默认 false */
+  currentSessionOnly?: boolean;
+}
+
+class FileTransport {
+  /** 日志目录的绝对路径 */
+  getDir(): string;
+
+  /** 当前正在写入的文件路径 */
+  getActiveFile(): string;
+
+  /** 列出所有日志文件（包括旧文件） */
+  getFiles(options?: GetFilesOptions): Promise<FileMeta[]>;
+}
+```
+
+`getFiles()` 默认返回该 transport 管理的所有文件，包括启动时从磁盘扫描到的历史文件。传入 `{ currentSessionOnly: true }` 可以只返回本次 transport 实例创建的文件。
+
+通过 `instanceof FileTransport` 可以从 `logger.getTransports()` 中找到 FileTransport 实例：
+
+```ts
+import { logger, FileTransport } from 'lograil';
+
+const ft = logger.getTransports()
+  .find((t): t is FileTransport => t instanceof FileTransport);
+
+if (ft) {
+  const files = await ft.getFiles();
+  // ...业务逻辑
+}
+```
+
 > **仅 Node / Electron 主进程可用。** `FileTransport` 使用真实的 `node:fs` API 写入。
 > 在浏览器打包中，其 fs 函数被替换为调用即抛错的 stub——**引入是安全的**，但在浏览器中写文件会失败。
 > Web 端请使用控制台或远程传输器（或 `createWebRuntime()`）。

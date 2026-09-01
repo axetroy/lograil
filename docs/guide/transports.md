@@ -127,6 +127,55 @@ Use the `filter` option to split one logger's output across multiple files — e
 the built-in Electron main runtime separates main-process logs from renderer logs
 by giving each its own `FileTransport` with `appName: 'main'` / `'renderer'`.
 
+### Exporting log files
+
+`FileTransport` provides methods to list and inspect log files on disk, so you
+can build an "export logs" feature in your application:
+
+```ts
+import { logger, FileTransport } from 'lograil';
+
+// Find the FileTransport from the default singleton
+const fileTransport = logger.getTransports()
+  .find((t): t is FileTransport => t instanceof FileTransport);
+
+if (fileTransport) {
+  // The directory where log files are stored
+  console.log(fileTransport.getDir()); // /var/log/myapp
+
+  // The file currently being written to
+  console.log(fileTransport.getActiveFile()); // /var/log/myapp/myapp.log
+
+  // List all log files (including old ones from previous runs)
+  const files = await fileTransport.getFiles();
+  // [
+  //   { name: 'myapp.log', path: '/var/log/myapp/myapp.log', size: 4096, mtime: 1725168000000, active: true },
+  //   { name: 'myapp.2026-08-31.0.log', path: '...', size: 8192, mtime: 1725081600000, active: false },
+  // ]
+
+  // Only files created during this session (excludes old files)
+  const sessionFiles = await fileTransport.getFiles({ currentSessionOnly: true });
+}
+```
+
+Then read, package, and download the files however you need:
+
+```ts
+import { readFile } from 'node:fs/promises';
+import { ZipFile } from 'yazl'; // or any archiving library
+
+async function exportLogs() {
+  const files = await fileTransport.getFiles();
+  const zip = new ZipFile();
+  for (const f of files) {
+    const content = await readFile(f.path, 'utf-8');
+    zip.addBuffer(Buffer.from(content), f.name);
+  }
+  zip.end();
+  // ... output the zip file
+}
+```
+
 ### ElectronIpcTransport
 
 Renderer-side transport that forwards each entry to the main process over IPC.

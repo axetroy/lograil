@@ -68,3 +68,22 @@ describe('snapshot: formatter rendering', () => {
     expect(createJsonFormatter()(e)).toMatchSnapshot();
   });
 });
+
+describe('snapshot: additional scenarios', () => {
+  it('warn entry with scope and args', async () => {
+    const entries = await capture((log) => {
+      log.setContext('module', 'auth');
+      log.scope('request').warn('token expired', { tokenId: 't-42' });
+    });
+    expect(entries[0]).toMatchSnapshot();
+  });
+
+  it('error entry with context and message', async () => {
+    const entries = await capture((log) => {
+      log.setContext('app', 'backend');
+      log.error('database connection failed', { host: 'db.internal' });
+    });
+    expect(entries[0]).toMatchSnapshot();
+    expect(createLineFormatter()(entries[0])).toMatchSnapshot();
+  });
+});

@@ -1,0 +1,32 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Pipeline: snapshot > snapshots a dropped entry 1`] = `null`;
+
+exports[`Pipeline: snapshot > snapshots a filtered and redacted entry 1`] = `
+{
+  "args": [],
+  "context": {
+    "password": "[REDACTED]",
+    "user": "bob",
+  },
+  "level": 50,
+  "levelName": "info",
+  "message": "hello",
+  "metadata": {},
+  "time": "2023-11-14T22:13:20.000Z",
+  "timestamp": 1700000000000,
+}
+`;
+
+exports[`Pipeline: snapshot > snapshots a formatted JSON entry 1`] = `
+{
+  "args": [],
+  "context": {
+    "scope": "app",
+  },
+  "level": "info",
+  "message": "hello",
+  "metadata": {},
+  "time": "2023-11-14T22:13:20.000Z",
+}
+`;

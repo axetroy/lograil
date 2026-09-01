@@ -487,3 +487,158 @@ describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
     expect(readdirSync(dir).filter((f) => f.startsWith('nc.') && f !== 'nc.log')).toHaveLength(3);
   });
 });
+
+describe('FileTransport - getDir()', () => {
+  it('returns the configured directory', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-getdir-'));
+    const t = new FileTransport({ mode: 'single', appName: 'g', dir, ext: 'log' });
+    expect(t.getDir()).toBe(dir);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('defaults to os.tmpdir() when dir is not set', () => {
+    const t = new FileTransport({ mode: 'single', appName: 'g', ext: 'log' });
+    expect(t.getDir()).toBe(tmpdir());
+  });
+});
+
+describe('FileTransport - getActiveFile()', () => {
+  it('returns the path of the active file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-activefile-'));
+    const t = new FileTransport({ mode: 'single', appName: 'af', dir, ext: 'log' });
+    expect(t.getActiveFile()).toBe(join(dir, 'af.log'));
+    t.write(entry('x'), 'x');
+    await t.flush();
+    expect(t.getActiveFile()).toBe(join(dir, 'af.log'));
+    await t.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns the correct path for rotate-size mode', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-activefile-rs-'));
+    const t = new FileTransport({
+      mode: 'rotate-size',
+      appName: 'rs',
+      dir,
+      ext: 'log',
+      maxSize: 5,
+      maxFiles: 3,
+    });
+    t.write(entry('a'), 'a');
+    await t.flush();
+    expect(t.getActiveFile()).toBe(join(dir, 'rs.log'));
+    t.write(entry('big'), 'big'); // triggers rotation
+    await t.flush();
+    expect(t.getActiveFile()).toBe(join(dir, 'rs.log')); // new active after rotation
+    await t.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('FileTransport - getFiles()', () => {
+  it('returns all owned files with metadata', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-getfiles-'));
+    const t = new FileTransport({ mode: 'single', appName: 'gf', dir, ext: 'log' });
+    t.write(entry('hello'), 'hello');
+    await t.flush();
+
+    const files = await t.getFiles();
+    expect(files).toHaveLength(1);
+    expect(files[0].name).toBe('gf.log');
+    expect(files[0].path).toBe(join(dir, 'gf.log'));
+    expect(files[0].size).toBeGreaterThan(0);
+    expect(files[0].active).toBe(true);
+    expect(typeof files[0].mtime).toBe('number');
+    await t.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('marks the active file correctly in rotate-size mode', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-getfiles-rs-'));
+    const t = new FileTransport({
+      mode: 'rotate-size',
+      appName: 'rs',
+      dir,
+      ext: 'log',
+      maxSize: 5,
+      maxFiles: 3,
+    });
+    t.write(entry('abc'), 'abc'); // "abc\n" = 4 bytes
+    t.write(entry('def'), 'def'); // "def\n" = 4 bytes, 4+4=8 > 5 → rotation
+    await t.flush();
+
+    const files = await t.getFiles();
+    const names = files.map((f) => f.name).sort();
+    expect(names).toContain('rs.log');
+    expect(names).toContain('rs.1.log');
+
+    const active = files.find((f) => f.active);
+    expect(active?.name).toBe('rs.log');
+
+    const inactive = files.find((f) => f.name === 'rs.1.log');
+    expect(inactive?.active).toBe(false);
+    await t.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('includes historical files from previous runs', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-getfiles-hist-'));
+    // Simulate a previous run's file
+    writeFileSync(join(dir, 'hist.2026-01-01.0.log'), 'old log\n');
+
+    const t = new FileTransport({ mode: 'single', appName: 'hist', dir, ext: 'log' });
+    t.write(entry('new'), 'new');
+    await t.flush();
+
+    const files = await t.getFiles();
+    expect(files).toHaveLength(2);
+    const names = files.map((f) => f.name).sort();
+    expect(names).toContain('hist.log');
+    expect(names).toContain('hist.2026-01-01.0.log');
+    await t.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('excludes pre-existing files when currentSessionOnly is true', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-getfiles-cs-'));
+    // Simulate a previous run's file
+    writeFileSync(join(dir, 'cs.old.log'), 'old\n');
+
+    const t = new FileTransport({ mode: 'single', appName: 'cs', dir, ext: 'log' });
+    t.write(entry('new'), 'new');
+    await t.flush();
+
+    const all = await t.getFiles();
+    expect(all.length).toBeGreaterThanOrEqual(2);
+
+    const sessionOnly = await t.getFiles({ currentSessionOnly: true });
+    // Only files created after transport instantiation are included
+    expect(sessionOnly.every((f) => f.name === 'cs.log' || f.mtime >= Date.now() - 5000)).toBe(
+      true,
+    );
+    await t.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('returns empty array for an empty directory', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-getfiles-empty-'));
+    const t = new FileTransport({ mode: 'single', appName: 'emp', dir, ext: 'log' });
+    // Don't write anything — just close after scan
+    const files = await t.getFiles();
+    expect(files).toHaveLength(0);
+    await t.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports correct sizes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lograil-getfiles-size-'));
+    const t = new FileTransport({ mode: 'single', appName: 'sz', dir, ext: 'log' });
+    t.write(entry('abc'), 'abc'); // 4 bytes (3 + newline)
+    await t.flush();
+
+    const files = await t.getFiles();
+    expect(files[0].size).toBe(4); // "abc\n"
+    await t.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

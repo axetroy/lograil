@@ -95,4 +95,21 @@ describe('createSerializeProcessor', () => {
     log.info('plain', ref);
     expect(entries[0].args[0]).toBe(ref);
   });
+
+  it('snapshots an entry with nested serializer applied', () => {
+    const { log, entries } = captureLogger({
+      user: (u: unknown) => ({ id: (u as { id: number }).id }),
+    });
+    log.mergeContext({ user: { id: 7, password: 'x' } });
+    log.info('hi', { user: { id: 9, token: 't' } });
+    expect(entries[0]).toMatchSnapshot();
+  });
+
+  it('snapshots an entry with error serializer', () => {
+    const { log, entries } = captureLogger({
+      error: (e: unknown) => ({ name: (e as Error).name, message: (e as Error).message }),
+    });
+    log.error(new Error('boom'));
+    expect(entries[0]).toMatchSnapshot();
+  });
 });

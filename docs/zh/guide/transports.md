@@ -109,6 +109,54 @@ new FileTransport({
 
 利用 `filter` 选项可把单个 logger 的输出拆分到多个文件——例如内置的 Electron 主进程运行时给主进程与渲染进程各分配一个 `FileTransport`（`appName: 'main'` / `'renderer'`），从而分开两者日志。
 
+### 导出日志文件
+
+`FileTransport` 提供了一组方法，用来查看和获取日志文件的信息，方便你实现「导出日志」功能：
+
+```ts
+import { logger, FileTransport } from 'lograil';
+
+// 从默认实例中找到 FileTransport
+const fileTransport = logger.getTransports()
+  .find((t): t is FileTransport => t instanceof FileTransport);
+
+if (fileTransport) {
+  // 日志文件存放的目录
+  console.log(fileTransport.getDir()); // /var/log/myapp
+
+  // 当前正在写入的文件
+  console.log(fileTransport.getActiveFile()); // /var/log/myapp/myapp.log
+
+  // 列出所有日志文件（包括之前的旧文件）
+  const files = await fileTransport.getFiles();
+  // [
+  //   { name: 'myapp.log', path: '/var/log/myapp/myapp.log', size: 4096, mtime: 1725168000000, active: true },
+  //   { name: 'myapp.2026-08-31.0.log', path: '...', size: 8192, mtime: 1725081600000, active: false },
+  // ]
+
+  // 只要本次启动后创建的文件（排除旧文件）
+  const sessionFiles = await fileTransport.getFiles({ currentSessionOnly: true });
+}
+```
+
+拿到文件列表后，你可以按需读取、打包、下载：
+
+```ts
+import { readFile } from 'node:fs/promises';
+import { ZipFile } from 'yazl'; // 或其他打包库
+
+async function exportLogs() {
+  const files = await fileTransport.getFiles();
+  const zip = new ZipFile();
+  for (const f of files) {
+    const content = await readFile(f.path, 'utf-8');
+    zip.addBuffer(Buffer.from(content), f.name);
+  }
+  zip.end();
+  // ... 输出 zip 文件
+}
+```
+
 ### ElectronIpcTransport
 
 渲染进程侧的传输器，通过 IPC 将每条条目转发到主进程。`electron` 模块采用惰性加载，因此在 Electron 之外导入也是安全的。

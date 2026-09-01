@@ -119,6 +119,28 @@ export type FileTransportOptions =
   | RotateTimeOptions
   | RotateCustomOptions;
 
+/** Metadata for a single log file managed by a {@link FileTransport}. */
+export interface FileMeta {
+  /** File name (e.g. `app.2026-09-01.0.log`). */
+  name: string;
+  /** Absolute path to the file. */
+  path: string;
+  /** File size in bytes. */
+  size: number;
+  /** Last modification timestamp (milliseconds since epoch). */
+  mtime: number;
+  /** Whether this is the file currently being written to. */
+  active: boolean;
+}
+
+/** Options for {@link FileTransport.getFiles}. */
+export interface GetFilesOptions {
+  /** When `true`, only return files created by the current transport instance
+   *  (files that existed on disk before this instance started are excluded).
+   *  Default `false`. */
+  currentSessionOnly?: boolean;
+}
+
 function timeStamp(d: Date, unit: 'hour' | 'day'): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -696,6 +718,7 @@ export class FileTransport implements Transport {
   private readonly maxTotalSize: number; // Infinity = no limit
   private readonly maxAge: number; // ms; -1 = no limit, 0 = delete all, >0 = threshold
   private readonly owned = new Set<string>();
+  private readonly createdAt: number;
   private closed = false;
   private reportedFirstError = false;
   private handle: Awaited<ReturnType<typeof open>> | null = null;
@@ -721,6 +744,7 @@ export class FileTransport implements Transport {
     this.filter = options.filter;
     this.maxTotalSize = options.maxTotalSize ?? Infinity;
     this.maxAge = options.maxAge ?? -1;
+    this.createdAt = Date.now();
 
     switch (options.mode) {
       case 'single':
@@ -751,6 +775,45 @@ export class FileTransport implements Transport {
       closeHandle: () => this.closeHandle(),
       owned: this.owned,
     };
+  }
+
+  /** Absolute path of the log directory. */
+  getDir(): string {
+    return this.dir;
+  }
+
+  /** Absolute path of the file currently being written to. */
+  getActiveFile(): string {
+    return this.rotator.activePath();
+  }
+
+  /** List all log files managed by this transport.
+   *
+   *  By default returns every file the transport knows about, including
+   *  files left over from previous runs (discovered via `scanOwned`). Pass
+   *  `{ currentSessionOnly: true }` to restrict the result to files created
+   *  by the current transport instance. */
+  async getFiles(options?: GetFilesOptions): Promise<FileMeta[]> {
+    await this.scanOwned();
+    const activePath = this.rotator.activePath();
+    const results: FileMeta[] = [];
+    for (const name of this.owned) {
+      const filePath = join(this.dir, name);
+      try {
+        const s = await stat(filePath);
+        if (options?.currentSessionOnly && s.mtimeMs < this.createdAt) continue;
+        results.push({
+          name,
+          path: filePath,
+          size: s.size,
+          mtime: s.mtimeMs,
+          active: filePath === activePath,
+        });
+      } catch {
+        // file disappeared between readdir and stat — skip
+      }
+    }
+    return results;
   }
 
   private async ensureHandle(): Promise<Awaited<ReturnType<typeof open>>> {

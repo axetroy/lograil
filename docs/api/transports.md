@@ -117,6 +117,52 @@ instance for diagnostics and `removeTransport()`, defaults to `file:<appName>`,
 and never appears in file names. The mode is a discriminated union — pick one and only its fields are
 required, so you can never forget a parameter the chosen mode needs.
 
+### Listing and inspecting log files
+
+```ts
+interface FileMeta {
+  name: string;       // e.g. myapp.2026-09-01.0.log
+  path: string;       // absolute path
+  size: number;       // bytes
+  mtime: number;      // last modification timestamp (ms)
+  active: boolean;    // whether this is the currently active file
+}
+
+interface GetFilesOptions {
+  /** Only return files created by this transport instance (excludes old files). Default false. */
+  currentSessionOnly?: boolean;
+}
+
+class FileTransport {
+  /** Absolute path of the log directory. */
+  getDir(): string;
+
+  /** Absolute path of the file currently being written to. */
+  getActiveFile(): string;
+
+  /** List all log files managed by this transport (including old files). */
+  getFiles(options?: GetFilesOptions): Promise<FileMeta[]>;
+}
+```
+
+`getFiles()` returns all files managed by this transport, including old files
+found on disk when the transport started. Pass `{ currentSessionOnly: true }` to
+only return files created by the current transport instance.
+
+Find the `FileTransport` instance from the default singleton using `instanceof`:
+
+```ts
+import { logger, FileTransport } from 'lograil';
+
+const ft = logger.getTransports()
+  .find((t): t is FileTransport => t instanceof FileTransport);
+
+if (ft) {
+  const files = await ft.getFiles();
+  // ... business logic
+}
+```
+
 > **Node / Electron main only.** `FileTransport` writes with the real `node:fs`
 > API. In a browser bundle its fs functions are replaced by a stub that throws
 > on use — importing is safe, but writing a file in the browser is not. Use a

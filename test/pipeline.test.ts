@@ -12,8 +12,8 @@ function makeEntry(over: Partial<LogEntry> = {}): LogEntry {
     levelName: 'info',
     message: 'hello',
     args: [],
-    timestamp: Date.now(),
-    time: new Date().toISOString(),
+    timestamp: 1700000000000,
+    time: '2023-11-14T22:13:20.000Z',
     context: {},
     metadata: {},
     ...over,
@@ -49,5 +49,31 @@ describe('Pipeline', () => {
     const out = p.process(makeEntry({ message: 'x' }))!;
     const json = p.getFormatter()(out);
     expect(JSON.parse(json).message).toBe('x');
+  });
+});
+
+describe('Pipeline: snapshot', () => {
+  it('snapshots a filtered and redacted entry', () => {
+    const p = new Pipeline({
+      filters: [createLevelFilter(LOG_LEVELS.warn)],
+      processors: [createRedactProcessor(['password'])],
+    });
+    const out = p.process(
+      makeEntry({ level: LOG_LEVELS.error, context: { password: 'secret', user: 'bob' } }),
+    );
+    expect(out).toMatchSnapshot();
+  });
+
+  it('snapshots a formatted JSON entry', () => {
+    const p = new Pipeline({ formatter: createJsonFormatter() });
+    const out = p.process(makeEntry({ message: 'hello', context: { scope: 'app' } }))!;
+    const json = p.getFormatter()(out);
+    expect(JSON.parse(json)).toMatchSnapshot();
+  });
+
+  it('snapshots a dropped entry', () => {
+    const p = new Pipeline({ filters: [createLevelFilter(LOG_LEVELS.warn)] });
+    const out = p.process(makeEntry({ level: LOG_LEVELS.info }));
+    expect(out).toMatchSnapshot();
   });
 });
