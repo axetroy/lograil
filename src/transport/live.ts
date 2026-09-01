@@ -54,7 +54,7 @@ export class LiveTransport implements Transport {
     this.bufferSize = options.bufferSize ?? 0;
   }
 
-  write(entry: LogEntry): void {
+  write(entry: LogEntry, _formatted: string): void {
     if (this.subscribers.size === 0) {
       this.pushBuffer(entry);
       return;

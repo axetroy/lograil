@@ -85,7 +85,7 @@ export class ElectronIpcTransport implements Transport {
     return this.resolvedIpc;
   }
 
-  write(entry: LogEntry): void {
+  write(entry: LogEntry, _formatted: string): void {
     const ipc = this.getIpc();
     if (!ipc) return;
     try {
