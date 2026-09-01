@@ -4,6 +4,8 @@
 
 # lograil
 
+**发音**：/lɒɡ-reɪl/（log-rail）
+
 Structured, secure logging for **Web**, **Node.js**, and **Electron** — three first-class runtimes, one zero-config `logger`, pluggable transports, filters, processors, formatters, and plugins. Extend to any other platform through the plugin and runtime-adapter APIs.
 
 The same `import { logger } from 'lograil'` works untouched in every runtime. On Electron, the main process writes logs to the console **and** daily rotating files, and renderer logs are forwarded over IPC automatically; on Node it persists to a rotating file by default; in the browser it speaks the console and any remote transport you add.
