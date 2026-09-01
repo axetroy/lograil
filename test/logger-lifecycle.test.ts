@@ -58,7 +58,9 @@ describe('Logger - exit-flush timeout config', () => {
 });
 
 describe('Logger - watchUncaughtErrors', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it('logs unhandledRejection at fatal level and exits with code 1', async () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
@@ -71,6 +73,7 @@ describe('Logger - watchUncaughtErrors', () => {
       entries.some((e) => e.levelName === 'fatal' && (e.error as Error)?.message === 'rejected'),
     ).toBe(true);
     expect(exit).toHaveBeenCalledWith(1);
+    log.destroy();
   });
 });
 

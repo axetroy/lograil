@@ -16,7 +16,7 @@ export interface LiveTransportOptions {
   formatter?: Formatter;
   /**
    * Maximum number of buffered entries kept for late subscribers (see
-   * {@link LiveTransport.replay}). `0` disables buffering. Defaults to `0`.
+   * {@link LiveTransport.replay}). `0` disables buffering. Must be `>= 0`.
    */
   bufferSize?: number;
 }
@@ -46,12 +46,16 @@ export class LiveTransport implements Transport {
 
   private subscribers = new Set<LiveSubscriber>();
   private buffer: LogEntry[] = [];
+  /** Bounded circular buffer; `0` means no buffering. */
   private readonly bufferSize: number;
 
   constructor(options: LiveTransportOptions = {}) {
     this.name = options.name ?? 'live';
     this.formatter = options.formatter;
     this.bufferSize = options.bufferSize ?? 0;
+    if (this.bufferSize < 0) {
+      throw new TypeError('LiveTransportOptions.bufferSize must be >= 0');
+    }
   }
 
   write(entry: LogEntry, _formatted: string): void {

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import {
   createWebRuntime,
   createNodeRuntime,
@@ -25,6 +25,12 @@ describe('Web runtime', () => {
 });
 
 describe('Node runtime', () => {
+  beforeEach(() => {
+    vi.spyOn(process, 'on').mockImplementation(() => process);
+    vi.spyOn(process, 'removeListener');
+  });
+  afterEach(() => vi.restoreAllMocks());
+
   it('exposes process id and filesystem', () => {
     const rt = createNodeRuntime();
     expect(rt.name).toBe('node');

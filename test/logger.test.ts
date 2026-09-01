@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Logger } from '../src/core/index.js';
 import type { LogEntry } from '../src/types.js';
 import type { Transport } from '../src/transport/transport.js';
@@ -16,6 +16,11 @@ class MemoryTransport implements Transport {
 }
 
 describe('Logger', () => {
+  beforeEach(() => {
+    vi.spyOn(process, 'on').mockImplementation(() => process);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
   it('emits entries to transports', async () => {
     const t = new MemoryTransport();
     const logger = new Logger({ transports: [t], level: 'debug' });

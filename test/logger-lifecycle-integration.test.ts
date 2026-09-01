@@ -25,7 +25,7 @@ function memory() {
 
 describe('Logger consumes adapter.lifecycle', () => {
   beforeEach(() => {
-    vi.spyOn(process, 'on');
+    vi.spyOn(process, 'on').mockImplementation(() => process);
     vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
   });
 

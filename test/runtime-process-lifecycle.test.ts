@@ -13,7 +13,7 @@ type OnSpy = {
  */
 describe('createProcessLifecycle', () => {
   beforeEach(() => {
-    vi.spyOn(process, 'on');
+    vi.spyOn(process, 'on').mockImplementation(() => process);
     vi.spyOn(process, 'removeListener');
   });
 

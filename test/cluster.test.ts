@@ -157,6 +157,12 @@ describe('registerClusterReceiver', () => {
 });
 
 describe('createNodeRuntime - cluster behavior', () => {
+  beforeEach(() => {
+    vi.spyOn(process, 'on').mockImplementation(() => process);
+    vi.spyOn(process, 'removeListener');
+  });
+  afterEach(() => vi.restoreAllMocks());
+
   it('returns node runtime with file transport in non-cluster (primary)', () => {
     // In a normal vitest worker, cluster.isWorker is false
     const runtime = createNodeRuntime({ appName: 'test-app' });

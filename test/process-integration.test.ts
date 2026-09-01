@@ -66,26 +66,28 @@ describe('attachExitHandlers', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('registers beforeExit / SIGINT / SIGTERM handlers', () => {
-    const on = vi.spyOn(process, 'on');
+    const on = vi.spyOn(process, 'on').mockImplementation(() => process);
     const { log } = captureLogger();
     log.attachExitHandlers();
     expect(on).toHaveBeenCalledWith('beforeExit', expect.any(Function));
     expect(on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
     expect(on).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+    log.destroy();
   });
 
   it('is idempotent (second call does not re-register)', () => {
-    const on = vi.spyOn(process, 'on');
+    const on = vi.spyOn(process, 'on').mockImplementation(() => process);
     const { log } = captureLogger();
     log.attachExitHandlers();
     const afterFirst = (on as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
     log.attachExitHandlers();
     const afterSecond = (on as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
     expect(afterSecond - afterFirst).toBe(0);
+    log.destroy();
   });
 
   it('auto-registers when autoFlushOnExit is set', () => {
-    const on = vi.spyOn(process, 'on');
+    const on = vi.spyOn(process, 'on').mockImplementation(() => process);
     const runtime = {
       name: 'node',
       now: () => 0,
@@ -93,12 +95,13 @@ describe('attachExitHandlers', () => {
       hasFileSystem: () => false,
       defaultTransports: () => [],
     } as unknown as RuntimeAdapter;
-    new Logger({ transports: [], level: 'debug', runtime, autoFlushOnExit: true });
+    const log = new Logger({ transports: [], level: 'debug', runtime, autoFlushOnExit: true });
     expect(on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+    log.destroy();
   });
 
   it('flushes pending writes when beforeExit fires', async () => {
-    const on = vi.spyOn(process, 'on');
+    const on = vi.spyOn(process, 'on').mockImplementation(() => process);
     const flush = vi.fn(() => Promise.resolve());
     const transport: Transport = { name: 'cap', write: () => {}, flush };
     const runtime = {
@@ -117,11 +120,12 @@ describe('attachExitHandlers', () => {
     beforeExit();
     await new Promise((r) => setTimeout(r, 10));
     expect(flush).toHaveBeenCalled();
+    log.destroy();
   });
 
   it('flushes then exits with the signal code on SIGTERM', async () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
-    const on = vi.spyOn(process, 'on');
+    const on = vi.spyOn(process, 'on').mockImplementation(() => process);
     const runtime = {
       name: 'node',
       now: () => 0,
@@ -136,11 +140,12 @@ describe('attachExitHandlers', () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(exit).toHaveBeenCalledWith(143);
     exit.mockRestore();
+    log.destroy();
   });
 
   it('still exits even if a transport flush stalls (timeout safety)', async () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
-    const on = vi.spyOn(process, 'on');
+    const on = vi.spyOn(process, 'on').mockImplementation(() => process);
     const runtime = {
       name: 'node',
       now: () => 0,
@@ -165,6 +170,7 @@ describe('attachExitHandlers', () => {
     await new Promise((r) => setTimeout(r, 60));
     expect(exit).toHaveBeenCalledWith(130);
     exit.mockRestore();
+    log.destroy();
   });
 });
 
@@ -172,7 +178,7 @@ describe('watchUncaughtErrors', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('registers uncaughtException / unhandledRejection handlers', () => {
-    const on = vi.spyOn(process, 'on');
+    const on = vi.spyOn(process, 'on').mockImplementation(() => process);
     const { log } = captureLogger();
     log.watchUncaughtErrors();
     expect(on).toHaveBeenCalledWith('uncaughtException', expect.any(Function));
@@ -189,5 +195,6 @@ describe('watchUncaughtErrors', () => {
       entries.some((e) => e.levelName === 'fatal' && (e.error as Error)?.message === 'kaboom'),
     ).toBe(true);
     expect(exit).toHaveBeenCalledWith(1);
+    log.destroy();
   });
 });
