@@ -111,7 +111,9 @@ export function createElectronMainRuntime(
   if (receiveFromRenderer) {
     runtime.attachReceiver = (ingest) => {
       try {
-        return registerIpcReceiver(ingest);
+        return registerIpcReceiver(ingest, {
+          onLevelCommand: (level) => runtime.onLevelCommand?.(level),
+        });
       } catch {
         // `electron` not available (e.g. tests) — degrade to a no-op.
         return () => {};

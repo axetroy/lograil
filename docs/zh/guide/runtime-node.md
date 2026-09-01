@@ -147,6 +147,12 @@ if (cluster.isPrimary) {
 无需手动调用 `registerClusterReceiver`——`createNodeRuntime()` 在主进程侧
 会自动挂载。
 
+### 跨进程级别同步
+
+在主进程调用 `setLevel()` 会自动通过同一套 IPC 通道将新级别广播给所有
+Cluster 工作进程。工作进程调用 `setLevel()` 时也会将命令发送回主进程，
+无需手动接线。
+
 ## Worker threads 支持
 
 在 `worker_threads` 工作线程中运行时，运行时会自动检测 Worker 上下文，
@@ -178,3 +184,9 @@ import { createLogger, createWebRuntime } from 'lograil';
 const log = createLogger({ runtime: createWebRuntime() });
 logger.info('hello from worker_threads'); // → 控制台 + 转发到父线程
 ```
+
+### 跨进程级别同步
+
+与 Cluster 模式一样，Worker 线程也会自动接收级别广播。在父线程调用
+`setLevel()` 会传播到所有 Worker，反之亦然——级别命令通过用于日志条目的
+同一套 `postMessage` 通道传输。

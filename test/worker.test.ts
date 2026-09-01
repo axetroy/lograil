@@ -142,6 +142,37 @@ describe('registerWorkerReceiver', () => {
 
     expect(ingest).toHaveBeenCalledWith(entry);
   });
+
+  it('routes level commands to onLevelCommand callback', () => {
+    const ingest = vi.fn();
+    const onLevelCommand = vi.fn();
+    registerWorkerReceiver(ingest, { onLevelCommand });
+
+    // Send a level command
+    fireMessage({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
+
+    expect(onLevelCommand).toHaveBeenCalledTimes(1);
+    expect(onLevelCommand).toHaveBeenCalledWith(20);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it('transport sends level commands via sendLevelCommand', () => {
+    const postMessage = vi.fn();
+    const originalSelf = globalThis.self;
+    Object.defineProperty(globalThis, 'self', { value: { postMessage }, configurable: true });
+
+    const transport = new WorkerIpcTransport();
+    transport.sendLevelCommand(20);
+
+    expect(postMessage).toHaveBeenCalledOnce();
+    expect(postMessage).toHaveBeenCalledWith({
+      __lograilCmd: true,
+      __lograilCmdType: 'setLevel',
+      level: 20,
+    });
+
+    Object.defineProperty(globalThis, 'self', { value: originalSelf, configurable: true });
+  });
 });
 
 // ── createWebRuntime ──

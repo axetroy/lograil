@@ -1,5 +1,7 @@
 import type { LogEntry } from '../types.js';
 import type { Transport } from './transport.js';
+import type { LogLevelCommand } from '../types.js';
+import { isLogLevelCommand, normalizeLevel } from '../types.js';
 import type { IpcRenderer } from 'electron';
 import { getElectron } from '../runtime/electron-binding.js';
 
@@ -110,6 +112,24 @@ export class ElectronIpcTransport implements Transport {
       RAW_CONSOLE_ERROR(`[lograil] ipc transport (${this.name}) send failed:`, err);
     }
   }
+
+  /** Send a cross-process level command to the main process. */
+  sendLevelCommand(level: number): void {
+    const ipc = this.getIpc();
+    if (!ipc) return;
+    const cmd: LogLevelCommand = { __lograilCmd: true, __lograilCmdType: 'setLevel', level };
+    try {
+      const sender = ipc as IpcZeroCopySender;
+      if (typeof sender.postMessage === 'function') {
+        const buf = encoder.encode(JSON.stringify(cmd)).buffer;
+        sender.postMessage(this.channel, buf, [buf]);
+      } else {
+        ipc.send(this.channel, cmd);
+      }
+    } catch {
+      /* silently drop — command loss is not fatal */
+    }
+  }
 }
 
 export interface IpcReceiverOptions {
@@ -119,32 +139,47 @@ export interface IpcReceiverOptions {
 /**
  * Main-side helper: listen on the IPC channel and feed received renderer
  * entries into the provided `ingest` callback (typically `logger.ingestEntry`).
+ * Level-change commands are forwarded to `onLevelCommand` when provided.
  * Returns an unregister function.
  */
 export function registerIpcReceiver(
   ingest: (entry: LogEntry) => void,
-  options: IpcReceiverOptions = {},
+  options: IpcReceiverOptions & { onLevelCommand?: (level: number) => void } = {},
 ): () => void {
   const channel = options.channel ?? LOGRAIL_CHANNEL;
+  const onLevelCommand = options.onLevelCommand;
   // `electron` is only present in a main process; resolve it lazily.
   const ipcMain = getElectron().ipcMain;
   const handler = (_event: unknown, payload: unknown): void => {
-    let entry: LogEntry;
     if (payload instanceof ArrayBuffer || payload instanceof Uint8Array) {
-      // Zero-copy transfer path: decode the transferred buffer once.
+      // Zero-copy transfer path
       try {
-        entry = decodeEntry(payload);
+        const decoded = JSON.parse(decoder.decode(payload)) as LogEntry | LogLevelCommand;
+        if (isLogLevelCommand(decoded)) {
+          onLevelCommand?.(normalizeLevel(decoded.level));
+          return;
+        }
+        const entry = decoded as LogEntry;
+        ingest({
+          ...entry,
+          metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
+        });
       } catch {
         return;
       }
     } else {
-      entry = payload as LogEntry;
+      const data = payload as LogEntry | LogLevelCommand;
+      if (isLogLevelCommand(data)) {
+        onLevelCommand?.(normalizeLevel(data.level));
+        return;
+      }
+      const entry = data as LogEntry;
+      // Copy-on-write: mark renderer-origin without mutating a shared/frozen entry.
+      ingest({
+        ...entry,
+        metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
+      });
     }
-    // Copy-on-write: mark renderer-origin without mutating a shared/frozen entry.
-    ingest({
-      ...entry,
-      metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
-    });
   };
   ipcMain.on(channel, handler);
   return () => ipcMain.removeListener(channel, handler);

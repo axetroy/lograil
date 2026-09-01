@@ -1,5 +1,8 @@
 import type { LogEntry } from '../types.js';
 import type { Transport } from './transport.js';
+import type { LogLevelCommand } from '../types.js';
+import { isLogLevelCommand } from '../types.js';
+import { normalizeLevel } from '../types.js';
 
 /** Minimal view of the `postMessage` function available in Web Workers and Node worker_threads. */
 type PostMessageFn = (message: unknown, transfer?: unknown[]) => void;
@@ -36,6 +39,19 @@ export class WorkerIpcTransport implements Transport {
       /* postMessage unavailable or failed — drop silently */
     }
   }
+
+  /** Send a cross-process level command to the main thread. */
+  sendLevelCommand(level: number): void {
+    try {
+      const target = self as unknown as MessageTarget;
+      if (typeof target.postMessage === 'function') {
+        const cmd: LogLevelCommand = { __lograilCmd: true, __lograilCmdType: 'setLevel', level };
+        target.postMessage(cmd);
+      }
+    } catch {
+      /* postMessage unavailable — drop silently */
+    }
+  }
 }
 
 export interface WorkerReceiverOptions {
@@ -45,8 +61,9 @@ export interface WorkerReceiverOptions {
 
 /**
  * Main-thread helper: listen for worker entries and feed them into the
- * provided `ingest` callback (typically `logger.ingestEntry`). Returns an
- * unregister function.
+ * provided `ingest` callback (typically `logger.ingestEntry`). Level-change
+ * commands are forwarded to `onLevelCommand` when provided.
+ * Returns an unregister function.
  *
  * Works with `Worker` instances (dedicated workers). For a specific worker
  * pass `worker: myWorkerInstance`; otherwise listens on `self.onmessage`
@@ -54,8 +71,9 @@ export interface WorkerReceiverOptions {
  */
 export function registerWorkerReceiver(
   ingest: (entry: LogEntry) => void,
-  options: WorkerReceiverOptions = {},
+  options: WorkerReceiverOptions & { onLevelCommand?: (level: number) => void } = {},
 ): () => void {
+  const onLevelCommand = options.onLevelCommand;
   const handler = (event: MessageEvent): void => {
     const data = event.data;
     if (
@@ -66,6 +84,8 @@ export function registerWorkerReceiver(
       'entry' in data
     ) {
       ingest(data.entry as LogEntry);
+    } else if (isLogLevelCommand(data)) {
+      onLevelCommand?.(normalizeLevel(data.level));
     }
   };
 

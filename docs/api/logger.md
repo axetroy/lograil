@@ -57,6 +57,32 @@ logger.getLevel(): number;
 logger.setLevel(level: LogLevelInput): void; // name or number
 ```
 
+### Cross-process level sync
+
+When a `Logger` is backed by an IPC-capable runtime (Electron, Worker threads,
+or Cluster), calling `setLevel()` on **any** process automatically broadcasts the
+new level to every peer over the IPC channel. No manual wiring is needed.
+
+```ts
+import { logger } from 'lograil';
+
+// Main process — all renderer / worker / cluster peers receive the new level
+logger.setLevel('debug');
+
+// Renderer / worker / cluster — main process also receives it
+logger.setLevel('trace');
+```
+
+For advanced scenarios where you need to hook into level commands received from
+a peer (e.g. to inspect or reject them), use `setOnLevelCommand`:
+
+```ts
+logger.setOnLevelCommand((level: number) => {
+  console.log('peer requested level', level);
+  logger.setLevel(level);
+});
+```
+
 ## Context
 
 ```ts

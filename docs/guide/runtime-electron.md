@@ -248,3 +248,35 @@ renderer ──ElectronIpcTransport──▶ IPC ──▶ main: registerIpcRece
 - Main-process logs and ingested renderer logs share one pipeline, one set of
   transports, and one rotating file.
 - Level filtering and plugins apply uniformly to both.
+
+## Cross-process level sync
+
+The logger **automatically broadcasts level changes** across the IPC channel.
+When any process calls `setLevel()`, every peer (main ↔ renderer) receives the
+command and updates its own level — no extra wiring required.
+
+```ts
+// main.ts
+import { logger } from 'lograil';
+logger.setLevel('debug'); // all renderer processes switch to debug too
+```
+
+```ts
+// renderer.ts
+import { logger } from 'lograil';
+logger.setLevel('trace'); // main process also receives this
+```
+
+This works for both the default `logger` singleton and loggers created with
+`createLogger()`. If you need to intercept or reject level commands before they
+are applied, register a custom callback:
+
+```ts
+import { createLogger } from 'lograil';
+const log = createLogger();
+log.setOnLevelCommand((level) => {
+  // inspect or reject before applying
+  if (level < 30) return; // only allow info and above
+  log.setLevel(level);
+});
+```

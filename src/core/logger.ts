@@ -298,7 +298,10 @@ export class Logger implements LoggerMethods {
 
     // On the Electron main process, receive renderer logs over IPC.
     if (this.runtime.attachReceiver) {
-      this.detachReceiver = this.runtime.attachReceiver((entry) => this.ingestEntry(entry));
+      this.detachReceiver = this.runtime.attachReceiver((entry: LogEntry) =>
+        this.ingestEntry(entry),
+      );
+      this.runtime.onLevelCommand = (level) => this.setLevel(level);
     }
 
     if (options.autoFlushOnExit) this.attachExitHandlers();
@@ -358,6 +361,16 @@ export class Logger implements LoggerMethods {
     const v = normalizeLevel(level);
     if (this.parent) this.levelOverride = v;
     else this.level = v;
+  }
+
+  /**
+   * Register a callback invoked when a cross-process level command is received
+   * (e.g. from a renderer, worker, or cluster peer). Called automatically by
+   * the runtime when {@link RuntimeAdapter.onLevelCommand} is wired up; most
+   * users should not call this directly.
+   */
+  setOnLevelCommand(cb: (level: number) => void): void {
+    this.runtime.onLevelCommand = cb;
   }
 
   // ---- Context ----

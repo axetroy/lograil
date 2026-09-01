@@ -98,4 +98,34 @@ describe('ElectronIpcTransport (electron present)', () => {
     expect(received.message).toBe('hi');
     expect(received.metadata[RENDERER_PROCESS_MARKER]).toBe('renderer');
   });
+
+  it('receiver routes level commands to onLevelCommand callback', () => {
+    const ingest = vi.fn();
+    const onLevelCommand = vi.fn();
+    registerIpcReceiver(ingest, { onLevelCommand });
+    const handler = on.mock.calls[on.mock.calls.length - 1][1] as (
+      event: unknown,
+      payload: unknown,
+    ) => void;
+
+    // Send a level command
+    const cmd = JSON.stringify({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
+    handler({}, new TextEncoder().encode(cmd));
+
+    expect(onLevelCommand).toHaveBeenCalledTimes(1);
+    expect(onLevelCommand).toHaveBeenCalledWith(20);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it('transport sends level commands via sendLevelCommand', () => {
+    const postMessage = vi.fn();
+    const send = vi.fn();
+    const t = new ElectronIpcTransport({ ipcRenderer: { send, postMessage } });
+    t.sendLevelCommand(20);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const [channel, message, transfer] = postMessage.mock.calls[0];
+    expect(channel).toBe(LOGRAIL_CHANNEL);
+    expect(message).toBeInstanceOf(ArrayBuffer);
+    expect(transfer).toEqual([message]);
+  });
 });

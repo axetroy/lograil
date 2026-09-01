@@ -208,3 +208,33 @@ renderer ──ElectronIpcTransport──▶ IPC ──▶ main: registerIpcRece
 - 渲染进程日志不会直接落盘——由主进程负责持久化。
 - 主进程自身的日志与被接收的渲染进程日志，共享同一条管道、同一组传输器、同一个滚动文件。
 - 级别过滤与插件对两者统一生效。
+
+## 跨进程级别同步
+
+Logger **自动通过 IPC 通道广播级别变更**。任意进程调用 `setLevel()` 时，
+所有对等方（主进程 ↔ 渲染进程）都会收到命令并更新自己的级别——无需额外接线。
+
+```ts
+// main.ts
+import { logger } from 'lograil';
+logger.setLevel('debug'); // 所有渲染进程也切换到 debug
+```
+
+```ts
+// renderer.ts
+import { logger } from 'lograil';
+logger.setLevel('trace'); // 主进程也会收到此命令
+```
+
+此功能对默认的 `logger` 单例和使用 `createLogger()` 创建的 logger 均适用。
+若需在应用前拦截或拒绝级别命令，可注册自定义回调：
+
+```ts
+import { createLogger } from 'lograil';
+const log = createLogger();
+log.setOnLevelCommand((level) => {
+  // 检查或拒绝后再应用
+  if (level < 30) return; // 只允许 info 及以上级别
+  log.setLevel(level);
+});
+```

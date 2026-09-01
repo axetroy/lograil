@@ -154,6 +154,13 @@ if (cluster.isPrimary) {
 No manual `registerClusterReceiver` call is needed — `createNodeRuntime()`
 attaches it automatically on the primary side.
 
+### Cross-process level sync
+
+Calling `setLevel()` on the primary process automatically broadcasts the new
+level to all cluster workers via the same IPC channel. Workers that call
+`setLevel()` also send the command back to the primary. No manual wiring is
+required.
+
 ## Worker threads support
 
 When running inside a `worker_threads` worker, the runtime automatically
@@ -186,3 +193,10 @@ import { createLogger, createWebRuntime } from 'lograil';
 const log = createLogger({ runtime: createWebRuntime() });
 logger.info('hello from worker_threads'); // → console + forwarded to parent
 ```
+
+### Cross-process level sync
+
+Like the Cluster mode, Worker threads also receive automatic level broadcasts.
+Calling `setLevel()` on the parent thread propagates to every worker, and vice
+versa — the level command travels over the same `postMessage` channel used for
+log entries.

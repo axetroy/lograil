@@ -121,6 +121,39 @@ describe('registerClusterReceiver', () => {
 
     expect(listeners['message']).toHaveLength(0);
   });
+
+  it('routes level commands to onLevelCommand callback', () => {
+    const ingest = vi.fn();
+    const onLevelCommand = vi.fn();
+    registerClusterReceiver(ingest, { onLevelCommand });
+
+    // Send a level command
+    listeners['message'][0]({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
+
+    expect(onLevelCommand).toHaveBeenCalledTimes(1);
+    expect(onLevelCommand).toHaveBeenCalledWith(20);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it('transport sends level commands via sendLevelCommand', () => {
+    const send = vi.fn().mockReturnValue(true);
+    const original = process.send;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process as any).send = send;
+
+    const transport = new ClusterIpcTransport();
+    transport.sendLevelCommand(20);
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith({
+      __lograilCmd: true,
+      __lograilCmdType: 'setLevel',
+      level: 20,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process as any).send = original;
+  });
 });
 
 describe('createNodeRuntime - cluster behavior', () => {

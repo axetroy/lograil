@@ -89,3 +89,20 @@ export function normalizeLevel(input: LogLevelInput): LogLevelValue {
   }
   return value;
 }
+
+/** Cross-process command sent over IPC to change log level. */
+export interface LogLevelCommand {
+  __lograilCmd: true;
+  __lograilCmdType: 'setLevel';
+  level: LogLevelName | LogLevelValue;
+}
+
+/** Returns true when the value is a {@link LogLevelCommand}. */
+export function isLogLevelCommand(value: unknown): value is LogLevelCommand {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as Record<string, unknown>).__lograilCmd === true &&
+    (value as Record<string, unknown>).__lograilCmdType === 'setLevel'
+  );
+}

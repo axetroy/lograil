@@ -70,6 +70,12 @@ export interface RuntimeAdapter {
    */
   attachReceiver?: (ingest: IngestFn) => () => void;
   /**
+   * Cross-process level-setting callback. When set on the runtime, any
+   * `setLevel` call from a child process will invoke this with the new level.
+   * Undefined when not applicable.
+   */
+  onLevelCommand?: (level: number) => void;
+  /**
    * Host lifecycle hooks. When present, the logger wires its flush-on-exit and
    * crash-logging behaviour through these instead of touching `process` /
    * `window` itself. Omit (or leave `undefined`) on runtimes where the logger

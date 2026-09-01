@@ -45,6 +45,29 @@ logger.getLevel(): number;
 logger.setLevel(level: LogLevelInput): void; // 名称或数值
 ```
 
+### 跨进程级别同步
+
+当 `Logger` 由支持 IPC 的运行时驱动时（Electron、Worker 线程、Cluster），在**任意进程**调用 `setLevel()` 都会自动将该级别广播给所有对等进程，无需手动接线。
+
+```ts
+import { logger } from 'lograil';
+
+// 主进程 —— 所有渲染进程 / worker / cluster 对等方都会收到新级别
+logger.setLevel('debug');
+
+// 渲染进程 / worker / cluster —— 主进程也会收到
+logger.setLevel('trace');
+```
+
+在需要拦截或检查来自对等方的级别命令的高级场景下，可使用 `setOnLevelCommand`：
+
+```ts
+logger.setOnLevelCommand((level: number) => {
+  console.log('对等方请求的级别', level);
+  logger.setLevel(level);
+});
+```
+
 ## 上下文
 
 ```ts
