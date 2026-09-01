@@ -312,7 +312,7 @@ describe('ElectronIpcTransport - error isolation', () => {
       context: {},
       metadata: {},
     };
-    expect(() => t.write(entry)).not.toThrow();
+    expect(() => t.write(entry, '')).not.toThrow();
   });
 
   it('decode of a corrupted buffer is swallowed by the receiver handler', () => {

@@ -163,7 +163,7 @@ describe('LiveTransport behaviour', () => {
     t.subscribe(() => {
       throw new Error('bad');
     });
-    t.write(makeEntry({ message: 'a' }));
+    t.write(makeEntry({ message: 'a' }), '');
     expect(seen).toHaveLength(1);
     expect(seen[0].message).toBe('a');
     expect(errSpy).toHaveBeenCalled();
@@ -173,8 +173,8 @@ describe('LiveTransport behaviour', () => {
 
   it('buffers for late subscribers and replays newest-first', () => {
     const t = new LiveTransport({ bufferSize: 5 });
-    t.write(makeEntry({ message: '1' }));
-    t.write(makeEntry({ message: '2' }));
+    t.write(makeEntry({ message: '1' }), '');
+    t.write(makeEntry({ message: '2' }), '');
     const replayed: string[] = [];
     const n = t.replay((e) => void replayed.push(e.message), true);
     expect(n).toBe(2);
@@ -186,13 +186,13 @@ describe('LiveTransport behaviour', () => {
     const t = new LiveTransport({ formatter: () => 'FORMATTED' });
     const lines: string[] = [];
     t.onFormatted((line) => void lines.push(line));
-    t.write(makeEntry());
+    t.write(makeEntry(), '');
     expect(lines).toEqual(['FORMATTED']);
   });
 
   it('clearBuffer drops buffered entries and close clears subscribers', () => {
     const t = new LiveTransport({ bufferSize: 3 });
-    t.write(makeEntry({ message: 'x' }));
+    t.write(makeEntry({ message: 'x' }), '');
     t.clearBuffer();
     expect(t.replay(() => {})).toBe(0);
     t.subscribe(() => {});

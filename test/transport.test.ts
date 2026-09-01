@@ -261,7 +261,7 @@ describe('FileTransport (rotate-size mode)', () => {
 describe('ElectronIpcTransport - safe in non-electron env', () => {
   it('does not throw when electron is unavailable', () => {
     const t = new ElectronIpcTransport();
-    expect(() => t.write(makeEntry())).not.toThrow();
+    expect(() => t.write(makeEntry(), '')).not.toThrow();
   });
 });
 
@@ -271,7 +271,7 @@ describe('ElectronIpcTransport - injected ipcRenderer', () => {
     const ipcRenderer = { send: (channel: string, data: unknown) => sent.push([channel, data]) };
     const t = new ElectronIpcTransport({ channel: 'test:log', ipcRenderer });
     const entry = makeEntry({ message: 'bridge' });
-    t.write(entry);
+    t.write(entry, '');
     expect(sent).toEqual([['test:log', entry]]);
   });
 
@@ -279,8 +279,8 @@ describe('ElectronIpcTransport - injected ipcRenderer', () => {
     const sent: Array<[string, unknown]> = [];
     const ipcRenderer = { send: (channel: string, data: unknown) => sent.push([channel, data]) };
     const t = new ElectronIpcTransport({ ipcRenderer });
-    t.write(makeEntry({ message: 'a' }));
-    t.write(makeEntry({ message: 'b' }));
+    t.write(makeEntry({ message: 'a' }), '');
+    t.write(makeEntry({ message: 'b' }), '');
     expect(sent).toHaveLength(2);
   });
 

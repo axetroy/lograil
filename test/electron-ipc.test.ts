@@ -46,7 +46,7 @@ describe('ElectronIpcTransport (electron present)', () => {
 
   it('sends the entry over ipcRenderer.send', () => {
     const t = new ElectronIpcTransport();
-    t.write(entry());
+    t.write(entry(), '');
     expect(send).toHaveBeenCalledWith(LOGRAIL_CHANNEL, entry());
   });
 
@@ -70,7 +70,7 @@ describe('ElectronIpcTransport (electron present)', () => {
     const send = vi.fn();
     const t = new ElectronIpcTransport({ ipcRenderer: { send, postMessage } });
     const e = entry();
-    t.write(e);
+    t.write(e, '');
     expect(postMessage).toHaveBeenCalledTimes(1);
     const [channel, message, transfer] = postMessage.mock.calls[0];
     expect(channel).toBe(LOGRAIL_CHANNEL);

@@ -24,14 +24,14 @@ describe('LiveTransport', () => {
     const seen: LogEntry[] = [];
     const unsub = live.subscribe((e) => seen.push(e));
 
-    live.write(makeEntry({ message: 'a' }));
-    live.write(makeEntry({ message: 'b' }));
+    live.write(makeEntry({ message: 'a' }), '');
+    live.write(makeEntry({ message: 'b' }), '');
 
     expect(seen.map((e) => e.message)).toEqual(['a', 'b']);
     expect(live.subscriberCount).toBe(1);
 
     unsub();
-    live.write(makeEntry({ message: 'c' }));
+    live.write(makeEntry({ message: 'c' }), '');
     expect(seen.map((e) => e.message)).toEqual(['a', 'b']);
     expect(live.subscriberCount).toBe(0);
   });
@@ -43,9 +43,9 @@ describe('LiveTransport', () => {
     const unsubA = live.subscribe((e) => a.push(e.message));
     live.subscribe((e) => b.push(e.message));
 
-    live.write(makeEntry({ message: 'x' }));
+    live.write(makeEntry({ message: 'x' }), '');
     unsubA();
-    live.write(makeEntry({ message: 'y' }));
+    live.write(makeEntry({ message: 'y' }), '');
 
     expect(a).toEqual(['x']);
     expect(b).toEqual(['x', 'y']);
@@ -61,7 +61,7 @@ describe('LiveTransport', () => {
     live.subscribe((e) => good.push(e.message));
 
     // Should not throw out of write().
-    expect(() => live.write(makeEntry({ message: 'z' }))).not.toThrow();
+    expect(() => live.write(makeEntry({ message: 'z' }), '')).not.toThrow();
     expect(good).toEqual(['z']);
     expect(bad).toHaveBeenCalledTimes(1);
   });
@@ -71,7 +71,7 @@ describe('LiveTransport', () => {
     const seen: string[] = [];
     live.subscribe((e) => seen.push(e.message));
     live.close();
-    live.write(makeEntry({ message: 'nope' }));
+    live.write(makeEntry({ message: 'nope' }), '');
     expect(seen).toEqual([]);
     expect(live.subscriberCount).toBe(0);
   });
@@ -80,16 +80,16 @@ describe('LiveTransport', () => {
     const live = new LiveTransport({ formatter: createLineFormatter() });
     const lines: string[] = [];
     live.onFormatted((line) => lines.push(line));
-    live.write(makeEntry({ message: 'fmt' }));
+    live.write(makeEntry({ message: 'fmt' }), '');
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('fmt');
   });
 
   it('buffers entries when bufferSize > 0 and replays them', () => {
     const live = new LiveTransport({ bufferSize: 2 });
-    live.write(makeEntry({ message: '1' }));
-    live.write(makeEntry({ message: '2' }));
-    live.write(makeEntry({ message: '3' })); // drops '1'
+    live.write(makeEntry({ message: '1' }), '');
+    live.write(makeEntry({ message: '2' }), '');
+    live.write(makeEntry({ message: '3' }), ''); // drops '1'
 
     const replayed: string[] = [];
     const n = live.replay((e) => replayed.push(e.message));
@@ -103,13 +103,13 @@ describe('LiveTransport', () => {
 
   it('does not buffer when bufferSize is 0 (default)', () => {
     const live = new LiveTransport();
-    live.write(makeEntry({ message: 'x' }));
+    live.write(makeEntry({ message: 'x' }), '');
     expect(live.replay(() => {})).toBe(0);
   });
 
   it('clearBuffer empties the buffer', () => {
     const live = new LiveTransport({ bufferSize: 5 });
-    live.write(makeEntry({ message: 'x' }));
+    live.write(makeEntry({ message: 'x' }), '');
     live.clearBuffer();
     expect(live.replay(() => {})).toBe(0);
   });
