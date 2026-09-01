@@ -262,12 +262,14 @@ export class Logger implements LoggerMethods {
   private parent?: Logger;
   private levelOverride?: number;
   /**
-   * Sequences the async plugin-interception step so entries are processed in
-   * emit order. Transport writes fan out to their own per-transport queues
-   * (see `transportQueues`), so a slow/blocked transport can never stall the
-   * others or this front queue.
+   * Bounded async queue for plugin interception. Tracks in-flight entries so
+   * `flush()` and `destroy()` know when all interceptions are done without
+   * letting the dispatch chain grow unboundedly (each push would append a
+   * `.then()` to an ever-longer Promise chain).
    */
-  private dispatchQueue: Promise<void> = Promise.resolve();
+  private dispatchInflight = 0;
+  private dispatchDrain: Promise<void> | null = null;
+  private dispatchDrainResolve: (() => void) | undefined = undefined;
   /** Independent async-write queue per transport. */
   private transportQueues = new Map<Transport, Promise<void>>();
   private destroyed = false;
@@ -554,12 +556,28 @@ export class Logger implements LoggerMethods {
    */
   private dispatch(entry: LogEntry): void {
     if (this.plugins.hasEntryInterceptors()) {
-      const p = this.plugins.intercept(entry).then((intercepted) => {
-        if (intercepted) this.writeToTransports(intercepted);
+      // Create or reset the drain promise eagerly so that `flush()` callers
+      // always have a non-null promise to await, even if they arrive before
+      // the current batch of in-flight interceptions completes.
+      this.dispatchDrain = new Promise<void>((resolve) => {
+        this.dispatchDrainResolve = resolve;
       });
-      this.dispatchQueue = this.dispatchQueue
-        .then(() => p)
-        .catch((err) => this.reportError('plugin', err));
+      this.dispatchInflight++;
+      this.plugins
+        .intercept(entry)
+        .then((intercepted) => {
+          if (intercepted) this.writeToTransports(intercepted);
+        })
+        .catch((err) => this.reportError('plugin', err))
+        .finally(() => {
+          this.dispatchInflight--;
+          if (this.dispatchInflight === 0) {
+            const resolve = this.dispatchDrainResolve;
+            this.dispatchDrain = null;
+            this.dispatchDrainResolve = undefined;
+            resolve?.();
+          }
+        });
       return;
     }
     this.writeToTransports(entry);
@@ -729,7 +747,7 @@ export class Logger implements LoggerMethods {
   async flush(): Promise<void> {
     // Let in-flight interception finish so every scheduled write has been
     // enqueued onto its transport's own queue.
-    await this.dispatchQueue;
+    if (this.dispatchInflight > 0) await this.dispatchDrain;
     // Aggregate all per-transport async-write queues. `allSettled` means a
     // rejected/errored transport queue never rejects flush; a stalled one is
     // bounded by `writeTimeoutMs` via `guardWrite`.
@@ -951,6 +969,8 @@ export class Logger implements LoggerMethods {
       }
     }
     this.transportQueues.clear();
-    this.dispatchQueue = Promise.resolve();
+    this.dispatchInflight = 0;
+    this.dispatchDrain = null;
+    this.dispatchDrainResolve = undefined;
   }
 }
