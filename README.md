@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./logo.svg" alt="lograil" width="128" height="128" />
+  <img src="https://raw.githubusercontent.com/axetroy/electron-logger/refs/heads/main/logo.svg" alt="lograil" width="128" height="128" />
 </div>
 
 # lograil
