@@ -52,6 +52,10 @@ export class WorkerIpcTransport implements Transport {
       /* postMessage unavailable — drop silently */
     }
   }
+
+  close(): void {
+    /* No-op. Worker lifecycle is managed by the Worker instance itself. */
+  }
 }
 
 export interface WorkerReceiverOptions {
@@ -125,13 +129,14 @@ export function registerWorkerReceiver(
   }
 
   // Global self.onmessage — shared worker / fallback
-  const prev = self.onmessage;
+  const prevOnMessage = self.onmessage;
   self.addEventListener('message', handler as EventListener);
   return () => {
     self.removeEventListener('message', handler as EventListener);
-    // Restore previous handler if it was there
-    if (self.onmessage === null && prev !== undefined) {
-      self.onmessage = prev;
+    // Restore previous onmessage handler only if it hasn't been replaced
+    // by another listener in the meantime.
+    if (self.onmessage === handler || self.onmessage === prevOnMessage) {
+      self.onmessage = prevOnMessage;
     }
   };
 }
