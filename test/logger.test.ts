@@ -3,8 +3,6 @@ import { Logger } from '../src/core/index.js';
 import type { LogEntry } from '../src/types.js';
 import type { Transport } from '../src/transport/transport.js';
 import { createLineFormatter } from '../src/pipeline/formatter.js';
-import { LOG_LEVELS } from '../src/types.js';
-
 class MemoryTransport implements Transport {
   readonly name = 'memory';
   entries: LogEntry[] = [];
@@ -15,19 +13,6 @@ class MemoryTransport implements Transport {
     this.entries.push(entry);
     this.lines.push(formatted);
   }
-}
-
-function _entry(): LogEntry {
-  return {
-    level: LOG_LEVELS.info,
-    levelName: 'info',
-    message: 'hi',
-    args: [],
-    timestamp: 1,
-    time: '',
-    context: {},
-    metadata: {},
-  };
 }
 
 describe('Logger', () => {
