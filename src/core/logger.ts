@@ -655,6 +655,14 @@ export class Logger implements LoggerMethods {
     });
   }
 
+  /** Await a transport's async `flush`, but never let it stall teardown. */
+  private guardFlush(p: () => void | Promise<void>): Promise<void> {
+    if (!this.writeTimeoutMs) return Promise.resolve();
+    const result = p();
+    if (!result || typeof (result as Promise<void>).then !== 'function') return Promise.resolve();
+    return this.guardWrite(result as Promise<void>);
+  }
+
   /** Surface a transport failure via the transport's hook, else the global handler. */
   private reportTransportError(
     err: unknown,
@@ -675,11 +683,11 @@ export class Logger implements LoggerMethods {
     // rejected/errored transport queue never rejects flush; a stalled one is
     // bounded by `writeTimeoutMs` via `guardWrite`.
     await Promise.allSettled(Array.from(this.transportQueues.values()));
-    for (const transport of this.transports) {
-      if (transport.flush) {
-        await transport.flush();
-      }
-    }
+    // Flush each transport's internal buffers with the same timeout guard so
+    // a stalled flush can never hang shutdown or caller code.
+    await Promise.allSettled(
+      this.transports.map((t) => (t.flush ? this.guardFlush(t.flush.bind(t)) : Promise.resolve())),
+    );
   }
 
   /**

@@ -180,5 +180,8 @@ const restore = logger.redirectConsole(); // returns a function that restores co
 - `watchUncaughtErrors()` logs the error at `fatal` and then exits with code `1`.
 - `redirectConsole()` routes the captured `console` methods through the logger
   and suppresses the native output. The console bridge is recursion-safe even
-  when a `ConsoleTransport` is attached.
+  when a `ConsoleTransport` is attached. Note: `console.*` arguments are
+  passed as-is to the logger, so structured objects (e.g. `console.log({ key })`)
+  become the log message string rather than structured data — use the logger
+  API directly (`logger.info({ key })`) for structured logging.
 - `destroy()` also removes any process handlers registered above.

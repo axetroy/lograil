@@ -3,6 +3,12 @@ import type { Transport } from './transport.js';
 import type { IpcRenderer } from 'electron';
 import { getElectron } from '../runtime/electron-binding.js';
 
+// Captured at module load so error reporting never recurses into itself.
+const RAW_CONSOLE_ERROR: (...args: unknown[]) => void =
+  typeof console !== 'undefined' && typeof console.error === 'function'
+    ? console.error.bind(console)
+    : () => {};
+
 /** Minimal view of `IpcRenderer` the transport actually needs. */
 type IpcSender = Pick<IpcRenderer, 'send'>;
 
@@ -99,8 +105,9 @@ export class ElectronIpcTransport implements Transport {
         // Fallback: Electron structured-clones the whole entry object.
         ipc.send(this.channel, entry);
       }
-    } catch {
-      /* electron unavailable — drop silently */
+    } catch (err) {
+      // Report IPC failure so users can diagnose renderer → main delivery issues.
+      RAW_CONSOLE_ERROR(`[lograil] ipc transport (${this.name}) send failed:`, err);
     }
   }
 }

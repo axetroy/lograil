@@ -145,5 +145,5 @@ const restore = logger.redirectConsole(); // 返回一个用于还原 console �
 
 - `attachExitHandlers()` 在宿主退出前 flush。在 Node / Electron 上注册 `beforeExit`、`SIGINT`、`SIGTERM` 监听器（退出码 `130`/`143`）；在 Electron **主进程**上还会在 `app` 的 `before-quit` / `will-quit` 时 flush，使正常的窗口关闭不会丢弃缓冲中的日志。在浏览器中为空操作，且幂等。
 - `watchUncaughtErrors()` 会将错误以 `fatal` 级别记录，随后以退出码 `1` 退出。
-- `redirectConsole()` 把被捕获的 `console` 方法转交给 logger，并抑制原生输出。即使挂载了 `ConsoleTransport`，console 桥接也不会递归。
+- `redirectConsole()` 把被捕获的 `console` 方法转交给 logger，并抑制原生输出。即使挂载了 `ConsoleTransport`，console 桥接也不会递归。**注意：** `console.*` 的参数会原样传给 logger，因此结构化对象（如 `console.log({ key })`）会变成日志消息字符串而非结构化数据——结构化日志请直接使用 logger API（`logger.info({ key })`）。
 - 上述进程处理器同样会在 `destroy()` 时被移除。
