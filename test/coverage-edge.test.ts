@@ -225,7 +225,9 @@ describe('edge cases — untested code paths', () => {
     // createProcessLifecycle wires up its handlers.
     const hooks = createProcessLifecycle();
     const flushed: unknown[] = [];
-    const detach = hooks.onFlushBeforeExit(() => flushed.push('flushed'));
+    const detach = hooks.onFlushBeforeExit(() => {
+      flushed.push('flushed');
+    });
     expect(typeof detach).toBe('function');
 
     // Trigger SIGTERM — the handler must not propagate the exit() throw.
