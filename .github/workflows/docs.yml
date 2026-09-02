@@ -55,5 +55,5 @@ jobs:
           publish_branch: docs
           publish_dir: docs/.vitepress/dist
           destination_dir: .
-          keep_files: true
+          force_orphan: true
           commit_message: 'docs: update root to ${{ github.sha }}'
