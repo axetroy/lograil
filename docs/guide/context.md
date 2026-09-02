@@ -18,15 +18,19 @@ log.info('handled request');
 // → { context: { userId: 'u-123', requestId: '...' }, ... }
 ```
 
-Child loggers get their **own isolated** context seeded from the parent:
+Child loggers get their **own isolated** context seeded from the parent. There are two ways to create a child:
+
+- **`scope(name, context?)`** — creates a child with a **new scope** (joined with `:`). The scope is visible in the log entry and usable by filters.
+- **`child(options)`** — creates a child that **keeps the parent's scope** but can merge additional context or override the level. Use this when you need per-request context without changing the scope name.
 
 ```ts
-const reqLog = log.scope('api').child({
-  context: { tenantId: 'acme' },
-});
+// Scope change: useful for modular logging (http, db, auth, …)
+const httpLog = log.scope('api');
+httpLog.info('handled request'); // → scope: 'api'
 
-reqLog.info('query executed');
-// → { context: { userId: 'u-123', requestId: '...', tenantId: 'acme' }, ... }
+// Context-only child: keeps parent's scope, adds request-specific data
+const reqLog = log.child({ context: { requestId: crypto.randomUUID() } });
+reqLog.info('query executed'); // → scope inherited from parent
 ```
 
 **When to use `context`:**

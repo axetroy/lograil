@@ -15,13 +15,15 @@ import { createLogger, type Plugin } from 'lograil';
 const envPlugin: Plugin = {
   name: 'env',
   onEntry(entry) {
-    entry.metadata = {
-      ...entry.metadata,
-      host: os.hostname(),
-      pid: process.pid,
-      build: process.env.BUILD_ID ?? 'dev',
+    return {
+      ...entry,
+      metadata: {
+        ...entry.metadata,
+        host: os.hostname(),
+        pid: process.pid,
+        build: process.env.BUILD_ID ?? 'dev',
+      },
     };
-    return entry;
   },
 };
 

@@ -18,15 +18,19 @@ log.info('handled request');
 // → { context: { userId: 'u-123', requestId: '...' }, ... }
 ```
 
-子 logger 会获得一份**独立的**上下文，从父级继承初始值：
+子 logger 会获得一份**独立的**上下文，从父级继承初始值。有两种创建子 logger 的方式：
+
+- **`scope(name, context?)`** — 创建一个具有**新 scope**（用 `:` 连接）的子 logger。scope 会显示在日志条目中，也可用于过滤器。
+- **`child(options)`** — 创建一个**保留父级 scope** 的子 logger，但可以合并额外的上下文或覆盖级别。当你需要 per-request 上下文但不想改变 scope 名称时使用。
 
 ```ts
-const reqLog = log.scope('api').child({
-  context: { tenantId: 'acme' },
-});
+// 改变 scope：适合模块化日志（http、db、auth 等）
+const httpLog = log.scope('api');
+httpLog.info('handled request'); // → scope: 'api'
 
-reqLog.info('query executed');
-// → { context: { userId: 'u-123', requestId: '...', tenantId: 'acme' }, ... }
+// 仅改变上下文：保留父级的 scope，添加请求级数据
+const reqLog = log.child({ context: { requestId: crypto.randomUUID() } });
+reqLog.info('query executed'); // → scope 继承自父级
 ```
 
 **何时使用 `context`：**

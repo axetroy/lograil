@@ -86,6 +86,29 @@ log.setLevel('debug'); // 也可传入数值，例如 20
 log.getLevel(); // 20
 ```
 
+### 各传输器的级别过滤
+
+每个传输器可以声明自己的 `level`，该过滤在 **logger 级别过滤之后** 应用。
+这允许你将不同严重程度的日志路由到不同的出口——例如，只将 `error` 及以上级别的日志发送到远程收集器，同时将所有级别的日志写入本地文件：
+
+```ts
+import { Logger, ConsoleTransport } from 'lograil';
+
+const logger = new Logger({
+  transports: [
+    // 本地文件：所有级别
+    new FileTransport({ name: 'file', path: './logs/app.log' }),
+    // 远程：仅 error 及以上
+    new OtlpTransport({
+      endpoint: 'http://localhost:4318/v1/logs',
+      level: 'error',
+    }),
+  ],
+});
+```
+
+有效的过滤链顺序为：**logger 级别 → 管道过滤器 → 各传输器级别**。
+
 ## 上下文
 
 上下文用于保存会被附带到 **每一条** 日志中的结构化字段。只需设置一次，即可对后续所有日志生效：
@@ -128,6 +151,9 @@ const log = createLogger({ scopeFilter: ['http*', 'db*', '-http:noise'] });
 
 以 `-` 前缀表示排除；`*` 匹配任意一段字符。`scope` 为完整的点分层级名（如 `http:server`），因此
 `http*` 可匹配它。
+
+省略时 logger 会自动读取 `LOGRAIL_DEBUG`。你可以通过 `scopeFilterEnvVar` 指向其他变量，
+或设为 `null` 完全禁用环境变量读取。
 
 ## 运行时选项
 

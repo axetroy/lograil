@@ -91,6 +91,31 @@ log.setLevel('debug'); // also accepts a number, e.g. 20
 log.getLevel(); // 20
 ```
 
+### Per-transport level filtering
+
+Each transport can declare its own `level`, which is applied **after** the
+logger-level filter. This lets you fan out different severity levels to
+different sinks — for example, sending only `error`+ to a remote collector
+while writing all levels to a local file:
+
+```ts
+import { Logger, ConsoleTransport } from 'lograil';
+
+const logger = new Logger({
+  transports: [
+    // Local file: all levels
+    new FileTransport({ name: 'file', path: './logs/app.log' }),
+    // Remote: only errors and above
+    new OtlpTransport({
+      endpoint: 'http://localhost:4318/v1/logs',
+      level: 'error',
+    }),
+  ],
+});
+```
+
+The effective filter chain is: **logger-level → pipeline filters → per-transport level**.
+
 ## Context
 
 Context holds structured fields attached to **every** entry. Set it once and it
@@ -137,6 +162,10 @@ const log = createLogger({ scopeFilter: ['http*', 'db*', '-http:noise'] });
 
 A leading `-` excludes a pattern; `*` matches any run of characters. `scope` is the
 full dotted name (e.g. `http:server`), so `http*` matches it.
+
+When omitted, the logger reads `LOGRAIL_DEBUG` automatically. You can point it at a
+different variable with `scopeFilterEnvVar`, or disable the env read entirely with
+`scopeFilterEnvVar: null`.
 
 ## Runtime options
 

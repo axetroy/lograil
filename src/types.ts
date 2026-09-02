@@ -11,6 +11,7 @@ export type LogLevelValue = number;
 
 /**
  * Ordered by severity. Higher value means more severe.
+ * @internal
  */
 export const LOG_LEVELS: Record<LogLevelName, LogLevelValue> = {
   trace: 10,
@@ -21,8 +22,10 @@ export const LOG_LEVELS: Record<LogLevelName, LogLevelValue> = {
   fatal: 60,
 };
 
+/** @internal */
 export const LOG_LEVEL_NAMES = Object.keys(LOG_LEVELS) as LogLevelName[];
 
+/** @internal */
 export function isLogLevelName(value: unknown): value is LogLevelName {
   return typeof value === 'string' && value in LOG_LEVELS;
 }
@@ -50,7 +53,10 @@ export interface LogEntry {
   message: string;
   /** Extra positional arguments passed to the log call. */
   args: unknown[];
-  /** Epoch milliseconds when the entry was created. */
+  /**
+   * Epoch milliseconds when the entry was created. Internal — prefer `time`
+   * (ISO string) for display.
+   */
   timestamp: number;
   /** Coarse ISO timestamp for display / serialization. */
   time: string;
@@ -81,6 +87,7 @@ export interface LoggerMethods {
 
 export type LogLevelInput = LogLevelName | LogLevelValue;
 
+/** @internal */
 export function normalizeLevel(input: LogLevelInput): LogLevelValue {
   if (typeof input === 'number') {
     return input;
@@ -92,14 +99,14 @@ export function normalizeLevel(input: LogLevelInput): LogLevelValue {
   return value;
 }
 
-/** Cross-process command sent over IPC to change log level. */
+/** @internal Cross-process command sent over IPC to change log level. */
 export interface LogLevelCommand {
   __lograilCmd: true;
   __lograilCmdType: 'setLevel';
   level: LogLevelName | LogLevelValue;
 }
 
-/** Returns true when the value is a {@link LogLevelCommand}. */
+/** @internal Returns true when the value is a {@link LogLevelCommand}. */
 export function isLogLevelCommand(value: unknown): value is LogLevelCommand {
   return (
     typeof value === 'object' &&
