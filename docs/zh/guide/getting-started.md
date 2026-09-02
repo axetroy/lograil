@@ -24,7 +24,7 @@ bun add lograil
 
 ## 快速上手
 
-本包导出一个开箱即用的 `logger`，其运行时（Web / Node / Electron）会在导入时自动探测。无需任何配置即可直接记录日志：
+本包导出一个开箱即用的 `logger`，其运行时（Web / Node / Electron，指日志库适配的不同运行环境）会在导入时自动探测。无需任何配置即可直接记录日志：
 
 ```ts
 import { logger } from 'lograil';

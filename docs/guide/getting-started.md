@@ -24,7 +24,7 @@ bun add lograil
 
 ## Quick start
 
-The package ships a ready-to-use logger whose runtime (Web / Node / Electron) is
+The package ships a ready-to-use logger whose runtime (Web / Node / Electron, i.e. the different execution environments the library adapts to) is
 auto-detected at import time. Log immediately — no setup required:
 
 ```ts

@@ -1,7 +1,7 @@
 # API Reference
 
 The package is organized into focused modules, each available from the root and
-as a **subpath export** for tree-shaking:
+as a **subpath export** for tree-shaking (build tools like Vite/W webpack will automatically remove unused code):
 
 | Import                          | Exports                                                           |
 | ------------------------------- | ----------------------------------------------------------------- |

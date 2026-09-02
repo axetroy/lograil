@@ -37,6 +37,7 @@ function themeConfig(locale: 'en' | 'zh') {
             },
             { text: locale === 'zh' ? '架构' : 'Architecture', link: `${p}/guide/architecture` },
             { text: locale === 'zh' ? '上下文与元数据' : 'Context & Metadata', link: `${p}/guide/context` },
+            { text: locale === 'zh' ? '术语表' : 'Glossary', link: `${p}/guide/glossary` },
             { text: locale === 'zh' ? '基准测试' : 'Benchmarks', link: `${p}/guide/benchmarks` },
             { text: locale === 'zh' ? '迁移指南' : 'Migrating', link: `${p}/guide/migrating` },
             {

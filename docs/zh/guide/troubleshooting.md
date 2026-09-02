@@ -6,21 +6,21 @@
 
 **现象：** 一打日志应用就卡死，或抛出 `Maximum call stack size exceeded`。
 
-**原因：** 某个 transport（或 formatter/插件）调用了 `console.log`/`console.error`，
+**原因：** 某个 transport（传输器，即日志的输出目的地）或 formatter（格式化器）/ plugin（插件）调用了 `console.log`/`console.error`，
 而*你*通过 `redirectConsole()` 把 console 重定向进了 `lograil`。注意：`lograil` **默认不会**
 重定向 `console.*`——只有你显式调用 `logger.redirectConsole()` 才会。被重定向的 `console.*`
 又回调 logger → 死循环。
 
 **自查**
 - 是否调用了 `redirectConsole()`？如果是，它会接管 `console.*` 并重新经 logger 输出，你自己的
-  transport/插件**不要**对相同级别再调 `console.*`。若**未**调用它，请跳过本节——你的递归来自
+  transport（传输器）/插件**不要**对相同级别再调 `console.*`。若**未**调用它，请跳过本节——你的递归来自
   别处（例如某 transport 直接调用了 `console`）。
 - 在 `onError` 或自定义 transport 内，请使用**原始** console（`console.error`）——
   `lograil` 特意保留了重定向前的引用；若你自己捕获了 `console`，改用 `process.stderr`
-  或专门的 stderr sink。
+  或专门的 stderr sink（**sink** 即数据的最终目的地）。
 
 **解决：** 在错误处理与自定义 sink 中写 `process.stderr`/文件，或改用不会回灌到被重定向
-console 的 transport。
+console 的 transport（传输器）。
 
 ## 2. 浏览器打包报错：无法解析 `node:fs` / `node:path` / `node:os`
 
@@ -34,7 +34,7 @@ console 的 transport。
 
 **现象：** 主进程正常，渲染进程静默（或渲染日志始终到不了主进程的 `renderer.log` 文件）。
 
-**背景：** 在默认的 Electron runtime 下这是**自动**的——渲染端 logger 会自动经 IPC 把日志
+**背景：** 在默认的 Electron runtime（运行时）下这是**自动**的——渲染端 logger 会自动经 IPC（进程间通信）把日志
 转发到主进程，主端 logger 会写到独立的 `renderer.{date}.log`。通常你什么都不用做。若仍不工作，
 通常是以下之一：你主动退出了自动接线、用非 Electron 的 runtime 构造了 logger，或渲染端
 无法访问 `electron` 模块而静默回退到 Web runtime。
@@ -85,10 +85,10 @@ console 的 transport。
 
 ## 6. 日志乱序 / 在多个 transport 间重复
 
-`lograil` 在多个 transport 间共享同一个不可变、冻结的条目（零拷贝）。每个 transport 的异步
-写入各有独立队列，因此慢 transport 可能落后于快 transport——**顺序仅在单个 transport 内
-保证**，而非跨 transport 全局保证。若需严格全局顺序，使用单一 transport 或让所有写入同步。
-重复行通常是同一 transport 被加了两次，或 `redirectConsole()` 重复发出——用 `getTransports()`
+`lograil` 在多个 transport（传输器）间共享同一个不可变、冻结的条目（零拷贝）。每个 transport（传输器）的异步
+写入各有独立队列，因此慢 transport（传输器）可能落后于快 transport（传输器）——**顺序仅在单个 transport（传输器）内
+保证**，而非跨 transport（传输器）全局保证。若需严格全局顺序，使用单一 transport（传输器）或让所有写入同步。
+重复行通常是同一 transport（传输器）被加了两次，或 `redirectConsole()` 重复发出——用 `getTransports()`
 核对。
 
 ## 7. 跨进程（IPC）传递时的注意事项
