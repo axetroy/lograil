@@ -619,7 +619,7 @@ export class Logger implements LoggerMethods {
     args: unknown[],
   ): LogEntry {
     let msg: string;
-    let error: Error | undefined;
+    let error: unknown;
     let rest = args;
 
     if (message instanceof Error) {
@@ -645,7 +645,9 @@ export class Logger implements LoggerMethods {
     }
 
     if (!error) {
-      error = rest.find((a) => a instanceof Error) as Error | undefined;
+      error =
+        rest.find((a) => a instanceof Error) ??
+        rest.find((a) => typeof a === 'string' && a.length > 0);
     }
 
     const now = this.runtime.now();

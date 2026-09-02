@@ -7,32 +7,41 @@ import { isEmptyRecord } from '../context/context.js';
  */
 export type Formatter<T = string> = (entry: LogEntry) => T;
 
-function getErrorCause(err: Error): unknown {
-  return (err as { cause?: unknown }).cause;
-}
-
 /** Structured representation of an {@link Error} for the JSON formatter. */
-function errorToJson(err: Error, seen = new WeakSet<Error>()): Record<string, unknown> {
+function errorToJson(err: unknown, seen = new WeakSet<object>()): Record<string, unknown> {
+  if (err == null || typeof err !== 'object') return { value: err };
   if (seen.has(err)) {
-    return { name: err.name, message: err.message, circular: true };
+    return {
+      name: (err as { name?: string }).name,
+      message: (err as { message?: string }).message,
+      circular: true,
+    };
   }
   seen.add(err);
-  const cause = getErrorCause(err);
+  const cause = (err as { cause?: unknown }).cause;
   const causeValue =
     cause !== undefined
       ? cause instanceof Error
         ? errorToJson(cause, seen)
         : safeStringify(cause)
       : undefined;
-  return { name: err.name, message: err.message, stack: err.stack, cause: causeValue };
+  return {
+    name: (err as { name?: string }).name,
+    message: (err as { message?: string }).message,
+    stack: (err as { stack?: string }).stack,
+    cause: causeValue,
+  };
 }
 
 /** One-line `Name: message; caused by: ...` form for inline (args) rendering. */
-function formatErrorShort(err: Error, seen = new WeakSet<Error>()): string {
+function formatErrorShort(err: unknown, seen = new WeakSet<object>()): string {
+  if (err == null || typeof err !== 'object') return String(err);
   if (seen.has(err)) return '[Circular]';
   seen.add(err);
-  const cause = getErrorCause(err);
-  let out = `${err.name}: ${err.message}`;
+  const name = (err as { name?: string }).name ?? 'Error';
+  const message = (err as { message?: string }).message ?? String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  let out = `${name}: ${message}`;
   if (cause !== undefined) {
     out += `; caused by: ${
       cause instanceof Error ? formatErrorShort(cause, seen) : safeStringify(cause)
@@ -42,11 +51,15 @@ function formatErrorShort(err: Error, seen = new WeakSet<Error>()): string {
 }
 
 /** Full stack form for the entry-level error, including the cause chain. */
-function formatErrorChain(err: Error, seen = new WeakSet<Error>()): string {
+function formatErrorChain(err: unknown, seen = new WeakSet<object>()): string {
+  if (err == null || typeof err !== 'object') return String(err);
   if (seen.has(err)) return '[Circular cause]';
   seen.add(err);
-  let out = err.stack ?? `${err.name}: ${err.message}`;
-  const cause = getErrorCause(err);
+  const stack = (err as { stack?: string }).stack;
+  const name = (err as { name?: string }).name;
+  const message = (err as { message?: string }).message;
+  let out = stack ?? `${name ?? 'Error'}: ${message ?? String(err)}`;
+  const cause = (err as { cause?: unknown }).cause;
   if (cause !== undefined) {
     out += `\ncaused by: ${
       cause instanceof Error ? formatErrorChain(cause, seen) : safeStringify(cause)

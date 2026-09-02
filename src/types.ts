@@ -62,8 +62,10 @@ export interface LogEntry {
   context: Record<string, unknown>;
   /** One-off metadata attached to this entry only. */
   metadata: Record<string, unknown>;
-  /** Error object when the entry was created from one. */
-  error?: Error;
+  /** Error-like object when the entry was created from one. Supports both
+   * standard `Error` instances and arbitrary values (e.g. string messages) so
+   * callers can log non-Error exceptions without type casting. */
+  error?: unknown;
 }
 
 export type LogFn = (message: unknown, ...args: unknown[]) => void;

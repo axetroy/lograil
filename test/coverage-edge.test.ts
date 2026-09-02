@@ -10,6 +10,7 @@ import {
   createDefaultSerializers,
 } from '../src/pipeline/processor.js';
 import { createNodeRuntime, createWebRuntime } from '../src/runtime/index.js';
+import { createLogger } from '../src/index.js';
 import type { LogEntry } from '../src/types.js';
 import { LOG_LEVELS } from '../src/types.js';
 
@@ -360,5 +361,22 @@ describe('edge cases — untested code paths', () => {
     const entry = makeEntry({ error: 'not an error' as never });
     const out = createSerializeProcessor(ser)(entry);
     expect(out.error).toBe('not an error');
+  });
+
+  it('logger accepts string as error when no Error in args', () => {
+    // Cover the fallback: rest.find(string) when no Error found
+    const errs: unknown[] = [];
+    const transport = {
+      name: 'mem',
+      write(e: unknown) {
+        errs.push(e);
+      },
+    };
+    const log = createLogger({ transports: [transport] });
+    log.error('something went wrong');
+    expect(errs).toHaveLength(1);
+    // String message becomes the message field, not error (message is string, not Error)
+    expect((errs[0] as LogEntry).message).toBe('something went wrong');
+    expect((errs[0] as LogEntry).error).toBeUndefined();
   });
 });

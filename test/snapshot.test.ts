@@ -28,7 +28,10 @@ async function capture(fn: (log: Logger) => void): Promise<LogEntry[]> {
   await log.flush();
   // Normalize error stacks so snapshots are environment-independent.
   for (const e of cap.entries) {
-    if (e.error) e.error.stack = `Error: ${e.error.message}\n    at <snapshot>`;
+    if (e.error) {
+      const err = e.error as { stack?: string; message?: string };
+      err.stack = `Error: ${err.message ?? String(err)}\n    at <snapshot>`;
+    }
   }
   return cap.entries;
 }
