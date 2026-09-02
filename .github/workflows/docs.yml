@@ -38,11 +38,6 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Generate versions.json
-        # List every released tag so the version switcher can link to old docs.
-        run: |
-          node -e "const cp=require('child_process');const fs=require('fs');const tags=cp.execSync('git tag -l v*').toString().trim().split('\n').filter(Boolean).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));fs.writeFileSync('docs/public/versions.json',JSON.stringify(tags));console.log('versions:',tags.join(', '));"
-
       - name: Build docs (latest, served at root)
         # Root copy uses base "/<repo>/" so links/assets resolve when served at the
         # Pages root. This is the "latest" entry point.
