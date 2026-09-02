@@ -136,7 +136,7 @@ describe('P1: default serializers & redaction', () => {
 describe('P1: namespace filtering & LOG_LEVEL env', () => {
   it('drops entries whose scope does not match the filter', () => {
     const t = memory();
-    const log = new Logger({ transports: [t], namespaceFilter: 'http*,db*' });
+    const log = new Logger({ transports: [t], scopeFilter: 'http*,db*' });
     log.scope('http:server').info('a');
     log.scope('db:query').info('b');
     log.scope('auth').info('c');
@@ -145,7 +145,7 @@ describe('P1: namespace filtering & LOG_LEVEL env', () => {
 
   it('supports excludes with a leading -', () => {
     const t = memory();
-    const log = new Logger({ transports: [t], namespaceFilter: '*,-http:noise' });
+    const log = new Logger({ transports: [t], scopeFilter: '*,-http:noise' });
     log.scope('http:noise').info('drop');
     log.scope('http:ok').info('keep');
     expect(t.entries.map((e) => e.scope)).toEqual(['http:ok']);

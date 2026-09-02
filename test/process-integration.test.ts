@@ -162,7 +162,7 @@ describe('attachExitHandlers', () => {
       transports: [stalled],
       level: 'debug',
       runtime,
-      exitFlushTimeoutMs: 20,
+      flushTimeoutMs: 20,
     });
     log.attachExitHandlers();
     const sigint = (on.mock.calls.find((c) => c[0] === 'SIGINT') as unknown[])[1] as () => void;

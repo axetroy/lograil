@@ -40,7 +40,7 @@ describe('Logger consumes adapter.lifecycle', () => {
       runtime,
       transports: [transport],
       autoFlushOnExit: true,
-      exitFlushTimeoutMs: 50,
+      flushTimeoutMs: 50,
     });
     const flushSpy = vi.spyOn(
       log as unknown as { flushWithTimeout: () => Promise<void> },

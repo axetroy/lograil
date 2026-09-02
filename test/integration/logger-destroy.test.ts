@@ -85,7 +85,7 @@ describe('integration: Logger.destroy() edge cases', () => {
     const log = new Logger({
       transports: [stall],
       level: 'debug',
-      exitFlushTimeoutMs: 30,
+      flushTimeoutMs: 30,
     });
     log.info('entry before stall');
     // destroy() must not block forever; it uses flushWithTimeout internally.

@@ -38,16 +38,16 @@ interface LoggerOptions {
    */
   levelEnvVar?: string | null;
   /**
-   * 作用域 / 命名空间过滤器：以逗号或空格分隔的 glob 模式（支持 `*` 通配）；以
+   * 作用域过滤器：以逗号或空格分隔的 glob 模式（支持 `*` 通配）；以
    * `-` 前缀表示排除。仅 `scope` 匹配的条目会被输出。当未显式提供时，自动从
-   * `namespaceEnvVar` 读取。
+   * `scopeFilterEnvVar` 读取。
    */
-  namespaceFilter?: string | string[];
+  scopeFilter?: string | string[];
   /**
-   * 当未设置 `namespaceFilter` 时，用于提供命名空间过滤器的环境变量。默认为
+   * 当未设置 `scopeFilter` 时，用于提供作用域过滤器的环境变量。默认为
    * `"LOGRAIL_DEBUG"`。设为 `null` 可禁用。
    */
-  namespaceEnvVar?: string | null;
+  scopeFilterEnvVar?: string | null;
 }
 ```
 
@@ -114,8 +114,8 @@ LOG_LEVEL=debug node server.js
 
 ### 命名空间（scope）过滤
 
-当你使用了作用域 logger（`logger.scope('http')`）时，可通过 `LOGRAIL_DEBUG` 环境变量或
-`namespaceFilter` 选项限制哪些 scope 真正输出。语法与流行的 `debug` 包一致：
+|当你使用了作用域 logger（`logger.scope('http')`）时，可通过 `LOGRAIL_DEBUG` 环境变量或
+`scopeFilter` 选项限制哪些 scope 真正输出。语法与流行的 `debug` 包一致：
 
 ```bash
 # 启用 http 与 db 两个作用域（支持通配），并排除嘈杂的 http:noise
@@ -123,7 +123,7 @@ LOGRAIL_DEBUG='http*,db*,-http:noise' node server.js
 ```
 
 ```ts
-const log = createLogger({ namespaceFilter: ['http*', 'db*', '-http:noise'] });
+const log = createLogger({ scopeFilter: ['http*', 'db*', '-http:noise'] });
 ```
 
 以 `-` 前缀表示排除；`*` 匹配任意一段字符。`scope` 为完整的点分层级名（如 `http:server`），因此

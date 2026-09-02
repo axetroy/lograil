@@ -166,9 +166,9 @@ export interface LoggerOptions {
   /**
    * Maximum time (ms) to spend flushing on process exit (`beforeExit`,
    * `SIGINT`, `SIGTERM`) before giving up and letting the process exit, so a
-   * stalled transport flush can never hang shutdown. Default `2000`.
+   * stalled transport flush can never hang shutdown. Default `2000`.\
    */
-  exitFlushTimeoutMs?: number;
+  flushTimeoutMs?: number;
   /** Optional scope / namespace for this logger. */
   scope?: string;
   /** Runtime adapter. Auto-detected when omitted. */
@@ -193,17 +193,17 @@ export interface LoggerOptions {
    */
   levelEnvVar?: string | null;
   /**
-   * Scope/namespace filter. A comma- or space-separated list of glob patterns
+   * Scope filter. A comma- or space-separated list of glob patterns
    * (with `*` wildcards); a leading `-` excludes. Only entries whose `scope`
-   * matches are emitted. Read automatically from `namespaceEnvVar` when omitted.
+   * matches are emitted. Read automatically from `scopeFilterEnvVar` when omitted.
    */
-  namespaceFilter?: string | string[];
+  scopeFilter?: string | string[];
   /**
-   * Environment variable whose value supplies the namespace filter when
-   * `namespaceFilter` is not set. Defaults to `"LOGRAIL_DEBUG"`. Set to `null`
+   * Environment variable whose value supplies the scope filter when
+   * `scopeFilter` is not set. Defaults to `"LOGRAIL_DEBUG"`. Set to `null`
    * to disable.
    */
-  namespaceEnvVar?: string | null;
+  scopeFilterEnvVar?: string | null;
 }
 
 /**
@@ -278,9 +278,9 @@ export class Logger implements LoggerMethods {
   private removeProcessHandlers?: () => void;
   private onLoggerError?: LoggerErrorHandler;
   private writeTimeoutMs!: number;
-  private exitFlushTimeoutMs!: number;
+  private flushTimeoutMs!: number;
   private _exiting = false;
-  private namespaceFilter?: NamespaceFilter;
+  private scopeFilter?: NamespaceFilter;
   /** True for loggers created via `scope`/`child` (share the parent's plumbing). */
   private isChild = false;
   /** Cached peer process level. When set, takes precedence over local `level` in `getLevel()`. */
@@ -319,11 +319,11 @@ export class Logger implements LoggerMethods {
     this.scopeName = options.scope;
 
     const nsInput =
-      options.namespaceFilter ??
-      (options.namespaceEnvVar === null
+      options.scopeFilter ??
+      (options.scopeFilterEnvVar === null
         ? undefined
-        : readEnvVar(options.namespaceEnvVar ?? 'LOGRAIL_DEBUG'));
-    this.namespaceFilter = compileNamespaceFilter(nsInput);
+        : readEnvVar(options.scopeFilterEnvVar ?? 'LOGRAIL_DEBUG'));
+    this.scopeFilter = compileNamespaceFilter(nsInput);
 
     // On the Electron main process, receive renderer logs over IPC.
     if (this.runtime.attachReceiver) {
@@ -339,7 +339,7 @@ export class Logger implements LoggerMethods {
 
     this.onLoggerError = options.onError;
     this.writeTimeoutMs = options.writeTimeoutMs ?? 5000;
-    this.exitFlushTimeoutMs = options.exitFlushTimeoutMs ?? 2000;
+    this.flushTimeoutMs = options.flushTimeoutMs ?? 2000;
     // Wire the pipeline/plugin error sinks into the unified handler.
     this.pipeline.onError = (err, info) => this.reportError(info.phase, err, info.entry);
     this.plugins.onError = (name, err, entry) => this.reportError('plugin', err, entry, name);
@@ -358,13 +358,13 @@ export class Logger implements LoggerMethods {
     this.pipeline = parent.pipeline;
     this.plugins = parent.plugins;
     this.transports = parent.transports;
-    this.namespaceFilter = parent.namespaceFilter;
+    this.scopeFilter = parent.scopeFilter;
     this.context = opts.context ?? createContextStore();
     this.scopeName = opts.scope;
     // Only a root logger owns the shared plugin error sink; children inherit it.
     this.onLoggerError = parent.onLoggerError;
     this.writeTimeoutMs = parent.writeTimeoutMs;
-    this.exitFlushTimeoutMs = parent.exitFlushTimeoutMs;
+    this.flushTimeoutMs = parent.flushTimeoutMs;
     if (opts.levelOverride !== undefined) this.levelOverride = opts.levelOverride;
   }
 
@@ -376,7 +376,7 @@ export class Logger implements LoggerMethods {
   ingestEntry(entry: LogEntry): void {
     if (this.destroyed) return;
     if (entry.level < this.getLevel()) return;
-    if (!matchesNamespace(entry.scope, this.namespaceFilter)) return;
+    if (!matchesNamespace(entry.scope, this.scopeFilter)) return;
     this.dispatch(entry);
   }
 
@@ -550,7 +550,7 @@ export class Logger implements LoggerMethods {
     if (this.destroyed) return;
     const levelValue = LOG_LEVELS[levelName];
     if (levelValue < this.getLevel()) return;
-    if (!matchesNamespace(this.scopeName, this.namespaceFilter)) return;
+    if (!matchesNamespace(this.scopeName, this.scopeFilter)) return;
 
     const entry = this.buildEntry(levelName, levelValue, message, args);
     const processed = this.pipeline.process(entry);
@@ -792,15 +792,15 @@ export class Logger implements LoggerMethods {
     });
   }
 
-  /** Set the max time (ms) to flush on process exit before giving up. */
+  /** Set the max time (ms) to flush before process exit before giving up. */
   setExitFlushTimeout(ms: number): this {
-    if (Number.isFinite(ms) && ms >= 0) this.exitFlushTimeoutMs = ms;
+    if (Number.isFinite(ms) && ms >= 0) this.flushTimeoutMs = ms;
     return this;
   }
 
   /** Get the current exit-flush timeout (ms). */
   getExitFlushTimeout(): number {
-    return this.exitFlushTimeoutMs;
+    return this.flushTimeoutMs;
   }
 
   // ---- Process integration ----
@@ -818,7 +818,7 @@ export class Logger implements LoggerMethods {
     // adapters that don't supply lifecycle hooks (e.g. custom test runtimes).
     const lc = this.runtime.lifecycle;
     if (lc) {
-      const ms = this.exitFlushTimeoutMs;
+      const ms = this.flushTimeoutMs;
       const detach = lc.onFlushBeforeExit(() => {
         void this.flushWithTimeout(ms);
       });
@@ -832,7 +832,7 @@ export class Logger implements LoggerMethods {
     }
     const proc = getNodeProcess();
     if (!proc) return;
-    const ms = this.exitFlushTimeoutMs;
+    const ms = this.flushTimeoutMs;
     // On normal exit the event loop is about to empty: flush pending writes.
     // `beforeExit` re-fires as long as async writes keep the loop alive, so the
     // queue keeps draining until empty (bounded by `ms` if a sink stalls).
@@ -881,7 +881,7 @@ export class Logger implements LoggerMethods {
     // fall back to the direct `process` binding below, which is a no-op there.
     const lc = this.runtime.lifecycle;
     if (lc?.onUncaughtError) {
-      const ms = this.exitFlushTimeoutMs;
+      const ms = this.flushTimeoutMs;
       const detach = lc.onUncaughtError((err: unknown) => {
         this.fatal(err);
         return this.flushWithTimeout(ms);
@@ -898,11 +898,11 @@ export class Logger implements LoggerMethods {
     if (!proc) return;
     const onUncaught = (err: unknown): void => {
       this.fatal(err);
-      void this.flushWithTimeout(this.exitFlushTimeoutMs).finally(() => proc.exit(1));
+      void this.flushWithTimeout(this.flushTimeoutMs).finally(() => proc.exit(1));
     };
     const onRejection = (reason: unknown): void => {
       this.fatal(reason);
-      void this.flushWithTimeout(this.exitFlushTimeoutMs).finally(() => proc.exit(1));
+      void this.flushWithTimeout(this.flushTimeoutMs).finally(() => proc.exit(1));
     };
     proc.on('uncaughtException', onUncaught);
     proc.on('unhandledRejection', onRejection);
@@ -968,7 +968,7 @@ export class Logger implements LoggerMethods {
     // Flush pending writes before tearing down transports, so buffered logs
     // are not lost. Bounded by the exit-flush timeout so a stalled sink can
     // never hang teardown.
-    await this.flushWithTimeout(this.exitFlushTimeoutMs).catch(() => {});
+    await this.flushWithTimeout(this.flushTimeoutMs).catch(() => {});
     await this.plugins.destroy().catch(() => {});
     this.detachReceiver?.();
     this.peerLevel = undefined;

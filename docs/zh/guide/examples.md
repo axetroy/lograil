@@ -312,7 +312,7 @@ logger.addTransport(
 ### 用环境变量覆盖级别
 
 将 `levelEnvVar` 指向某个环境变量（默认 `LOG_LEVEL`），运维无需重新部署即可调整详细度。
-`LOGRAIL_DEBUG`（可用 `namespaceEnvVar` 配置）则按 scope 过滤：
+`LOGRAIL_DEBUG`（可用 `scopeFilterEnvVar` 配置）则按 scope 过滤：
 
 ```ts
 import { createLogger } from 'lograil';
@@ -320,7 +320,7 @@ import { createLogger } from 'lograil';
 const logger = createLogger({
   level: 'info',
   levelEnvVar: 'LOG_LEVEL', // 设置了就读取 process.env.LOG_LEVEL
-  namespaceEnvVar: 'LOGRAIL_DEBUG', // 例如 LOGRAIL_DEBUG='app:*' 仅显示 app.* scope
+  scopeFilterEnvVar: 'LOGRAIL_DEBUG', // 例如 LOGRAIL_DEBUG='app:*' 仅显示 app.* scope
 });
 
 // $ LOG_LEVEL=debug node app.js        → debug 及以上

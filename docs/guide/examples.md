@@ -335,7 +335,7 @@ logger.addTransport(
 ### Override the level from an environment variable
 
 Point `levelEnvVar` at an env var (default `LOG_LEVEL`) so ops can change verbosity
-without a redeploy. `LOGRAIL_DEBUG` (configurable via `namespaceEnvVar`) filters by
+without a redeploy. `LOGRAIL_DEBUG` (configurable via `scopeFilterEnvVar`) filters by
 scope instead:
 
 ```ts
@@ -344,7 +344,7 @@ import { createLogger } from 'lograil';
 const logger = createLogger({
   level: 'info',
   levelEnvVar: 'LOG_LEVEL', // reads process.env.LOG_LEVEL when set
-  namespaceEnvVar: 'LOGRAIL_DEBUG', // e.g. LOGRAIL_DEBUG='app:*' shows only app.* scopes
+  scopeFilterEnvVar: 'LOGRAIL_DEBUG', // e.g. LOGRAIL_DEBUG='app:*' shows only app.* scopes
 });
 
 // $ LOG_LEVEL=debug node app.js      → debug and above

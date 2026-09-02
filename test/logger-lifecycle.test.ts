@@ -32,14 +32,14 @@ function makeRuntime(): RuntimeAdapter {
 
 describe('Logger - exit-flush timeout config', () => {
   it('getExitFlushTimeout returns the default and setExitFlushTimeout overrides it', () => {
-    const log = new Logger({ transports: [], runtime: makeRuntime(), exitFlushTimeoutMs: 123 });
+    const log = new Logger({ transports: [], runtime: makeRuntime(), flushTimeoutMs: 123 });
     expect(log.getExitFlushTimeout()).toBe(123);
     log.setExitFlushTimeout(456);
     expect(log.getExitFlushTimeout()).toBe(456);
   });
 
   it('setExitFlushTimeout ignores non-finite / negative values', () => {
-    const log = new Logger({ transports: [], runtime: makeRuntime(), exitFlushTimeoutMs: 100 });
+    const log = new Logger({ transports: [], runtime: makeRuntime(), flushTimeoutMs: 100 });
     log.setExitFlushTimeout(Number.NaN);
     expect(log.getExitFlushTimeout()).toBe(100);
     log.setExitFlushTimeout(-5);
@@ -86,7 +86,7 @@ describe('Logger - destroy (root with process handlers)', () => {
       transports: [],
       runtime: makeRuntime(),
       autoFlushOnExit: true,
-      exitFlushTimeoutMs: 50,
+      flushTimeoutMs: 50,
     });
     expect(
       typeof (log as unknown as { removeProcessHandlers?: () => void }).removeProcessHandlers,
@@ -144,13 +144,13 @@ describe('Logger - ingestEntry filtering', () => {
     expect(entries).toHaveLength(0);
   });
 
-  it('drops ingested entries whose scope is excluded by the namespace filter', () => {
+  it('drops ingested entries whose scope is excluded by the scope filter', () => {
     const { transport, entries } = memory();
     const log = new Logger({
       transports: [transport],
       runtime: makeRuntime(),
       level: 'debug',
-      namespaceFilter: 'keep*',
+      scopeFilter: 'keep*',
     });
     log.ingestEntry({
       level: LOG_LEVELS.info,
@@ -185,15 +185,15 @@ describe('Logger - ingestEntry filtering', () => {
   });
 });
 
-describe('Logger - namespaceEnvVar:null disables the env filter', () => {
-  it('does not read LOGRAIL_DEBUG when namespaceEnvVar is null', () => {
+describe('Logger - scopeFilterEnvVar:null disables the env filter', () => {
+  it('does not read LOGRAIL_DEBUG when scopeFilterEnvVar is null', () => {
     const { transport, entries } = memory();
     process.env.LOGRAIL_DEBUG = 'svc*';
     const log = new Logger({
       transports: [transport],
       runtime: makeRuntime(),
       level: 'debug',
-      namespaceEnvVar: null,
+      scopeFilterEnvVar: null,
     });
     log.scope('other').info('kept');
     expect(entries).toHaveLength(1);
