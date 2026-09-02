@@ -10,7 +10,7 @@ Most logging libraries treat Electron as an afterthought: you wire up IPC by han
 
 - **One logger, every runtime.** The same `import { logger } from 'lograil'` works untouched in the main process, the renderer, Node, and the browser. The runtime adapter detects where it runs and binds to the right transport automatically.
 - **Secure by default in Electron.** Renderer logs are forwarded to the main process over IPC — they never touch the filesystem from an untrusted context. This fits Electron's `contextIsolation` + preload security model (see [Electron](./runtime-electron)).
-- **Structured, not stringly-typed.** Every log is a frozen `LogEntry` carrying a level, message, timestamp, context, and arbitrary structured fields. Transports can render it as JSON, a console line, or a live UI without re-parsing.
+- **Structured, not stringly-typed.** Every log is a frozen `LogEntry` carrying a level, message, timestamp, `context` (persistent request-scoped fields), `metadata` (per-entry details injected by processors), and arbitrary structured fields. Transports can render it as JSON, a console line, or a live UI without re-parsing. See [Context & Metadata](./context) for when to use each field.
 - **Composable pipeline.** Filter → process → format → transport. Add sampling, redaction, or custom fields without forking the library.
 - **Hot-path safe.** Logging never throws into your application code. A failing transport or subscriber is isolated and reported, never breaks the caller.
 

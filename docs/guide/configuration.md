@@ -10,7 +10,11 @@ interface LoggerOptions {
   scope?: string;
   /** Runtime adapter. Auto-detected when omitted. */
   runtime?: RuntimeAdapter;
-  /** Initial context store. */
+  /**
+   * Initial context store. When omitted the logger creates an empty one
+   * automatically. See [Context & Metadata](./context) for when to use
+   * `context` versus `metadata`.
+   */
   context?: ContextStore;
   /** Transports. Defaults to the runtime's default transports. */
   transports?: Transport[];

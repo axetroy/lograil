@@ -44,6 +44,13 @@ logger.error(new Error('boom'));
 - [Node 运行时](/zh/guide/runtime-node) — 磁盘安全默认值、`appName`、退出时刷新
 - [Electron](/zh/guide/runtime-electron) — 双进程模型、preload 桥接、IPC 频道
 
+## 上下文与元数据
+
+`LogEntry` 携带两个独立的对象字段 —— `context` 和 `metadata` —— 它们服务于不同的目的。详见 [上下文与元数据](./context) 了解完整说明与示例。简短版本：
+
+- **`context`** 是持久化且可继承的。通过 `log.setContext()` 设置一次后，后续每条条目都会携带它。子 logger 会从父级获得一份独立的拷贝。用于 `userId`、`requestId`、`tenantId` 等请求级数据。
+- **`metadata`** 仅附加到单条条目。通常由 processor 或 plugin 注入（如 `durationMs`、`host`、`pid`）。用于不应跨请求泄露的单次测量值或环境信息。
+
 ## 结构化日志
 
 第一个参数可以是字符串、`Error` 或任意值。对象会被保留为结构化数据，而不会被强制转换成 `[object Object]`：

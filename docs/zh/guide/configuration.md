@@ -10,7 +10,10 @@ interface LoggerOptions {
   scope?: string;
   /** 运行时适配器。省略时自动探测。 */
   runtime?: RuntimeAdapter;
-  /** 初始上下文存储。 */
+  /**
+   * 初始上下文存储。省略时 logger 会自动创建一个空的。详见
+   * [上下文与元数据](./context) 了解何时该用 `context`  versus `metadata`。
+   */
   context?: ContextStore;
   /** 传输器。默认使用运行时提供的默认传输器。 */
   transports?: Transport[];

@@ -50,6 +50,13 @@ See the runtime-specific guides for details:
 - [Node Runtime](/guide/runtime-node) — disk-safety defaults, `appName`, exit flushing
 - [Electron](/guide/runtime-electron) — two-process model, preload bridge, IPC channel
 
+## Context vs metadata
+
+`LogEntry` carries two separate object fields — `context` and `metadata` — that serve different purposes. See [Context & Metadata](./context) for a full explanation with examples. The short version:
+
+- **`context`** is persistent and inherited. Set it once with `log.setContext()` and every subsequent entry carries it. Child loggers get their own isolated copy seeded from the parent. Use it for request-scoped data like `userId`, `requestId`, `tenantId`.
+- **`metadata`** is attached to a single entry only. It is usually injected by a processor or plugin (e.g. `durationMs`, `host`, `pid`). Use it for per-entry measurements or environment details that should not leak across requests.
+
 ## Structured logging
 
 The first argument can be a string, an `Error`, or any value. Objects are kept

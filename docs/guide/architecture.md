@@ -43,7 +43,10 @@ testable. A log call flows through them in a predictable order.
 ```
 
 - **Logger** turns a call into a `LogEntry`. The first argument may be a
-  `string`, an `Error`, or any value (objects are kept structured).
+  `string`, an `Error`, or any value (objects are kept structured). The entry
+  carries `context` (persistent, inherited request-scoped data) and
+  `metadata` (per-entry, usually injected by processors — see
+  [Context & Metadata](./context) for the distinction).
 - **Pipeline** runs `Filter`s (returning `false` drops the entry), then
   `Processor`s (in order, for enrichment, redaction, serialization, …), then a
   `Formatter` that produces the on-wire representation. Built-in processors such
