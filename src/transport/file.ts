@@ -61,7 +61,8 @@ export interface RotateSizeOptions extends FileBaseOptions {
   mode: 'rotate-size';
   /** Size in bytes that triggers a rotation. */
   maxSize: number;
-  /** Number of generations to keep (active file + N-1 backups). */
+  /** Number of generations to keep (active file + N-1 backups). `1` keeps only
+   * the active file; `<=0` disables generation trimming. */
   maxFiles: number;
 }
 
@@ -72,7 +73,8 @@ export interface RotateTimeOptions extends FileBaseOptions {
   unit: 'hour' | 'day';
   /** Number of time buckets (stamps) to keep. When a bucket contains
    *  multiple seq files (via `maxSize`), the entire bucket is kept or
-   *  deleted as a unit. Omit = unbounded. */
+   *  deleted as a unit. `1` keeps only the newest bucket; `<=0` (or omitted)
+   *  means unbounded. */
   maxFiles?: number;
   /**
    * Max bytes per time bucket. When the active file within the same time
@@ -108,7 +110,8 @@ export interface RotateCustomOptions extends FileBaseOptions {
   shouldRotate: (entry: LogEntry, ctx: RotateContext) => boolean;
   /** Name the seq-th file. Required (no sensible default for custom). */
   fileName: (app: string, seq: number, ext: string) => string;
-  /** Max number of files to keep. Omit = unbounded. */
+  /** Max number of files to keep. `1` keeps only the active file; `<=0` (or
+   * omitted) means unbounded. */
   maxFiles?: number;
 }
 
@@ -174,6 +177,8 @@ interface FileIo {
   appName: string;
   /** Close the current file handle so a rotator can reopen a new path. */
   closeHandle(): Promise<void>;
+  /** Current bytes already written to the active file. */
+  getActiveSize(): Promise<number>;
   /** Files this transport has created — trimRing/trimTimeRing/caps only touch these. */
   owned: Set<string>;
 }
@@ -192,8 +197,8 @@ async function trimRing(
   owned: Set<string>,
   exclude?: string,
 ): Promise<void> {
-  // maxFiles<=1 → no cap configured; skip trimming.
-  if (maxFiles <= 1) return;
+  // maxFiles<1 → no cap configured; 1 means "keep active only, no backups".
+  if (maxFiles < 1) return;
   const keep = maxFiles - 1;
   const excludeName = exclude ? basename(exclude) : undefined;
   try {
@@ -228,7 +233,7 @@ async function trimTimeRing(
   maxFiles: number,
   owned: Set<string>,
 ): Promise<void> {
-  if (maxFiles <= 1) return;
+  if (maxFiles < 1) return;
   const prefix = `${appName}.`;
   const suffix = `.${ext}`;
   const stampRe = /^\d{4}-\d{2}-\d{2}(?:-\d{2})?/;
@@ -454,6 +459,10 @@ class SizeRotator implements Rotator {
     }
     if (size + bytes > this.maxSize) {
       await io.closeHandle();
+      if (this.maxFiles <= 1) {
+        await rm(this.active, { force: true }).catch(() => {});
+        return true;
+      }
       const gens = this.maxFiles - 1;
       for (let k = gens; k >= 2; k--) {
         try {
@@ -649,9 +658,10 @@ class CustomRotator implements Rotator {
     return this.path;
   }
   async prepare(_bytes: number, entry: LogEntry, now: Date, io: FileIo): Promise<boolean> {
+    const size = await io.getActiveSize();
     const ctx: RotateContext = {
       entry,
-      size: 0,
+      size,
       time: now.toISOString(),
     };
     if (this.shouldRotate(entry, ctx)) {
@@ -773,6 +783,7 @@ export class FileTransport implements Transport {
       ext: this.ext,
       appName: options.appName,
       closeHandle: () => this.closeHandle(),
+      getActiveSize: () => this.getActiveSize(),
       owned: this.owned,
     };
   }
@@ -847,6 +858,14 @@ export class FileTransport implements Transport {
     if (this.handle) {
       await this.handle.close();
       this.handle = null;
+    }
+  }
+
+  private async getActiveSize(): Promise<number> {
+    try {
+      return (await stat(this.rotator.activePath())).size;
+    } catch {
+      return 0;
     }
   }
 

@@ -76,7 +76,7 @@ interface SingleTruncateOptions extends FileBaseOptions {
 interface RotateSizeOptions extends FileBaseOptions {
   mode: 'rotate-size';
   maxSize: number; // required
-  maxFiles: number; // required; how many generations to keep
+  maxFiles: number; // required; generations to keep (1 = active only, <=0 = unlimited)
   ext?: string;
 }
 
@@ -84,7 +84,7 @@ interface RotateSizeOptions extends FileBaseOptions {
 interface RotateTimeOptions extends FileBaseOptions {
   mode: 'rotate-time';
   unit: 'hour' | 'day'; // required
-  maxFiles?: number; // optional: cap on time buckets (stamps), not individual files
+  maxFiles?: number; // optional: cap on time buckets (1 = newest bucket only, <=0/undefined = unlimited)
   maxSize?: number; // optional: split within the same time bucket when exceeded
   maxFilesPerBucket?: number; // optional: max seq files kept within one time bucket (inner ring)
   now?: () => Date; // clock override (testing)
@@ -96,7 +96,7 @@ interface RotateCustomOptions extends FileBaseOptions {
   mode: 'rotate-custom';
   shouldRotate: (entry: LogEntry, ctx: RotateContext) => boolean; // required
   fileName: (app: string, seq: number, ext: string) => string; // required
-  maxFiles?: number;
+  maxFiles?: number; // optional: 1 = active only, <=0/undefined = unlimited
   ext?: string;
 }
 

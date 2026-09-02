@@ -72,7 +72,7 @@ interface SingleTruncateOptions extends FileBaseOptions {
 interface RotateSizeOptions extends FileBaseOptions {
   mode: 'rotate-size';
   maxSize: number; // 必填
-  maxFiles: number; // 必填；保留多少代
+  maxFiles: number; // 必填；保留多少代（1=仅活动文件，<=0=不限制）
   ext?: string;
 }
 
@@ -80,7 +80,7 @@ interface RotateSizeOptions extends FileBaseOptions {
 interface RotateTimeOptions extends FileBaseOptions {
   mode: 'rotate-time';
   unit: 'hour' | 'day'; // 必填
-  maxFiles?: number; // 可选：时间桶（stamp）上限，按桶计数而非按文件
+  maxFiles?: number; // 可选：时间桶（stamp）上限（1=仅最新桶，<=0/未设=不限制）
   maxSize?: number; // 可选：同一时间桶内超过此大小时自动拆分
   maxFilesPerBucket?: number; // 可选：单个时间桶内最多保留多少个 seq 文件（桶内成环）
   now?: () => Date; // 时钟覆盖（用于测试）
@@ -92,7 +92,7 @@ interface RotateCustomOptions extends FileBaseOptions {
   mode: 'rotate-custom';
   shouldRotate: (entry: LogEntry, ctx: RotateContext) => boolean; // 必填
   fileName: (app: string, seq: number, ext: string) => string; // 必填
-  maxFiles?: number;
+  maxFiles?: number; // 可选：1=仅活动文件，<=0/未设=不限制
   ext?: string;
 }
 

@@ -135,6 +135,23 @@ describe('FileTransport - rotate-size mode (2.1)', () => {
     // beyond maxFiles is pruned
     expect(existsSync(join(dir, 'sz.3.log'))).toBe(false);
   });
+
+  it('keeps only the active file when maxFiles is 1', async () => {
+    const t = new FileTransport({
+      mode: 'rotate-size',
+      appName: 'one',
+      dir,
+      ext: 'log',
+      maxSize: 5,
+      maxFiles: 1,
+    });
+    for (let i = 0; i < 4; i++) t.write(entry(`m${i}`), `m${i}`);
+    await t.flush();
+    await t.close();
+
+    expect(readFileSync(join(dir, 'one.log'), 'utf8')).toContain('m3');
+    expect(existsSync(join(dir, 'one.1.log'))).toBe(false);
+  });
 });
 
 describe('FileTransport - rotate-time mode (2.2)', () => {
@@ -161,6 +178,27 @@ describe('FileTransport - rotate-time mode (2.2)', () => {
     await t.close();
     expect(readFileSync(join(dir, 'day.2024-01-01.0.log'), 'utf8')).toContain('d1');
     expect(readFileSync(join(dir, 'day.2024-01-02.0.log'), 'utf8')).toContain('d2');
+  });
+
+  it('keeps only the newest bucket when maxFiles is 1', async () => {
+    const clock = { now: new Date(2024, 0, 1) };
+    const t = new FileTransport({
+      mode: 'rotate-time',
+      unit: 'day',
+      appName: 'keep1',
+      dir,
+      ext: 'log',
+      maxFiles: 1,
+      now: () => clock.now,
+    });
+    t.write(entry('d1'), 'd1');
+    clock.now = new Date(2024, 0, 2);
+    t.write(entry('d2'), 'd2');
+    await t.flush();
+    await t.close();
+
+    expect(existsSync(join(dir, 'keep1.2024-01-01.0.log'))).toBe(false);
+    expect(readFileSync(join(dir, 'keep1.2024-01-02.0.log'), 'utf8')).toContain('d2');
   });
 
   it('adopts the most recent existing bucket file on (re)start', async () => {
@@ -340,6 +378,24 @@ describe('FileTransport - rotate-custom mode (2.3)', () => {
 
     expect(readFileSync(join(dir, 'cus.0.log'), 'utf8')).toContain('a');
     expect(readFileSync(join(dir, 'cus.1.log'), 'utf8')).toContain('b');
+  });
+
+  it('passes current active file size to shouldRotate context', async () => {
+    const t = new FileTransport({
+      mode: 'rotate-custom',
+      appName: 'cus-size',
+      dir,
+      ext: 'log',
+      shouldRotate: (_entry, ctx) => ctx.size >= 3,
+      fileName: (app, i, ext) => `${app}.${i}.${ext}`,
+    });
+    t.write(entry('aa'), 'aa'); // "aa\n" => 3 bytes
+    t.write(entry('bb'), 'bb'); // rotates because ctx.size is 3
+    await t.flush();
+    await t.close();
+
+    expect(readFileSync(join(dir, 'cus-size.0.log'), 'utf8')).toContain('aa');
+    expect(readFileSync(join(dir, 'cus-size.1.log'), 'utf8')).toContain('bb');
   });
 });
 

@@ -168,4 +168,20 @@ describe('PluginManager - lifecycle hooks', () => {
     expect(result).toBeNull();
     expect(calls).not.toContain('after');
   });
+
+  it('rolls back registration when onInit throws', async () => {
+    const manager = host();
+    const boom = new Error('init failed');
+    await expect(
+      manager.register({
+        name: 'broken',
+        onEntry: (e) => e,
+        onInit: () => {
+          throw boom;
+        },
+      }),
+    ).rejects.toThrow('init failed');
+    expect(manager.has('broken')).toBe(false);
+    expect(manager.hasEntryInterceptors()).toBe(false);
+  });
 });

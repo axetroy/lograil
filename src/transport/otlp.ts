@@ -220,7 +220,7 @@ export class OtlpTransport implements Transport {
   private readonly errorHandler: (err: unknown) => void;
   private readonly resourceAttributes: OtlpAttribute[];
   private queue: OtlpLogRecord[] = [];
-  private flushing = false;
+  private flushPromise: Promise<void> | null = null;
 
   constructor(options: OtlpTransportOptions = {}) {
     this.name = 'otlp';
@@ -267,24 +267,28 @@ export class OtlpTransport implements Transport {
    * On a non-2xx response or network error, `errorHandler` is invoked.
    */
   async flush(): Promise<void> {
-    if (this.flushing || this.queue.length === 0) return;
-    this.flushing = true;
-    const batch = this.queue;
-    this.queue = [];
-    try {
-      const res = await fetch(this.endpoint, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(this.buildPayload(batch)),
-      });
-      if (!res.ok) {
-        this.errorHandler(new Error(`OTLP HTTP ${res.status} ${res.statusText}`));
+    if (this.flushPromise) return this.flushPromise;
+    this.flushPromise = (async () => {
+      while (this.queue.length > 0) {
+        const batch = this.queue;
+        this.queue = [];
+        try {
+          const res = await fetch(this.endpoint, {
+            method: 'POST',
+            headers: this.headers,
+            body: JSON.stringify(this.buildPayload(batch)),
+          });
+          if (!res.ok) {
+            this.errorHandler(new Error(`OTLP HTTP ${res.status} ${res.statusText}`));
+          }
+        } catch (err) {
+          this.errorHandler(err);
+        }
       }
-    } catch (err) {
-      this.errorHandler(err);
-    } finally {
-      this.flushing = false;
-    }
+    })().finally(() => {
+      this.flushPromise = null;
+    });
+    return this.flushPromise;
   }
 
   /** Tear down the transport by flushing any remaining buffered entries. */

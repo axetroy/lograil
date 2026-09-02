@@ -103,6 +103,10 @@ export function registerWorkerReceiver(
       // Node Worker instance — worker.on('message', handler)
       // Node passes raw data (not MessageEvent), so adapt:
       const nodeHandler = (data: unknown): void => {
+        if (isLogLevelCommand(data)) {
+          onLevelCommand?.(normalizeLevel(data.level));
+          return;
+        }
         if (
           data &&
           typeof data === 'object' &&

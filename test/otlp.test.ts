@@ -152,4 +152,24 @@ describe('OtlpTransport', () => {
     expect(errors).toHaveLength(1);
     expect(String((errors[0] as Error).message)).toContain('network down');
   });
+
+  it('drains entries queued while a flush is already in flight', async () => {
+    let resolveFirst: (() => void) | undefined;
+    fetchMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = () => resolve({ ok: true, status: 200, statusText: 'OK' });
+          }),
+      )
+      .mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+
+    const t = new OtlpTransport({ batchSize: 1 });
+    t.write(makeEntry({ message: 'first' }), 'first');
+    t.write(makeEntry({ message: 'second' }), 'second');
+    resolveFirst?.();
+    await t.flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

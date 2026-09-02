@@ -107,8 +107,7 @@ function toPattern(token: string): NamespacePattern {
  */
 function compileNamespaceFilter(input?: string | string[]): NamespaceFilter | undefined {
   const key = serializeNsInput(input);
-  const cached = nsFilterCache.get(key);
-  if (cached !== undefined) return cached;
+  if (nsFilterCache.has(key)) return nsFilterCache.get(key);
   let result: NamespaceFilter | undefined;
   if (!input || (Array.isArray(input) && input.length === 0)) {
     result = undefined;
@@ -432,8 +431,20 @@ export class Logger implements LoggerMethods {
 
   removeTransport(name: string): void {
     const removed = this.transports.filter((t) => t.name === name);
-    for (const t of removed) this.transportQueues.delete(t);
     this.transports = this.transports.filter((t) => t.name !== name);
+    for (const transport of removed) {
+      const prev = this.transportQueues.get(transport) ?? Promise.resolve();
+      const teardown = prev
+        .then(async () => {
+          if (transport.flush) await this.guardFlush(transport.flush.bind(transport));
+          if (transport.close) await Promise.resolve(transport.close());
+        })
+        .catch((err) => this.reportError('transport', err, undefined, transport.name))
+        .finally(() => {
+          this.transportQueues.delete(transport);
+        });
+      this.transportQueues.set(transport, teardown);
+    }
   }
 
   /** Unregister a plugin by name at runtime. */
