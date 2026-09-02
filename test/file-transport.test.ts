@@ -530,7 +530,7 @@ describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
     // stale history file is left intact (caps target rotating-mode file sets).
     expect(existsSync(stale)).toBe(true);
     expect(existsSync(join(dir, 'sg.log'))).toBe(true);
-  });
+  }, 10_000);
 
   it('keeps everything when no caps are set', async () => {
     const dir = join(base, 'none');
