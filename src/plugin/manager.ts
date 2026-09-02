@@ -28,7 +28,13 @@ export class PluginManager {
     }
     this.plugins.set(plugin.name, plugin);
     if (plugin.onEntry) this.entryInterceptors++;
-    await plugin.onInit?.(this.host);
+    try {
+      await plugin.onInit?.(this.host);
+    } catch (err) {
+      if (plugin.onEntry) this.entryInterceptors--;
+      this.plugins.delete(plugin.name);
+      throw err;
+    }
   }
 
   /** Unregister a plugin by name. Its `onDestroy` hook (if any) is invoked. */

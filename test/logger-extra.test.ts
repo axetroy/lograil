@@ -198,6 +198,27 @@ describe('Logger - lifecycle', () => {
     expect(t.entries).toHaveLength(1);
     expect(t.closed).toBe(true);
   });
+
+  it('removeTransport flushes and closes removed transports', async () => {
+    const calls: string[] = [];
+    const transport: Transport = {
+      name: 'tmp',
+      write: () => {},
+      flush: async () => {
+        calls.push('flush');
+      },
+      close: async () => {
+        calls.push('close');
+      },
+    };
+    const log = new Logger({ transports: [transport], level: 'debug', runtime: makeRuntime() });
+    log.info('before-remove');
+    log.removeTransport('tmp');
+    await log.flush();
+
+    expect(calls).toEqual(['flush', 'close']);
+    expect(log.getTransports()).toHaveLength(0);
+  });
 });
 
 describe('PluginManager', () => {

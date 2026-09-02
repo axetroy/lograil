@@ -143,6 +143,23 @@ describe('registerWorkerReceiver', () => {
     expect(ingest).toHaveBeenCalledWith(entry);
   });
 
+  it('routes Node worker level commands to onLevelCommand callback', () => {
+    const handlers: Record<string, (...args: unknown[]) => void> = {};
+    const mockWorker = {
+      on(event: string, handler: (...args: unknown[]) => void) {
+        handlers[event] = handler;
+      },
+    };
+    const ingest = vi.fn();
+    const onLevelCommand = vi.fn();
+    registerWorkerReceiver(ingest, { worker: mockWorker as never, onLevelCommand });
+
+    handlers['message']?.({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 30 });
+
+    expect(onLevelCommand).toHaveBeenCalledWith(30);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
   it('routes level commands to onLevelCommand callback', () => {
     const ingest = vi.fn();
     const onLevelCommand = vi.fn();

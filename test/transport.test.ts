@@ -236,7 +236,7 @@ describe('FileTransport (rotate-size mode)', () => {
     expect((await readFile(join(dir, 'app.2.log'), 'utf8')).trim()).toContain('m2');
   });
 
-  it('clamps size-mode maxFiles to >= 2', async () => {
+  it('keeps only the active file when size-mode maxFiles is 1', async () => {
     const file = join(dir, 'clamp.log');
     const t = new FileTransport({
       mode: 'rotate-size',
@@ -254,7 +254,7 @@ describe('FileTransport (rotate-size mode)', () => {
     t.write(c, t.formatter(c));
     await t.close();
     expect((await readFile(file, 'utf8')).trim()).toContain('c');
-    expect((await readFile(join(dir, 'clamp.1.log'), 'utf8')).trim()).toContain('b');
+    await expect(readFile(join(dir, 'clamp.1.log'), 'utf8')).rejects.toThrow();
   });
 });
 
