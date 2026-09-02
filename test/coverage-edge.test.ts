@@ -317,12 +317,48 @@ describe('edge cases — untested code paths', () => {
   });
 
   it('jsonFormatter handles values that cause JSON.stringify to throw', () => {
-    // Cover the catch block at line 141
     const fmt = createJsonFormatter();
-    const cyclical: Record<string, unknown> = {};
-    cyclical.self = cyclical;
-    const entry = makeEntry({ args: [cyclical] });
-    // This should not throw - safeStringify catches the error
-    expect(() => fmt(entry)).not.toThrow();
+    // Circular reference in args triggers safeStringify fallback
+    const cyc = { a: 1 } as Record<string, unknown>;
+    cyc.self = cyc;
+    const entry = makeEntry({ args: [cyc] });
+    const out = fmt(entry);
+    expect(out).not.toBeUndefined();
+  });
+
+  it('serializeNode processes array elements', () => {
+    // Cover array branch in serializeNode (line 181)
+    const ser = createDefaultSerializers();
+    const entry = makeEntry({ context: { dates: [new Date(0)] } });
+    const out = createSerializeProcessor(ser)(entry);
+    // Array elements are processed
+    expect(out.context.dates).toHaveLength(1);
+  });
+
+  it('serializeNode returns node unchanged when no serializer matches', () => {
+    // Cover line 205 branch where changed is false
+    const ser = createDefaultSerializers();
+    const entry = makeEntry({ context: { foo: 'bar' } });
+    const out = createSerializeProcessor(ser)(entry);
+    expect(out.context.foo).toBe('bar');
+    expect(out.context).toBe(entry.context); // same reference
+  });
+
+  it('serializeProcessor falls back to statusCode when status absent', () => {
+    // Cover line 266-269: serializeResponseValue uses statusCode when status is absent
+    const ser = createDefaultSerializers();
+    const entry = makeEntry({ context: { res: { statusCode: 500 } } });
+    const out = createSerializeProcessor(ser)(entry);
+    const res = (out.context as { res: { status?: number; statusCode?: number } }).res;
+    expect(res.status).toBe(500);
+    expect(res.statusCode).toBeUndefined();
+  });
+
+  it('serializeErrorValue handles non-Error values', () => {
+    // Cover line 261: v instanceof Error is false
+    const ser = createDefaultSerializers();
+    const entry = makeEntry({ error: 'not an error' as never });
+    const out = createSerializeProcessor(ser)(entry);
+    expect(out.error).toBe('not an error');
   });
 });
