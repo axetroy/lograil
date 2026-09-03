@@ -33,5 +33,12 @@ function isMainProcess(): boolean {
 export function createElectronRuntime(options: ElectronRuntimeOptions = {}): RuntimeAdapter {
   return isMainProcess()
     ? createElectronMainRuntime(options)
-    : createElectronRendererRuntime(options);
+    : createElectronRendererRuntime({
+        ipcRenderer:
+          typeof require === 'function'
+            ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+              require('electron').ipcRenderer
+            : import('electron').then((e) => e.ipcRenderer),
+        ...options,
+      });
 }
