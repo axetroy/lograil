@@ -15,6 +15,16 @@ const realConsole = {
   log: console.log.bind(console),
 };
 
+/** Default method mapping shared across all ConsoleTransport instances. */
+const DEFAULT_METHOD_MAP: Record<string, (...args: unknown[]) => void> = {
+  trace: realConsole.trace,
+  debug: realConsole.debug,
+  info: realConsole.info,
+  warn: realConsole.warn,
+  error: realConsole.error,
+  fatal: realConsole.error,
+};
+
 export interface ConsoleTransportOptions {
   name?: string;
   formatter?: Formatter;
@@ -42,15 +52,7 @@ export class ConsoleTransport implements Transport {
   constructor(options: ConsoleTransportOptions = {}) {
     this.name = options.name ?? 'console';
     this.formatter = options.formatter ?? createLineFormatter();
-    this.methodMap = {
-      trace: realConsole.trace,
-      debug: realConsole.debug,
-      info: realConsole.info,
-      warn: realConsole.warn,
-      error: realConsole.error,
-      fatal: realConsole.error,
-      ...options.methodMap,
-    };
+    this.methodMap = { ...DEFAULT_METHOD_MAP, ...options.methodMap };
     // Route the requested levels to stderr (console.error). Applied after
     // `methodMap` so an explicitly provided method for a level is not silently
     // overridden. Defaults to empty — the default `methodMap` already sends

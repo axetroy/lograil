@@ -49,6 +49,9 @@ export function createSampler(options: SamplingOptions = {}): Filter {
   const maxPerSecond = options.maxPerSecond;
   const capacity = maxPerSecond !== undefined ? (options.burst ?? maxPerSecond) : 0;
 
+  // Short-circuit: when rate is 1 and there is no rate limiting, every entry passes.
+  const noOp = rate === 1 && maxPerSecond === undefined;
+
   // Token-bucket state for rate limiting; lazily initialized on first use.
   let tokens = capacity;
   let lastRefill = 0;
@@ -56,6 +59,9 @@ export function createSampler(options: SamplingOptions = {}): Filter {
   return (entry: LogEntry): boolean => {
     // Levels not opted into sampling always pass through.
     if (levelSet && !levelSet.has(entry.levelName)) return true;
+
+    // Fast path: no sampling configured — let everything through.
+    if (noOp) return true;
 
     // Probabilistic sampling.
     if (rate < 1 && Math.random() >= rate) return false;

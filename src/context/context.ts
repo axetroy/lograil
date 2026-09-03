@@ -45,7 +45,7 @@ export function createContextStore(initial?: Record<string, unknown>): ContextSt
     get() {
       // Avoid cloning (and allocating) when the store is empty — the shared
       // frozen object can never be mutated by callers.
-      for (const _k in data) return { ...data };
+      for (const _k in data) return Object.assign({}, data);
       return EMPTY_CONTEXT;
     },
     set(key, value) {
