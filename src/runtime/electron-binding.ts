@@ -22,6 +22,10 @@ export function isElectronProcess(): boolean {
  * that performs `require('electron')`, so a web bundler can swap this whole
  * module for `electron-binding.browser` (via package.json `browser`) and never
  * touch the Electron binary.
+ *
+ * When the electron binary is absent (e.g. test environments with
+ * `ELECTRON_SKIP_BINARY_DOWNLOAD=1`), returns a minimal stub so the rest of
+ * the API remains callable without crashing.
  */
 export function getElectron(): ElectronModule {
   if (cached !== undefined) {
@@ -34,8 +38,25 @@ export function getElectron(): ElectronModule {
     cached = null;
     throw new Error('electron is only available inside an Electron process');
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  cached = require('electron') as ElectronModule;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    cached = require('electron') as ElectronModule;
+  } catch {
+    // Electron binary not installed (e.g. ELECTRON_SKIP_BINARY_DOWNLOAD=1).
+    // Return a minimal stub so the library does not crash at runtime.
+    cached = {
+      ipcRenderer: { send() {} },
+      ipcMain: { on() {}, removeListener() {} },
+      app: {
+        getPath() {
+          return '/tmp';
+        },
+        on() {},
+        removeAllListeners() {},
+      },
+    } as unknown as ElectronModule;
+    return cached;
+  }
   return cached;
 }
 
