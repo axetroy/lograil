@@ -14,9 +14,9 @@ const RAW_CONSOLE_ERROR: (...args: unknown[]) => void =
 /** Minimal view of `IpcRenderer` the transport actually needs. */
 type IpcSender = Pick<IpcRenderer, 'send'>;
 
-/** Shape we probe for at runtime to enable the zero-copy transfer path. */
+/** Shape we probe for at runtime to enable the pre-serialized buffer path. */
 type IpcZeroCopySender = IpcSender & {
-  postMessage?: (channel: string, message: unknown, transfer?: unknown[]) => void;
+  postMessage?: (channel: string, message: unknown) => void;
 };
 
 // Reused across calls so we don't allocate an encoder/decoder per log line.
@@ -25,9 +25,11 @@ const decoder = new TextDecoder();
 
 /**
  * Serialize an entry to an `ArrayBuffer` (UTF-8 JSON). The returned buffer is
- * transferable: hand it to `postMessage(channel, buffer, [buffer])` so the
- * underlying memory is moved across the process boundary instead of being
- * structured-cloned (copied) by Electron.
+ * sent as the IPC message directly — no structured-clone of the object graph.
+ * Note: `ipcRenderer.postMessage`'s `transfer` argument only accepts `MessagePort`
+ * objects (unlike `window.postMessage`), so we cannot do a true zero-copy transfer
+ * here. Passing the buffer as `message` still avoids serializing the full entry
+ * object graph on each call.
  */
 export function encodeEntry(entry: LogEntry): ArrayBuffer {
   return encoder.encode(JSON.stringify(entry)).buffer;
@@ -99,10 +101,11 @@ export class ElectronIpcTransport implements Transport {
     try {
       const sender = ipc as IpcZeroCopySender;
       if (typeof sender.postMessage === 'function') {
-        // Zero-copy path: serialize once, then transfer the buffer's ownership
-        // across the process boundary (no structured-clone of the object graph).
+        // Pre-serialized path: send the UTF-8 JSON buffer directly so the main
+        // process doesn't need to structured-clone the object graph.
+        // (Electron's `transfer` arg only accepts MessagePort[], not ArrayBuffer.)
         const buf = encodeEntry(entry);
-        sender.postMessage(this.channel, buf, [buf]);
+        sender.postMessage(this.channel, buf);
       } else {
         // Fallback: Electron structured-clones the whole entry object.
         ipc.send(this.channel, entry);
@@ -122,7 +125,7 @@ export class ElectronIpcTransport implements Transport {
       const sender = ipc as IpcZeroCopySender;
       if (typeof sender.postMessage === 'function') {
         const buf = encoder.encode(JSON.stringify(cmd)).buffer;
-        sender.postMessage(this.channel, buf, [buf]);
+        sender.postMessage(this.channel, buf);
       } else {
         ipc.send(this.channel, cmd);
       }

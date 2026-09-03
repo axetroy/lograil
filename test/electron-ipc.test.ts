@@ -65,17 +65,16 @@ describe('ElectronIpcTransport (electron present)', () => {
     expect(removeListener).toHaveBeenCalledWith(LOGRAIL_CHANNEL, handler);
   });
 
-  it('uses postMessage + buffer transfer when available (zero-copy path)', () => {
+  it('uses postMessage with pre-serialized buffer when available', () => {
     const postMessage = vi.fn();
     const send = vi.fn();
     const t = new ElectronIpcTransport({ ipcRenderer: { send, postMessage } });
     const e = entry();
     t.write(e, '');
     expect(postMessage).toHaveBeenCalledTimes(1);
-    const [channel, message, transfer] = postMessage.mock.calls[0];
+    const [channel, message] = postMessage.mock.calls[0];
     expect(channel).toBe(LOGRAIL_CHANNEL);
     expect(message).toBeInstanceOf(ArrayBuffer);
-    expect(transfer).toEqual([message]);
     // The transferred buffer decodes back to the original entry.
     expect(decodeEntry(message as ArrayBuffer)).toMatchObject({
       levelName: 'info',
@@ -123,9 +122,8 @@ describe('ElectronIpcTransport (electron present)', () => {
     const t = new ElectronIpcTransport({ ipcRenderer: { send, postMessage } });
     t.sendLevelCommand(20);
     expect(postMessage).toHaveBeenCalledTimes(1);
-    const [channel, message, transfer] = postMessage.mock.calls[0];
+    const [channel, message] = postMessage.mock.calls[0];
     expect(channel).toBe(LOGRAIL_CHANNEL);
     expect(message).toBeInstanceOf(ArrayBuffer);
-    expect(transfer).toEqual([message]);
   });
 });
