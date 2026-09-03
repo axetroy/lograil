@@ -202,15 +202,10 @@ interface ElectronIpcTransportOptions {
 class ElectronIpcTransport implements Transport;
 ```
 
-Renderer-side: forwards each entry to the main process over IPC. Safe to import
-outside Electron.
-
-When `ipcRenderer.postMessage` is available the transport serialises the entry
-once into an `ArrayBuffer` and **transfers** it across the process boundary
-(zero-copy) instead of letting Electron structured-clone the whole object graph.
-The legacy `send` path is used as a fallback. Decode on the main side with
-`registerIpcReceiver` (which also tags entries as renderer-origin). See
-[Immutability & zero-copy](../guide/immutability.md).
+Renderer-side: forwards each entry to the main process over IPC via
+`ipcRenderer.send()`, relying on Electron's structured cloning.
+Safe to import outside Electron. Decode on the main side with
+`registerIpcReceiver` (which also tags entries as renderer-origin).
 
 ## OtlpTransport
 

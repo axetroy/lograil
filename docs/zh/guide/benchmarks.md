@@ -37,7 +37,7 @@ npm run bench          # 或： npx vitest bench --run
 | 维度 | `lograil` | `pino` |
 | --- | --- | --- |
 | 运行时 | Electron 主进程、Electron 渲染进程、Web、Node | 仅 Node |
-| 跨进程日志 | 一等公民（`ElectronIpcTransport`，零拷贝转移） | 需自行 IPC |
+| 跨进程日志 | 一等公民（`ElectronIpcTransport`，结构化克隆） | 需自行 IPC |
 | 结构化 `context`/`metadata` + `args` | 内置，冻结不可变条目 | 绑定对象 / `child` 绑定 |
 | 处理器 / 插件管道 | 内置（`Filter`/`Processor`/`Plugin`） | 经 transports / 自定义 |
 | 内置脱敏与序列化器 | `createRedactProcessor` / `createDefaultSerializers` | `pino-secret` / 自定义 |

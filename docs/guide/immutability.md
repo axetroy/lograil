@@ -40,23 +40,16 @@ the original entry in place; instead they copy it first and return the copy
 (`{ ...entry, … }`). This keeps the original read-only while letting the next stage
 share the same data by reference.
 
-## Zero-copy across processes (Electron renderer → main)
+## Cross-process IPC (Electron renderer → main)
 
-`ElectronIpcTransport` forwards renderer logs to the main process. Electron's
-`ipcRenderer.send(channel, entry)` makes a **full copy of the whole entry object**
-every time it sends (technically a "structured clone"). When `context` is large,
-that copy is expensive.
+`ElectronIpcTransport` forwards renderer logs to the main process via
+`ipcRenderer.send()`, which uses Electron's structured-clone algorithm —
+a full copy of the entry object graph each time. This is simple and reliable;
+the trade-off is that large `context` trees are cloned on every log line.
 
-To avoid copying over and over, when `postMessage` is available the transport:
-
-1. packs the entry once into a UTF-8 binary buffer (`encodeEntry`), then
-2. hands the buffer's **ownership** to the main process via
-   `postMessage(channel, buffer, [buffer])` (this is called a *transfer*).
-
-A *transfer* means "give the memory to the other side" rather than "copy it for the
-other side". So the only extra work on the hot path is a single encode on the
-renderer and a single decode on the main process. When `postMessage` is unavailable,
-it falls back to the old `send` behavior.
+If you need higher throughput or want to explore a custom pre-serialized path,
+you can build a transport that manually serializes and sends a buffer, but
+the built-in transport prioritizes correctness and simplicity over micro-optimizations.
 
 ```ts
 // renderer

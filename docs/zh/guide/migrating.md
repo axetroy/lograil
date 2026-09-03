@@ -32,8 +32,8 @@ logger.info('在两个进程都能直接用');
 
 **差异**
 - `electron-log` 把 IPC 这一跳藏在一组固定 transport 后面；`lograil` 通过自身的 Electron
-  runtime 执行同样的跳转，且只在你选择自定义 runtime 时才把它**显式化**。两者都不复制数据（零拷贝），
-  参见[不可变性与零拷贝](../guide/immutability.md)。
+  runtime 执行同样的跳转，且只在你选择自定义 runtime 时才把它**显式化**。两者都不复制数据，
+  参见不可变性)。
 - 级别固定为 `trace…fatal`，不像 electron-log 那样是可自定义的字符串映射。用 `setLevel` 映射旧名称。
 - `lograil` 区分 `context`（持久）与 `metadata`（一次性），并在条目抵达 transport 前**冻结**，
   因此插件/transport 无法改共享状态。
@@ -75,7 +75,7 @@ registerIpcReceiver((entry) => logger.ingestEntry(entry));
 
 ## 从 `pino` 迁移
 
-`pino` 是仅限 Node、极快的裸日志库。`lograil` 用少量纯 Node 吞吐换取**一流的 Web/Node/Electron 全平台支持**、结构化 `context`/`metadata`、插件管道与零拷贝 IPC。
+`pino` 是仅限 Node、极快的裸日志库。`lograil` 用少量纯 Node 吞吐换取**一流的 Web/Node/Electron 全平台支持**、结构化 `context`/`metadata`、插件管道与跨进程 IPC。
 
 | `pino` | `lograil` |
 | --- | --- |

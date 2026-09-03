@@ -42,7 +42,7 @@ for raw ops/sec rerun `npm run bench` and compare against `pino` on your hardwar
 | Dimension | `lograil` | `pino` |
 | --- | --- | --- |
 | Runtime | Electron main, Electron renderer, Web, Node | Node only |
-| Cross-process logs | first-class (`ElectronIpcTransport`, zero-copy transfer) | needs manual IPC |
+| Cross-process logs | first-class (`ElectronIpcTransport`, structured cloning) | needs manual IPC |
 | Structured `context`/`metadata` + `args` | built-in, frozen immutable entry | bound objects / `child` bindings |
 | Processor / plugin pipeline | built-in (`Filter`/`Processor`/`Plugin`) | via transports / custom |
 | Built-in redaction & serializers | `createRedactProcessor` / `createDefaultSerializers` | `pino-secret` / custom |

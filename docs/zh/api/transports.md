@@ -177,10 +177,9 @@ class ElectronIpcTransport implements Transport;
 
 渲染进程侧：通过 IPC 将每条条目转发到主进程。在 Electron 之外导入也是安全的。
 
-当 `ipcRenderer.postMessage` 可用时，传输器会把条目一次性序列化为 `ArrayBuffer`，
-并**转移**其所有权跨进程（零拷贝），而非让 Electron 对整棵对象图做结构化克隆。
-旧版 `send` 路径作为回退保留。主进程侧用 `registerIpcReceiver` 解码（并标记为
-渲染进程来源）。参见[不可变性与零拷贝](../guide/immutability.md)。
+传输器使用 `ipcRenderer.send()` 进行跨进程通信，Electron 内部会自动对消息做结构化克隆。
+主进程侧用 `registerIpcReceiver` 接收并处理（同时标记为渲染进程来源）。
+参见[不可变性](../guide/immutability.md)。
 
 ## OtlpTransport
 
@@ -241,5 +240,5 @@ class LiveTransport implements Transport {
 
 用于实时日志流的内存型、可订阅传输器。`write()` 把每条条目转发给所有订阅者，
 并捕获订阅者抛出的异常，使 logger 的热路径永不被打断。订阅者拿到的是已冻结、
-零拷贝的 `LogEntry`。当 `bufferSize > 0` 时，后加入的订阅者可用 `replay()` 回放
+ `LogEntry`。当 `bufferSize > 0` 时，后加入的订阅者可用 `replay()` 回放
 环形缓冲。详见[传输器指南](/zh/guide/transports#livetransport)。

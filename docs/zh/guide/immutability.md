@@ -35,19 +35,12 @@ logger.ingestEntry(frozen);
 先复制出一份再改（返回 `{ ...entry, … }`）。这样既保住了原对象的只读性，
 又让下一个环节可以继续共用同一份数据。
 
-## 跨进程也不复制（Electron 渲染进程 → 主进程）
+## 跨进程日志（Electron 渲染进程 → 主进程）
 
-`ElectronIpcTransport` 负责把渲染进程的日志转发到主进程。Electron 自带的
-`ipcRenderer.send(channel, entry)` 在每次发送时，都会把整个日志对象**完整地复制一遍**
-（技术名词叫「结构化克隆 / structured clone」）。当 `context` 很大时，这一步很费时间。
-
-为了避免反复复制，`ElectronIpcTransport` 在能用 `postMessage` 的情况下会这样做：
-
-1. 先把日志一次性打包成一段 UTF-8 的二进制数据（`encodeEntry`）；
-2. 再通过 `postMessage(channel, buffer, [buffer])` 把这段数据的**归属权直接交给主进程**（这叫 transfer / 转移）。
-
-「转移」是「把这块内存交给对方」，而不是「复制一份给对方」。所以热路径上唯一多出来的
-工作，就是在渲染端编码一次、在主端解码一次。不能用 `postMessage` 时，则退回原来的 `send` 方式。
+`ElectronIpcTransport` 负责把渲染进程的日志转发到主进程。它通过
+`ipcRenderer.send()` 发送，Electron 内部会自动对消息做结构化克隆（即完整拷贝）。
+这是简单可靠的做法；代价是每次发送大 `context` 时会复制整个对象图。
+如需更高吞吐，可自行构建预序列化传输器，但内置传输器优先保证正确性与简单性。
 
 ```ts
 // 渲染进程
@@ -55,9 +48,8 @@ logger.addTransport(new ElectronIpcTransport());
 
 // 主进程——用默认的 Electron runtime 时，这个接收器已经自动注册好了，
 // 只有当你主动关闭自动转发、或自己定制 runtime 时才需要手动调用 registerIpcReceiver。
-import { registerIpcReceiver } from 'lograil';
+import { registerIpcReceiver } from "lograil";
 registerIpcReceiver((entry) => logger.ingestEntry(entry));
 ```
-
 > 那一段二进制数据（`ArrayBuffer`）一旦「转移」出去，就归接收方所有了——发送之后
 > 不要再读取或复用它。

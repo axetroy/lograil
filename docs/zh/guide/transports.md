@@ -221,7 +221,7 @@ import { LiveTransport } from 'lograil';
 const live = new LiveTransport({ bufferSize: 100 });
 logger.addTransport(live);
 
-// entry 已冻结且零拷贝——切勿修改它。
+// entry 已冻结——切勿修改它。
 const unsubscribe = live.subscribe((entry) => {
   // 例如 <LogRow level={entry.levelName} msg={entry.message} ctx={entry.context} />
   renderRow(entry);
@@ -262,7 +262,7 @@ unsubscribe(); // 停止接收
 关键行为：
 
 - **热路径安全。** 订阅者抛出的异常会被捕获并记录，绝不会中断 logger 的 `write()` 或其他订阅者。
-- **零拷贝。** 订阅者拿到的是管道产出的同一个已冻结 `LogEntry` 引用——不要修改它。
+- **共享引用。** 订阅者拿到的是管道产出的同一个已冻结 `LogEntry` 引用——不要修改它。
 - **缓冲。** 设置 `bufferSize > 0` 可为后加入的订阅者保留环形缓冲（通过 `replay` 回放）。`0`（默认）完全关闭缓冲。
 - **释放。** `close()` 会清空所有订阅者与缓冲。
 

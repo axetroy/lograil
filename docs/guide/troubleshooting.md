@@ -120,7 +120,7 @@ twice, or `redirectConsole()` is double-emitting — check `getTransports()`.
 ## 7. Notes when passing entries across processes (IPC)
 
 Entries are structured-cloned when sent over Electron IPC (the renderer transport
-uses `postMessage` with a transferred `ArrayBuffer`, i.e. no copying). After an entry
+) After an entry
 crosses the boundary it is a **new, independent object** on the other side. Don't
 rely on identity; rely on the field values. See
-[Immutability & zero-copy](./immutability.md).
+[Immutability](./immutability.md).

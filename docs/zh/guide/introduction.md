@@ -38,7 +38,7 @@ flowchart LR
   H[插件] -.extend.-> B
 ```
 
-- **LogEntry** —— 单条日志事件的不可变、冻结记录：`level`、`message`、`timestamp`、`context`、`fields` 及元数据。它以引用方式共享（零拷贝），创建后绝不可修改。
+- **LogEntry** —— 单条日志事件的不可变、冻结记录：`level`、`message`、`timestamp`、`context`、`fields` 及元数据。它以引用方式共享，创建后绝不可修改。
 - **Level** —— `trace` < `debug` < `info` < `warn` < `error` < `fatal`。logger 与每个传输器都可设置各自的阈值。
 - **Context** —— 通过异步本地存储自动附加到每条日志的环境键值数据（请求 id、用户 id、会话），无需在每次调用中层层传递。
 - **Pipeline** —— 有序的 **过滤器**（丢弃或保留）、**处理器**（ enrichment/脱敏/采样）与 **格式化器**（将日志条目转为字符串或字节）链，在日志发出前对其进行塑形。

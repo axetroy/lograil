@@ -85,7 +85,7 @@ console 的 transport（传输器）。
 
 ## 6. 日志乱序 / 在多个 transport 间重复
 
-`lograil` 在多个 transport（传输器）间共享同一个不可变、冻结的条目（零拷贝）。每个 transport（传输器）的异步
+`lograil` 在多个 transport（传输器）间共享同一个不可变、冻结的条目（共享引用）。每个 transport（传输器）的异步
 写入各有独立队列，因此慢 transport（传输器）可能落后于快 transport（传输器）——**顺序仅在单个 transport（传输器）内
 保证**，而非跨 transport（传输器）全局保证。若需严格全局顺序，使用单一 transport（传输器）或让所有写入同步。
 重复行通常是同一 transport（传输器）被加了两次，或 `redirectConsole()` 重复发出——用 `getTransports()`
@@ -93,6 +93,5 @@ console 的 transport（传输器）。
 
 ## 7. 跨进程（IPC）传递时的注意事项
 
-条目经 Electron IPC 发送时会做结构化克隆（渲染端 transport 用 `postMessage` 并转移
-`ArrayBuffer`，也就是不复制数据）。条目越过边界后，在另一端是**全新的独立对象**。不要依赖对象同一性；
-依赖字段值。详见[不可变性与零拷贝](./immutability.md)。
+条目经 Electron IPC 发送时会做结构化克隆。条目越过边界后，在另一端是**全新的独立对象**。不要依赖对象同一性；
+依赖字段值。详见[不可变性](./immutability.md)。

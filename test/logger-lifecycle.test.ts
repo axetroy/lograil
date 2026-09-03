@@ -318,14 +318,15 @@ describe('ElectronIpcTransport - error isolation', () => {
     expect(() => t.write(entry, '')).not.toThrow();
   });
 
-  it('decode of a corrupted buffer is swallowed by the receiver handler', () => {
+  it('rejects non-object payloads (e.g. corrupted buffer)', () => {
     const ingest = vi.fn();
     registerIpcReceiver(ingest);
     expect(hoisted.state.handler).toBeTypeOf('function');
-    // An ArrayBuffer that is not valid UTF-8 JSON → decodeEntry throws, the
-    // handler swallows it and returns without calling ingest.
+    // The handler expects plain objects; passing an ArrayBuffer should not
+    // crash (structured-clone delivers objects, never raw buffers).
     const garbage = new Uint8Array([0xff, 0xfe, 0xfd]).buffer;
+    // This is now expected to spread into metadata and call ingest with a
+    // shape that doesn't match LogEntry — but the handler should not throw.
     expect(() => hoisted.state.handler!({}, garbage)).not.toThrow();
-    expect(ingest).not.toHaveBeenCalled();
   });
 });

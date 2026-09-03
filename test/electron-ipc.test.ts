@@ -18,8 +18,6 @@ import {
   registerIpcReceiver,
   LOGRAIL_CHANNEL,
   RENDERER_PROCESS_MARKER,
-  encodeEntry,
-  decodeEntry,
 } from '../src/transport/electron-ipc.js';
 import type { LogEntry } from '../src/types.js';
 import { LOG_LEVELS } from '../src/types.js';
@@ -50,6 +48,16 @@ describe('ElectronIpcTransport (electron present)', () => {
     expect(send).toHaveBeenCalledWith(LOGRAIL_CHANNEL, entry());
   });
 
+  it('sends level commands over ipcRenderer.send', () => {
+    const t = new ElectronIpcTransport();
+    t.sendLevelCommand(20);
+    expect(send).toHaveBeenCalledWith(LOGRAIL_CHANNEL, {
+      __lograilCmd: true,
+      __lograilCmdType: 'setLevel',
+      level: 20,
+    });
+  });
+
   it('registerIpcReceiver wires ipcMain.on and unregister removes it', () => {
     const ingest = vi.fn();
     const unregister = registerIpcReceiver(ingest);
@@ -65,33 +73,14 @@ describe('ElectronIpcTransport (electron present)', () => {
     expect(removeListener).toHaveBeenCalledWith(LOGRAIL_CHANNEL, handler);
   });
 
-  it('uses postMessage with pre-serialized buffer when available', () => {
-    const postMessage = vi.fn();
-    const send = vi.fn();
-    const t = new ElectronIpcTransport({ ipcRenderer: { send, postMessage } });
-    const e = entry();
-    t.write(e, '');
-    expect(postMessage).toHaveBeenCalledTimes(1);
-    const [channel, message] = postMessage.mock.calls[0];
-    expect(channel).toBe(LOGRAIL_CHANNEL);
-    expect(message).toBeInstanceOf(ArrayBuffer);
-    // The transferred buffer decodes back to the original entry.
-    expect(decodeEntry(message as ArrayBuffer)).toMatchObject({
-      levelName: 'info',
-      message: 'hi',
-    });
-    // The legacy structured-clone `send` path is not used.
-    expect(send).not.toHaveBeenCalled();
-  });
-
-  it('receiver decodes a transferred buffer and marks it renderer-origin', () => {
+  it('receiver marks entries as renderer-origin', () => {
     const ingest = vi.fn();
     registerIpcReceiver(ingest);
     const handler = on.mock.calls[on.mock.calls.length - 1][1] as (
       event: unknown,
       payload: unknown,
     ) => void;
-    handler({}, encodeEntry(entry()));
+    handler({}, entry());
     expect(ingest).toHaveBeenCalledTimes(1);
     const received = ingest.mock.calls[0][0] as LogEntry;
     expect(received.message).toBe('hi');
@@ -107,23 +96,11 @@ describe('ElectronIpcTransport (electron present)', () => {
       payload: unknown,
     ) => void;
 
-    // Send a level command
-    const cmd = JSON.stringify({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
-    handler({}, new TextEncoder().encode(cmd));
+    const cmd = { __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 };
+    handler({}, cmd);
 
     expect(onLevelCommand).toHaveBeenCalledTimes(1);
     expect(onLevelCommand).toHaveBeenCalledWith(20);
     expect(ingest).not.toHaveBeenCalled();
-  });
-
-  it('transport sends level commands via sendLevelCommand', () => {
-    const postMessage = vi.fn();
-    const send = vi.fn();
-    const t = new ElectronIpcTransport({ ipcRenderer: { send, postMessage } });
-    t.sendLevelCommand(20);
-    expect(postMessage).toHaveBeenCalledTimes(1);
-    const [channel, message] = postMessage.mock.calls[0];
-    expect(channel).toBe(LOGRAIL_CHANNEL);
-    expect(message).toBeInstanceOf(ArrayBuffer);
   });
 });

@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased] - 2026-08-29
 
 - fix(docs): 更新 GitHub 链接以指向正确的仓库
-- feat: define immutable LogEntry contract and zero-copy IPC transfer
+- feat: define immutable LogEntry contract and structured-cloning IPC transfer
 - feat(logger): 添加异步插件拦截顺序处理，确保传输队列独立，避免阻塞
 - feat: add P1 features (stderrLevels, JSON flatten, serializer/redact presets, env level & namespace filter, OTel trace plugin)
 - feat(logger): 添加全局错误处理和超时机制，确保内部错误不会导致调用方崩溃

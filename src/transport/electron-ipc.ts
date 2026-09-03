@@ -11,35 +11,8 @@ const RAW_CONSOLE_ERROR: (...args: unknown[]) => void =
     ? console.error.bind(console)
     : () => {};
 
-/** Minimal view of `IpcRenderer` the transport actually needs. */
+/** Minimal view of "IpcRenderer" the transport actually needs. */
 type IpcSender = Pick<IpcRenderer, 'send'>;
-
-/** Shape we probe for at runtime to enable the pre-serialized buffer path. */
-type IpcZeroCopySender = IpcSender & {
-  postMessage?: (channel: string, message: unknown) => void;
-};
-
-// Reused across calls so we don't allocate an encoder/decoder per log line.
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-/**
- * Serialize an entry to an `ArrayBuffer` (UTF-8 JSON). The returned buffer is
- * sent as the IPC message directly — no structured-clone of the object graph.
- * Note: `ipcRenderer.postMessage`'s `transfer` argument only accepts `MessagePort`
- * objects (unlike `window.postMessage`), so we cannot do a true zero-copy transfer
- * here. Passing the buffer as `message` still avoids serializing the full entry
- * object graph on each call.
- */
-export function encodeEntry(entry: LogEntry): ArrayBuffer {
-  return encoder.encode(JSON.stringify(entry)).buffer;
-}
-
-/** Inverse of {@link encodeEntry}. */
-export function decodeEntry(buffer: ArrayBuffer | Uint8Array): LogEntry {
-  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  return JSON.parse(decoder.decode(bytes)) as LogEntry;
-}
 
 export const LOGRAIL_CHANNEL = 'lograil:log';
 
@@ -61,20 +34,20 @@ export interface ElectronIpcTransportOptions {
    * `contextIsolation: true`): pass the `ipcRenderer` obtained from a preload
    * bridge instead of letting the transport call `require('electron')`.
    */
-  ipcRenderer?: IpcZeroCopySender;
+  ipcRenderer?: IpcSender;
 }
 
 /**
  * Renderer-side transport. Forwards each log entry to the Electron main
  * process over IPC, where it is persisted by the main logger (the renderer
- * itself has no filesystem access). The `electron` module is required lazily
- * so this file is safe to import in non-Electron environments.
+ * itself has no filesystem access). Uses structured cloning via
+ * `ipcRenderer.send()`.
  */
 export class ElectronIpcTransport implements Transport {
   readonly name: string;
   readonly channel: string;
 
-  private injectedIpc?: IpcZeroCopySender;
+  private injectedIpc?: IpcSender;
   private resolvedIpc?: IpcSender;
 
   constructor(options: ElectronIpcTransportOptions = {}) {
@@ -99,19 +72,9 @@ export class ElectronIpcTransport implements Transport {
     const ipc = this.getIpc();
     if (!ipc) return;
     try {
-      const sender = ipc as IpcZeroCopySender;
-      if (typeof sender.postMessage === 'function') {
-        // Pre-serialized path: send the UTF-8 JSON buffer directly so the main
-        // process doesn't need to structured-clone the object graph.
-        // (Electron's `transfer` arg only accepts MessagePort[], not ArrayBuffer.)
-        const buf = encodeEntry(entry);
-        sender.postMessage(this.channel, buf);
-      } else {
-        // Fallback: Electron structured-clones the whole entry object.
-        ipc.send(this.channel, entry);
-      }
+      ipc.send(this.channel, entry);
     } catch (err) {
-      // Report IPC failure so users can diagnose renderer → main delivery issues.
+      // Report IPC failure so users can diagnose renderer -> main delivery issues.
       RAW_CONSOLE_ERROR(`[lograil] ipc transport (${this.name}) send failed:`, err);
     }
   }
@@ -122,15 +85,9 @@ export class ElectronIpcTransport implements Transport {
     if (!ipc) return;
     const cmd: LogLevelCommand = { __lograilCmd: true, __lograilCmdType: 'setLevel', level };
     try {
-      const sender = ipc as IpcZeroCopySender;
-      if (typeof sender.postMessage === 'function') {
-        const buf = encoder.encode(JSON.stringify(cmd)).buffer;
-        sender.postMessage(this.channel, buf);
-      } else {
-        ipc.send(this.channel, cmd);
-      }
+      ipc.send(this.channel, cmd);
     } catch {
-      /* silently drop — command loss is not fatal */
+      /* silently drop - command loss is not fatal */
     }
   }
 }
@@ -154,35 +111,17 @@ export function registerIpcReceiver(
   // `electron` is only present in a main process; resolve it lazily.
   const ipcMain = getElectron().ipcMain;
   const handler = (_event: unknown, payload: unknown): void => {
-    if (payload instanceof ArrayBuffer || payload instanceof Uint8Array) {
-      // Zero-copy transfer path
-      try {
-        const decoded = JSON.parse(decoder.decode(payload)) as LogEntry | LogLevelCommand;
-        if (isLogLevelCommand(decoded)) {
-          onLevelCommand?.(normalizeLevel(decoded.level));
-          return;
-        }
-        const entry = decoded as LogEntry;
-        ingest({
-          ...entry,
-          metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
-        });
-      } catch {
-        return;
-      }
-    } else {
-      const data = payload as LogEntry | LogLevelCommand;
-      if (isLogLevelCommand(data)) {
-        onLevelCommand?.(normalizeLevel(data.level));
-        return;
-      }
-      const entry = data as LogEntry;
-      // Copy-on-write: mark renderer-origin without mutating a shared/frozen entry.
-      ingest({
-        ...entry,
-        metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
-      });
+    const data = payload as LogEntry | LogLevelCommand;
+    if (isLogLevelCommand(data)) {
+      onLevelCommand?.(normalizeLevel(data.level));
+      return;
     }
+    const entry = data as LogEntry;
+    // Copy-on-write: mark renderer-origin without mutating a shared/frozen entry.
+    ingest({
+      ...entry,
+      metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
+    });
   };
   ipcMain.on(channel, handler);
   return () => ipcMain.removeListener(channel, handler);
