@@ -1,11 +1,6 @@
 import type { LogEntry } from '../types.js';
 import type { Plugin } from './plugin.js';
 
-/**
- * Minimal shape of the `@opentelemetry/api` `trace` namespace that we use. We
- * avoid importing the package at the type level so the library stays usable
- * without it installed; the dependency is resolved lazily at runtime.
- */
 interface OtelTraceApi {
   getActiveSpan(): { spanContext(): { traceId: string; spanId: string } } | undefined;
 }
@@ -31,15 +26,12 @@ export function createOtelTracePlugin(): Plugin {
   return {
     name: 'otel-trace',
     async onInit() {
+      // Dynamic import with a variable literal prevents TS from resolving the
+      // optional peer dependency at compile time.
       try {
-        // Lazy, optional resolution — never fails if the package is absent.
-        // The specifier is held in a variable so TypeScript does not try to
-        // resolve the (optional) module at compile time.
-        const specifier = '@opentelemetry/api';
-        const mod = (await import(specifier)) as unknown as { trace?: OtelTraceApi };
-        traceApi = mod.trace;
+        traceApi = (await import('@opentelemetry/api')).trace as OtelTraceApi | undefined;
       } catch {
-        traceApi = undefined;
+        // Not installed — plugin stays a no-op.
       }
     },
     onEntry(entry: LogEntry) {
