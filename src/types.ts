@@ -80,6 +80,8 @@ export interface LoggerMethods {
   trace: LogFn;
   debug: LogFn;
   info: LogFn;
+  /** Alias for {@link info}. */
+  log: LogFn;
   warn: LogFn;
   error: LogFn;
   fatal: LogFn;

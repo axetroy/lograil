@@ -164,4 +164,16 @@ describe('Logger', () => {
     await logger.flush();
     expect(t.entries).toHaveLength(0);
   });
+
+  it('log is an alias for info', async () => {
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'debug' });
+    logger.log('hello', { a: 1 });
+    await logger.flush();
+
+    expect(t.entries).toHaveLength(1);
+    expect(t.entries[0].message).toBe('hello');
+    expect(t.entries[0].levelName).toBe('info');
+    expect(t.lines[0]).toContain('INFO');
+  });
 });

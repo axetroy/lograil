@@ -542,6 +542,8 @@ export class Logger implements LoggerMethods {
   trace: LogFn = (message, ...args) => this.emit('trace', message, args);
   debug: LogFn = (message, ...args) => this.emit('debug', message, args);
   info: LogFn = (message, ...args) => this.emit('info', message, args);
+  /** Alias for {@link info}. */
+  log: LogFn = (message, ...args) => this.emit('info', message, args);
   warn: LogFn = (message, ...args) => this.emit('warn', message, args);
   error: LogFn = (message, ...args) => this.emit('error', message, args);
   fatal: LogFn = (message, ...args) => this.emit('fatal', message, args);
