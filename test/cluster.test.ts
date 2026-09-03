@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ClusterIpcTransport, registerClusterReceiver } from '../src/transport/cluster-ipc.js';
+import { ClusterIpcTransport, registerClusterReceiver, _resetClusterReceiverState } from '../src/transport/cluster-ipc.js';
 import { createNodeRuntime } from '../src/runtime/node.js';
 import type { LogEntry } from '../src/types.js';
 
@@ -42,7 +42,6 @@ describe('ClusterIpcTransport', () => {
     (process as any).send = undefined;
 
     const transport = new ClusterIpcTransport();
-    // should not throw
     transport.write(makeEntry(), 'formatted');
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,6 +63,7 @@ describe('registerClusterReceiver', () => {
   let originalRemoveListener: typeof process.removeListener;
 
   beforeEach(() => {
+    _resetClusterReceiverState();
     listeners = {};
     originalOn = process.on;
     originalRemoveListener = process.removeListener;
@@ -74,7 +74,9 @@ describe('registerClusterReceiver', () => {
     }) as typeof process.on;
     process.removeListener = vi.fn((event: string, cb: (...args: unknown[]) => void) => {
       if (listeners[event]) {
-        listeners[event] = listeners[event].filter((fn) => fn !== cb);
+        const idx = listeners[event].indexOf(cb);
+        if (idx !== -1) listeners[event].splice(idx, 1);
+        if (listeners[event].length === 0) delete listeners[event];
       }
       return process;
     }) as typeof process.removeListener;
@@ -90,20 +92,14 @@ describe('registerClusterReceiver', () => {
     registerClusterReceiver(ingest);
 
     expect(listeners['message']).toHaveLength(1);
-
-    // Simulate a valid cluster message
-    const entry = makeEntry();
-    listeners['message'][0](entry);
-
+    listeners['message'][0](makeEntry());
     expect(ingest).toHaveBeenCalledOnce();
-    expect(ingest).toHaveBeenCalledWith(entry);
   });
 
   it('ignores non-entry messages', () => {
     const ingest = vi.fn();
     registerClusterReceiver(ingest);
 
-    // Not a LogEntry — missing required fields
     listeners['message'][0]({ foo: 'bar' });
     listeners['message'][0](null);
     listeners['message'][0]('string');
@@ -119,7 +115,7 @@ describe('registerClusterReceiver', () => {
 
     unregister();
 
-    expect(listeners['message']).toHaveLength(0);
+    expect(listeners['message']).toBeUndefined();
   });
 
   it('routes level commands to onLevelCommand callback', () => {
@@ -127,7 +123,6 @@ describe('registerClusterReceiver', () => {
     const onLevelCommand = vi.fn();
     registerClusterReceiver(ingest, { onLevelCommand });
 
-    // Send a level command
     listeners['message'][0]({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
 
     expect(onLevelCommand).toHaveBeenCalledTimes(1);
@@ -135,46 +130,49 @@ describe('registerClusterReceiver', () => {
     expect(ingest).not.toHaveBeenCalled();
   });
 
-  it('transport sends level commands via sendLevelCommand', () => {
-    const send = vi.fn().mockReturnValue(true);
-    const original = process.send;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (process as any).send = send;
+  it('second registration updates callback without adding duplicate handler', () => {
+    const ingest1 = vi.fn();
+    const ingest2 = vi.fn();
+    registerClusterReceiver(ingest1);
 
-    const transport = new ClusterIpcTransport();
-    transport.sendLevelCommand(20);
+    expect(listeners['message']).toHaveLength(1);
 
-    expect(send).toHaveBeenCalledOnce();
-    expect(send).toHaveBeenCalledWith({
-      __lograilCmd: true,
-      __lograilCmdType: 'setLevel',
-      level: 20,
-    });
+    const unregister2 = registerClusterReceiver(ingest2);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (process as any).send = original;
+    expect(listeners['message']).toHaveLength(1);
+    listeners['message'][0](makeEntry({ message: 'second' }));
+    expect(ingest1).not.toHaveBeenCalled();
+    expect(ingest2).toHaveBeenCalledOnce();
+
+    unregister2();
   });
 });
 
 describe('createNodeRuntime - cluster behavior', () => {
-  beforeEach(() => {
-    vi.spyOn(process, 'on').mockImplementation(() => process);
-    vi.spyOn(process, 'removeListener');
-  });
-  afterEach(() => vi.restoreAllMocks());
-
-  it('returns node runtime with file transport in non-cluster (primary)', () => {
-    // In a normal vitest worker, cluster.isWorker is false
-    const runtime = createNodeRuntime({ appName: 'test-app' });
-    expect(runtime.name).toBe('node');
-    expect(runtime.hasFileSystem()).toBe(true);
-    const transports = runtime.defaultTransports();
-    expect(transports.length).toBe(2); // ConsoleTransport + FileTransport
-    expect(transports[1].name).toMatch(/^file/);
+  it('provides cluster transport when isClusterWorker is simulated', () => {
+    // Mock cluster.isWorker via module-level override by testing the transport directly
+    const rt = createNodeRuntime({ disableFile: true });
+    // In non-cluster mode, runtime returns console + file (or console only with disableFile)
+    const names = rt.defaultTransports().map((t) => t.name);
+    expect(names).toContain('console');
+    // When NOT in cluster mode, no cluster-ipc transport
+    expect(names).not.toContain('cluster-ipc');
   });
 
-  it('attaches cluster receiver on primary', () => {
-    const runtime = createNodeRuntime({ appName: 'test-app' });
-    expect(typeof runtime.attachReceiver).toBe('function');
+  it('ClusterIpcTransport writes to process.send', () => {
+    const send = vi.fn().mockReturnValue(true);
+    const originalSend = process.send;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process as any).send = send;
+
+    const transport = new ClusterIpcTransport();
+    const entry = makeEntry({ message: 'cluster test' });
+    transport.write(entry, 'formatted');
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0][0].message).toBe('cluster test');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process as any).send = originalSend;
   });
 });

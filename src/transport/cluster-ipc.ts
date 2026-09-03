@@ -2,17 +2,14 @@ import type { LogEntry } from '../types.js';
 import type { Transport } from './transport.js';
 import type { LogLevelCommand } from '../types.js';
 import { isLogLevelCommand, normalizeLevel } from '../types.js';
-
 /** IPC channel for cluster worker → primary communication. */
 export const CLUSTER_IPC_CHANNEL = 'lograil:cluster:log';
-
 export interface ClusterIpcTransportOptions {
   /** IPC channel used to reach the primary process. */
   channel?: string;
   /** Transport name. */
   name?: string;
 }
-
 /**
  * Worker-side transport that sends entries to the primary process via
  * `process.send()`. Safe to import in non-cluster environments — the write
@@ -20,11 +17,9 @@ export interface ClusterIpcTransportOptions {
  */
 export class ClusterIpcTransport implements Transport {
   readonly name: string;
-
   constructor(options: ClusterIpcTransportOptions = {}) {
     this.name = options.name ?? 'cluster-ipc';
   }
-
   write(entry: LogEntry, _formatted: string): void {
     try {
       const proc = process as unknown as {
@@ -41,7 +36,6 @@ export class ClusterIpcTransport implements Transport {
       /* process.send unavailable — drop silently */
     }
   }
-
   /** Send a cross-process level command to the primary process. */
   sendLevelCommand(level: number): void {
     try {
@@ -57,12 +51,28 @@ export class ClusterIpcTransport implements Transport {
     }
   }
 }
-
 export interface ClusterReceiverOptions {
   /** Reserved for future use. Currently all cluster messages share one channel. */
   channel?: string;
 }
-
+/**
+ * Shared dedup state on globalThis so that multiple bundled copies of this
+ * module all share the same registration flag and callbacks.
+ */
+const _DEDUP_CLUSTER = Symbol('lograil:cluster-ipc:dedup');
+interface _ClusterDedupState {
+  registered: boolean;
+  ingest: ((entry: LogEntry) => void) | null;
+  onLevelCommand: ((level: number) => void) | null;
+}
+function _getClusterState(): _ClusterDedupState {
+  if (typeof globalThis !== 'undefined' && _DEDUP_CLUSTER in globalThis)
+    return globalThis[_DEDUP_CLUSTER as unknown as keyof typeof globalThis] as _ClusterDedupState;
+  const s: _ClusterDedupState = { registered: false, ingest: null, onLevelCommand: null };
+  if (typeof globalThis !== 'undefined')
+    (globalThis as Record<symbol, _ClusterDedupState>)[_DEDUP_CLUSTER] = s;
+  return s;
+}
 /**
  * Primary-side helper: listen on the cluster IPC channel and feed received
  * worker entries into the provided `ingest` callback (typically
@@ -78,27 +88,52 @@ export function registerClusterReceiver(
     on?: (event: string, cb: (...args: unknown[]) => void) => void;
     removeListener?: (event: string, cb: (...args: unknown[]) => void) => void;
   };
-
   if (!proc.on || !proc.removeListener) return () => {};
-
+  // Guard against duplicate registration on the same process.
+  // Use globalThis-based state so multiple bundled copies share the same flag.
+  const state = _getClusterState();
+  if (state.registered) {
+    // Update the callback so the existing handler processes new loggers
+    state.ingest = ingest;
+    state.onLevelCommand = onLevelCommand ?? null;
+    return () => {
+      if (state.ingest === ingest) {
+        state.ingest = null;
+        state.onLevelCommand = null;
+      }
+    };
+  }
+  state.registered = true;
+  state.ingest = ingest;
+  state.onLevelCommand = onLevelCommand ?? null;
   const handler = (message: unknown): void => {
-    if (isLogLevelCommand(message)) {
-      onLevelCommand?.(normalizeLevel(message.level));
+    if (state.onLevelCommand && isLogLevelCommand(message)) {
+      state.onLevelCommand(normalizeLevel(message.level));
       return;
     }
     if (
+      state.ingest &&
       message &&
       typeof message === 'object' &&
       'level' in message &&
       'message' in message &&
       'timestamp' in message
     ) {
-      ingest(message as LogEntry);
+      state.ingest(message as LogEntry);
     }
   };
-
   proc.on('message', handler);
   return () => {
+    state.registered = false;
+    state.ingest = null;
+    state.onLevelCommand = null;
     proc.removeListener?.('message', handler);
   };
+}
+/** Reset internal state for testing. */
+export function _resetClusterReceiverState(): void {
+  const state = _getClusterState();
+  state.registered = false;
+  state.ingest = null;
+  state.onLevelCommand = null;
 }

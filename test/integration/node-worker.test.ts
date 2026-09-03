@@ -1,10 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { isMainThread, parentPort } from 'node:worker_threads';
 import {
   ClusterIpcTransport,
   createNodeRuntime,
   registerClusterReceiver,
   registerWorkerReceiver,
+  _resetClusterReceiverState,
+  _resetWorkerReceiverState,
 } from '../../src/index.js';
 import type { LogEntry } from '../../src/types.js';
 
@@ -60,6 +62,7 @@ describe('integration: Node runtime — cluster & worker_threads', () => {
   });
 
   it('registerClusterReceiver with mock process.on drops non-entry messages', () => {
+    _resetClusterReceiverState();
     const ingest = vi.fn();
     const mockOn = vi.fn((_event: string, cb: (msg: unknown) => void) => {
       cb('not an entry');
@@ -80,6 +83,7 @@ describe('integration: Node runtime — cluster & worker_threads', () => {
   });
 
   it('registerWorkerReceiver with mock worker.on drops non-lograil messages', () => {
+    _resetWorkerReceiverState();
     const ingest = vi.fn();
     const mockWorker = {
       on: vi.fn((_event: string, handler: (data: unknown) => void) => {

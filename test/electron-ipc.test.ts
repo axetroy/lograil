@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const send = vi.fn();
 const on = vi.fn();
@@ -36,11 +36,26 @@ function entry(): LogEntry {
 }
 
 describe('ElectronIpcTransport (electron present)', () => {
+  const unregisterFns: (() => void)[] = [];
+
   beforeEach(() => {
     send.mockClear();
     on.mockClear();
     removeListener.mockClear();
+    // Clean up any leftover receivers from previous tests
+    unregisterFns.forEach((fn) => fn());
+    unregisterFns.length = 0;
   });
+
+  afterEach(() => {
+    // Ensure all receivers are unregistered after each test
+    unregisterFns.forEach((fn) => fn());
+    unregisterFns.length = 0;
+  });
+
+  function trackUnregister(fn: () => void): void {
+    unregisterFns.push(fn);
+  }
 
   it('sends the entry over ipcRenderer.send', () => {
     const t = new ElectronIpcTransport();
@@ -61,6 +76,8 @@ describe('ElectronIpcTransport (electron present)', () => {
   it('registerIpcReceiver wires ipcMain.on and unregister removes it', () => {
     const ingest = vi.fn();
     const unregister = registerIpcReceiver(ingest);
+    trackUnregister(unregister);
+
     expect(on).toHaveBeenCalledWith(LOGRAIL_CHANNEL, expect.any(Function));
     const handler = on.mock.calls[0][1] as (event: unknown, entry: LogEntry) => void;
     const received = entry();
@@ -75,7 +92,9 @@ describe('ElectronIpcTransport (electron present)', () => {
 
   it('receiver marks entries as renderer-origin', () => {
     const ingest = vi.fn();
-    registerIpcReceiver(ingest);
+    const unregister = registerIpcReceiver(ingest);
+    trackUnregister(unregister);
+
     const handler = on.mock.calls[on.mock.calls.length - 1][1] as (
       event: unknown,
       payload: unknown,
@@ -90,7 +109,9 @@ describe('ElectronIpcTransport (electron present)', () => {
   it('receiver routes level commands to onLevelCommand callback', () => {
     const ingest = vi.fn();
     const onLevelCommand = vi.fn();
-    registerIpcReceiver(ingest, { onLevelCommand });
+    const unregister = registerIpcReceiver(ingest, { onLevelCommand });
+    trackUnregister(unregister);
+
     const handler = on.mock.calls[on.mock.calls.length - 1][1] as (
       event: unknown,
       payload: unknown,
@@ -102,5 +123,33 @@ describe('ElectronIpcTransport (electron present)', () => {
     expect(onLevelCommand).toHaveBeenCalledTimes(1);
     expect(onLevelCommand).toHaveBeenCalledWith(20);
     expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it('does not register duplicate handlers for the same channel', () => {
+    const ingest1 = vi.fn();
+    const ingest2 = vi.fn();
+
+    const unregister1 = registerIpcReceiver(ingest1);
+    trackUnregister(unregister1);
+    expect(on).toHaveBeenCalledTimes(1);
+
+    // Second registration should not add another handler
+    const unregister2 = registerIpcReceiver(ingest2);
+    trackUnregister(unregister2);
+    expect(on).toHaveBeenCalledTimes(1);
+
+    // Verify only the first ingest is called when a message arrives
+    const handler = on.mock.calls[0][1] as (event: unknown, payload: unknown) => void;
+    handler({}, entry());
+    expect(ingest1).toHaveBeenCalledTimes(1);
+    expect(ingest2).not.toHaveBeenCalled();
+
+    // Unregister should allow re-registration
+    unregister1();
+    expect(removeListener).toHaveBeenCalledTimes(1);
+
+    const unregister3 = registerIpcReceiver(vi.fn());
+    trackUnregister(unregister3);
+    expect(on).toHaveBeenCalledTimes(2);
   });
 });

@@ -95,7 +95,20 @@ export class ElectronIpcTransport implements Transport {
 export interface IpcReceiverOptions {
   channel?: string;
 }
-
+/**
+ * Shared dedup state on globalThis so that multiple bundled copies of this
+ * module (e.g. from node_modules hoisting or chunk splitting) all share the
+ * same registration set instead of each keeping their own independent one.
+ */
+const _DEDUP_ELECTRON = Symbol('lograil:electron-ipc:dedup');
+function _getRegisteredChannels(): Set<string> {
+  if (typeof globalThis !== 'undefined' && _DEDUP_ELECTRON in globalThis)
+    return globalThis[_DEDUP_ELECTRON as unknown as keyof typeof globalThis] as Set<string>;
+  const s = new Set<string>();
+  if (typeof globalThis !== 'undefined')
+    (globalThis as Record<symbol, Set<string>>)[_DEDUP_ELECTRON] = s;
+  return s;
+}
 /**
  * Main-side helper: listen on the IPC channel and feed received renderer
  * entries into the provided `ingest` callback (typically `logger.ingestEntry`).
@@ -123,6 +136,17 @@ export function registerIpcReceiver(
       metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
     });
   };
+  // Guard against duplicate registration: if this channel is already tracked,
+  // do not add another handler (multiple loggers on the same channel would
+  // cause each IPC message to be processed once per logger).
+  const registeredChannels = _getRegisteredChannels();
+  if (registeredChannels.has(channel)) {
+    return () => {};
+  }
+  registeredChannels.add(channel);
   ipcMain.on(channel, handler);
-  return () => ipcMain.removeListener(channel, handler);
+  return () => {
+    registeredChannels.delete(channel);
+    ipcMain.removeListener(channel, handler);
+  };
 }

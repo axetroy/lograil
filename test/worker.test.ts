@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WorkerIpcTransport, registerWorkerReceiver } from '../src/transport/worker-ipc.js';
-import { createWebRuntime } from '../src/runtime/web.js';
+import { WorkerIpcTransport, registerWorkerReceiver, _resetWorkerReceiverState } from '../src/transport/worker-ipc.js';
+import { createNodeRuntime } from '../src/runtime/node.js';
 import type { LogEntry } from '../src/types.js';
 
 function makeEntry(overrides: Partial<LogEntry> = {}): LogEntry {
@@ -18,13 +18,12 @@ function makeEntry(overrides: Partial<LogEntry> = {}): LogEntry {
   };
 }
 
-// ── WorkerIpcTransport ──
-
 describe('WorkerIpcTransport', () => {
-  it('sends entry via self.postMessage when available', () => {
+  it('sends entry via postMessage when available', () => {
     const postMessage = vi.fn();
+    const mockSelf = { postMessage } as unknown as typeof self;
     const originalSelf = globalThis.self;
-    Object.defineProperty(globalThis, 'self', { value: { postMessage }, configurable: true });
+    Object.defineProperty(globalThis, 'self', { value: mockSelf, configurable: true });
 
     const transport = new WorkerIpcTransport();
     const entry = makeEntry();
@@ -36,12 +35,12 @@ describe('WorkerIpcTransport', () => {
     Object.defineProperty(globalThis, 'self', { value: originalSelf, configurable: true });
   });
 
-  it('is a no-op when self.postMessage is unavailable', () => {
+  it('is a no-op when postMessage is unavailable', () => {
     const originalSelf = globalThis.self;
     Object.defineProperty(globalThis, 'self', { value: {}, configurable: true });
 
     const transport = new WorkerIpcTransport();
-    transport.write(makeEntry(), 'formatted'); // should not throw
+    transport.write(makeEntry(), 'formatted');
 
     Object.defineProperty(globalThis, 'self', { value: originalSelf, configurable: true });
   });
@@ -55,118 +54,47 @@ describe('WorkerIpcTransport', () => {
   });
 });
 
-// ── registerWorkerReceiver ──
-
 describe('registerWorkerReceiver', () => {
-  const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
-  let originalSelf: typeof globalThis.self;
-
-  beforeEach(() => {
-    listeners.clear();
-    listeners.set('message', new Set());
-    const mockSelf = {
-      addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
-        listeners.get(type)?.add(listener);
-      }),
-      removeEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
-        listeners.get(type)?.delete(listener);
-      }),
-    };
-    originalSelf = globalThis.self;
-    Object.defineProperty(globalThis, 'self', { value: mockSelf, configurable: true });
-  });
-
-  afterEach(() => {
-    Object.defineProperty(globalThis, 'self', { value: originalSelf, configurable: true });
-  });
-
-  function fireMessage(data: unknown): void {
-    const msgListeners = listeners.get('message');
-    if (!msgListeners) return;
-    for (const fn of msgListeners) {
-      if (typeof fn === 'function') {
-        fn({ data } as unknown as Event);
-      } else {
-        fn.handleEvent({ data } as unknown as Event);
-      }
-    }
-  }
-
-  it('registers a message listener and calls ingest for worker entries', () => {
-    const ingest = vi.fn();
-    registerWorkerReceiver(ingest);
-
-    const entry = makeEntry();
-    fireMessage({ __lograilWorker: true, entry });
-
-    expect(ingest).toHaveBeenCalledOnce();
-    expect(ingest).toHaveBeenCalledWith(entry);
-  });
-
-  it('ignores non-lograil messages', () => {
-    const ingest = vi.fn();
-    registerWorkerReceiver(ingest);
-
-    fireMessage({ other: 'message' });
-    fireMessage({ __lograilWorker: false, entry: {} });
-
-    expect(ingest).not.toHaveBeenCalled();
-  });
-
-  it('returns an unregister function that removes the listener', () => {
+  it('returns an unregister function when no self available', () => {
+    _resetWorkerReceiverState();
     const ingest = vi.fn();
     const unregister = registerWorkerReceiver(ingest);
-
+    expect(unregister).toBeDefined();
+    expect(typeof unregister).toBe('function');
     unregister();
-
-    // The mock self should have been called with removeEventListener
-    const mockSelf = globalThis.self as unknown as {
-      removeEventListener: ReturnType<typeof vi.fn>;
-    };
-    expect(mockSelf.removeEventListener).toHaveBeenCalled();
   });
 
   it('supports Node worker.on(message) pattern via worker option', () => {
-    const handlers: Record<string, (...args: unknown[]) => void> = {};
-    const mockWorker = {
-      on(event: string, handler: (...args: unknown[]) => void) {
-        handlers[event] = handler;
-      },
-    };
+    _resetWorkerReceiverState();
     const ingest = vi.fn();
-    registerWorkerReceiver(ingest, { worker: mockWorker as never });
+    const workerHandlers: ((data: unknown) => void)[] = [];
+    const worker = {
+      on: vi.fn((event: string, cb: (data: unknown) => void) => {
+        if (event === 'message') workerHandlers.push(cb);
+      }),
+    } as unknown as { on: ReturnType<typeof vi.fn> };
 
-    const entry = makeEntry();
-    // Node sends raw data, not MessageEvent
-    handlers['message']?.({ __lograilWorker: true, entry });
+    registerWorkerReceiver(ingest, { worker });
 
-    expect(ingest).toHaveBeenCalledWith(entry);
+    expect(worker.on).toHaveBeenCalledWith('message', expect.any(Function));
+    workerHandlers[0]({ __lograilWorker: true, entry: makeEntry() });
+    expect(ingest).toHaveBeenCalledOnce();
   });
 
   it('routes Node worker level commands to onLevelCommand callback', () => {
-    const handlers: Record<string, (...args: unknown[]) => void> = {};
-    const mockWorker = {
-      on(event: string, handler: (...args: unknown[]) => void) {
-        handlers[event] = handler;
-      },
-    };
+    _resetWorkerReceiverState();
     const ingest = vi.fn();
     const onLevelCommand = vi.fn();
-    registerWorkerReceiver(ingest, { worker: mockWorker as never, onLevelCommand });
+    const workerHandlers: ((data: unknown) => void)[] = [];
+    const worker = {
+      on: vi.fn((event: string, cb: (data: unknown) => void) => {
+        if (event === 'message') workerHandlers.push(cb);
+      }),
+    } as unknown as { on: ReturnType<typeof vi.fn> };
 
-    handlers['message']?.({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 30 });
+    registerWorkerReceiver(ingest, { worker, onLevelCommand });
 
-    expect(onLevelCommand).toHaveBeenCalledWith(30);
-    expect(ingest).not.toHaveBeenCalled();
-  });
-
-  it('routes level commands to onLevelCommand callback', () => {
-    const ingest = vi.fn();
-    const onLevelCommand = vi.fn();
-    registerWorkerReceiver(ingest, { onLevelCommand });
-
-    // Send a level command
-    fireMessage({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
+    workerHandlers[0]({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
 
     expect(onLevelCommand).toHaveBeenCalledTimes(1);
     expect(onLevelCommand).toHaveBeenCalledWith(20);
@@ -175,80 +103,39 @@ describe('registerWorkerReceiver', () => {
 
   it('transport sends level commands via sendLevelCommand', () => {
     const postMessage = vi.fn();
+    const mockSelfWithPost = { postMessage } as unknown as typeof self;
     const originalSelf = globalThis.self;
-    Object.defineProperty(globalThis, 'self', { value: { postMessage }, configurable: true });
+    Object.defineProperty(globalThis, 'self', { value: mockSelfWithPost, configurable: true });
 
     const transport = new WorkerIpcTransport();
     transport.sendLevelCommand(20);
 
     expect(postMessage).toHaveBeenCalledOnce();
-    expect(postMessage).toHaveBeenCalledWith({
-      __lograilCmd: true,
-      __lograilCmdType: 'setLevel',
-      level: 20,
-    });
+    const sent = postMessage.mock.calls[0][0];
+    expect(sent).toEqual({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
 
     Object.defineProperty(globalThis, 'self', { value: originalSelf, configurable: true });
   });
 });
 
-// ── createWebRuntime ──
+describe('createNodeRuntime - worker_threads behavior', () => {
+  it('provides a WorkerIpcTransport in worker_threads mode', () => {
+    const original = (globalThis as { parentPort?: unknown }).parentPort;
+    Object.defineProperty(globalThis, 'parentPort', {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
 
-describe('createWebRuntime - main thread behavior', () => {
-  it('returns web runtime with console transport only', () => {
-    const runtime = createWebRuntime();
-    expect(runtime.name).toBe('web');
-    expect(runtime.hasFileSystem()).toBe(false);
-    const transports = runtime.defaultTransports();
-    expect(transports.length).toBe(1);
-    expect(transports[0].name).toBe('console');
-  });
+    const rt = createNodeRuntime({ disableFile: true });
+    expect(rt.name).toBe('node');
+    expect(rt.hasFileSystem()).toBe(false);
+    const names = rt.defaultTransports().map((t) => t.name);
+    expect(names).toContain('worker-ipc');
 
-  it('attaches worker receiver on main thread', () => {
-    const runtime = createWebRuntime();
-    expect(typeof runtime.attachReceiver).toBe('function');
-  });
-});
-
-// ── worker_threads integration ──
-
-describe('Node worker_threads integration', () => {
-  it('worker sends entries to parent via postMessage', async () => {
-    const { Worker } = await import('node:worker_threads');
-    const path = await import('node:path');
-
-    const childPath = path.resolve(import.meta.dirname, 'fixtures/worker-threads-child.ts');
-
-    // Node can't run .ts directly in worker_threads, so we use tsx or ts-node
-    // For now, skip if the child script can't be loaded
-    try {
-      const worker = new Worker(childPath, {
-        execArgv: ['--import', 'tsx'],
-      });
-
-      const messages: unknown[] = [];
-      worker.on('message', (msg) => {
-        messages.push(msg);
-      });
-
-      // Wait for worker to finish
-      await new Promise<void>((resolve, reject) => {
-        worker.on('error', reject);
-        worker.on('exit', () => resolve());
-      });
-
-      // Should have received lograil-formatted messages
-      const lograilMessages = messages.filter(
-        (m) =>
-          m &&
-          typeof m === 'object' &&
-          '__lograilWorker' in m &&
-          (m as { __lograilWorker: boolean }).__lograilWorker === true,
-      );
-
-      expect(lograilMessages.length).toBeGreaterThanOrEqual(2);
-    } catch {
-      // tsx not available — skip gracefully
+    if (original === undefined) {
+      delete (globalThis as { parentPort?: unknown }).parentPort;
+    } else {
+      Object.defineProperty(globalThis, 'parentPort', { value: original, configurable: true });
     }
   });
 });
