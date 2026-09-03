@@ -52,7 +52,10 @@ export class ConsoleTransport implements Transport {
   constructor(options: ConsoleTransportOptions = {}) {
     this.name = options.name ?? 'console';
     this.formatter = options.formatter ?? createLineFormatter();
-    this.methodMap = { ...DEFAULT_METHOD_MAP, ...options.methodMap };
+    this.methodMap = { ...DEFAULT_METHOD_MAP, ...options.methodMap } as Record<
+      string,
+      (...args: unknown[]) => void
+    >;
     // Route the requested levels to stderr (console.error). Applied after
     // `methodMap` so an explicitly provided method for a level is not silently
     // overridden. Defaults to empty — the default `methodMap` already sends
