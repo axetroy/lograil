@@ -2,6 +2,12 @@ import type { LogEntry } from '../types.js';
 import type { Transport } from './transport.js';
 import type { LogLevelCommand } from '../types.js';
 import { isLogLevelCommand, normalizeLevel } from '../types.js';
+
+// Captured at module load so error reporting never recurses into itself.
+const RAW_CONSOLE_ERROR: (...args: unknown[]) => void =
+  typeof console !== 'undefined' && typeof console.error === 'function'
+    ? console.error.bind(console)
+    : () => {};
 /** IPC channel for cluster worker → primary communication. */
 export const CLUSTER_IPC_CHANNEL = 'lograil:cluster:log';
 export interface ClusterIpcTransportOptions {
@@ -28,7 +34,9 @@ export class ClusterIpcTransport implements Transport {
       if (typeof proc.send === 'function') {
         proc.send(entry, (err?: Error) => {
           if (err) {
-            /* primary gone or channel closed — drop silently */
+            // Primary gone or channel closed — surface the error so users can
+            // detect cluster worker communication failures.
+            RAW_CONSOLE_ERROR('[lograil] cluster-ipc primary unreachable:', err);
           }
         });
       }

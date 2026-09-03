@@ -3,7 +3,11 @@
   "compilerOptions": {
     "noEmit": true,
     "rootDir": ".",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@opentelemetry/api": ["./node_modules/@opentelemetry/api/build/src/index.js"]
+    },
+    "baseUrl": "."
   },
   "include": ["src", "test"],
   "exclude": ["test/fixtures"]

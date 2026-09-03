@@ -1,4 +1,4 @@
-export type AmbientContext = Record<string, unknown>;
+import type { AmbientContext } from './async-context.js';
 
 /**
  * Browser / non-Node stub. `AsyncLocalStorage` is unavailable here, so ambient
@@ -6,6 +6,9 @@ export type AmbientContext = Record<string, unknown>;
  * implementation (`async-context.ts`) is selected over this file in Node builds
  * via the `browser` field in `package.json`.
  */
+// Shared frozen empty object returned when no async store is active, so the
+// common (no ambient context) path allocates nothing on every `get()`.
+const EMPTY_AMBIENT: AmbientContext = Object.freeze({});
 export const asyncContext = {
   run<T>(fn: () => T, _context: AmbientContext): T {
     return fn();
@@ -14,7 +17,7 @@ export const asyncContext = {
     return fn();
   },
   get(): AmbientContext {
-    return {};
+    return EMPTY_AMBIENT;
   },
   supported(): boolean {
     return false;

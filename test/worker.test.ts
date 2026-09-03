@@ -1,6 +1,10 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WorkerIpcTransport, registerWorkerReceiver, _resetWorkerReceiverState } from '../src/transport/worker-ipc.js';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  WorkerIpcTransport,
+  registerWorkerReceiver,
+  _resetWorkerReceiverState,
+} from '../src/transport/worker-ipc.js';
 import { createNodeRuntime } from '../src/runtime/node.js';
 import type { LogEntry } from '../src/types.js';
 

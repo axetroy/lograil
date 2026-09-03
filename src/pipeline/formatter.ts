@@ -84,6 +84,20 @@ function isPlainJsonable(v: unknown, seen: WeakSet<object>): boolean {
       return true;
     case 'object': {
       if (v instanceof Error || v instanceof Map || v instanceof Set) return false;
+      // Date/RegExp/ArrayBuffer/typed arrays and functions are not plain JSON
+      // — JSON.stringify would drop or mangle them, diverging from safeStringify.
+      if (v instanceof Date || v instanceof RegExp) return false;
+      const ctor = (v as unknown as { constructor?: { name?: string } }).constructor;
+      if (typeof ctor === 'function' && ctor.name) {
+        const ctorName = ctor.name;
+        if (
+          ctorName === 'ArrayBuffer' ||
+          ctorName === 'DataView' ||
+          ctorName.endsWith('TypedArray') ||
+          ctorName === 'Function'
+        )
+          return false;
+      }
       if (seen.has(v)) return true; // circular plain object — caller falls back
       seen.add(v);
       if (Array.isArray(v)) {
@@ -104,7 +118,7 @@ function isPlainJsonable(v: unknown, seen: WeakSet<object>): boolean {
   }
 }
 
-function safeStringify(value: unknown): string {
+function safeStringify(value: unknown, seen?: WeakSet<object>, shallow?: boolean): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number') {
     if (Number.isNaN(value)) return 'NaN';
@@ -118,39 +132,44 @@ function safeStringify(value: unknown): string {
   }
   if (value === undefined) return 'undefined';
   if (value instanceof Error) return formatErrorShort(value);
-  if (value instanceof Map) return `Map(${value.size}) ${safeStringify([...value.entries()])}`;
-  if (value instanceof Set) return `Set(${value.size}) ${safeStringify([...value.values()])}`;
+  if (value instanceof Map)
+    return `Map(${value.size}) ${safeStringify([...value.entries()], seen)}`;
+  if (value instanceof Set) return `Set(${value.size}) ${safeStringify([...value.values()], seen)}`;
 
-  // Fast path: plain JSON-serializable data — `JSON.stringify` without the
-  // per-key replacer is significantly faster, and produces identical output.
-  if (typeof value === 'object' && value !== null) {
-    const seen = new WeakSet<object>();
-    if (isPlainJsonable(value, seen)) {
-      try {
-        return JSON.stringify(value);
-      } catch {
-        /* circular — fall through to the safe replacer */
-      }
+  // `isPlainJsonable` uses an internal WeakSet that must NOT be shared with the
+  // caller's tracker — otherwise objects already scanned by this function would
+  // be flagged as `[Circular]` by the outer replacer. Pass a fresh set each
+  // time; the caller's `seen` is only used by the replacer path.
+  const localSeen = new WeakSet<object>();
+  if (isPlainJsonable(value, localSeen)) {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      /* circular — fall through to the safe replacer */
     }
   }
 
   try {
-    const seen = new WeakSet<object>();
-    return JSON.stringify(value, (_k, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) return '[Circular]';
-        seen.add(val);
-      }
-      if (typeof val === 'bigint') return `${val}n`;
-      if (typeof val === 'symbol') return val.toString();
-      if (typeof val === 'function') {
-        return `[Function: ${(val as { name?: string }).name || 'anonymous'}]`;
-      }
-      if (val instanceof Error) return errorToJson(val);
-      if (val instanceof Map) return { __type: 'Map', entries: [...val.entries()] };
-      if (val instanceof Set) return { __type: 'Set', values: [...val.values()] };
-      return val;
-    });
+    const tracker = seen ?? new WeakSet<object>();
+    return JSON.stringify(
+      value,
+      (_k, val) => {
+        if (typeof val === 'object' && val !== null) {
+          if (tracker.has(val)) return '[Circular]';
+          tracker.add(val);
+        }
+        if (typeof val === 'bigint') return `${val}n`;
+        if (typeof val === 'symbol') return val.toString();
+        if (typeof val === 'function') {
+          return `[Function: ${(val as { name?: string }).name || 'anonymous'}]`;
+        }
+        if (val instanceof Error) return errorToJson(val);
+        if (val instanceof Map) return { __type: 'Map', entries: [...val.entries()] };
+        if (val instanceof Set) return { __type: 'Set', values: [...val.values()] };
+        return val;
+      },
+      shallow ? undefined : 2,
+    );
   } catch {
     return String(value);
   }
@@ -162,7 +181,7 @@ export function createLineFormatter(): Formatter<string> {
     const ctx = isEmptyRecord(entry.context) ? '' : ` ${safeStringify(entry.context)}`;
     const meta = isEmptyRecord(entry.metadata) ? '' : ` ${safeStringify(entry.metadata)}`;
     const err = entry.error ? `\n${formatErrorChain(entry.error)}` : '';
-    const args = entry.args.length ? ` ${entry.args.map(safeStringify).join(' ')}` : '';
+    const args = entry.args.length ? ` ${entry.args.map((a) => safeStringify(a)).join(' ')}` : '';
     return `${entry.time} ${entry.levelName.toUpperCase()}${scope}: ${entry.message}${args}${ctx}${meta}${err}`;
   };
 }
@@ -181,7 +200,6 @@ export interface JsonFormatterOptions {
 export function createJsonFormatter(options: JsonFormatterOptions = {}): Formatter<string> {
   const flatten = options.flatten ?? false;
   return (entry) => {
-    const error = entry.error ? errorToJson(entry.error) : undefined;
     const base = {
       time: entry.time,
       level: entry.levelName,
@@ -190,9 +208,13 @@ export function createJsonFormatter(options: JsonFormatterOptions = {}): Formatt
       message: entry.message,
       args: entry.args,
     };
+    const error = entry.error ? errorToJson(entry.error) : undefined;
     const obj = flatten
       ? { ...base, ...entry.context, ...entry.metadata, error }
       : { ...base, context: entry.context, metadata: entry.metadata, error };
-    return safeStringify(obj);
+    // Share a single WeakSet so circular references spanning error and entry
+    // data (e.g. error.cause pointing into context) are detected correctly.
+    const seen = new WeakSet<object>();
+    return safeStringify(obj, seen, true);
   };
 }

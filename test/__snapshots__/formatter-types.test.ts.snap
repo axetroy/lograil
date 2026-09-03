@@ -40,7 +40,10 @@ exports[`formatter: per-type rendering (snapshot) > boolean-true 1`] = `
 exports[`formatter: per-type rendering (snapshot) > circular 1`] = `
 {
   "json": "{"time":"2023-11-14T22:13:20.000Z","level":"info","pid":1234,"message":"","args":[{"name":"circ","self":"[Circular]"}],"context":{},"metadata":{}}",
-  "line": "2023-11-14T22:13:20.000Z INFO:  {"name":"circ","self":"[Circular]"}",
+  "line": "2023-11-14T22:13:20.000Z INFO:  {
+  "name": "circ",
+  "self": "[Circular]"
+}",
 }
 `;
 

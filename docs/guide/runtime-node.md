@@ -113,8 +113,11 @@ createNodeRuntime({
 When `autoFlushOnExit` is enabled (the default), the logger automatically
 registers `beforeExit`, `SIGINT`, and `SIGTERM` handlers. On a normal exit the
 event loop drains pending writes; on a signal, the logger flushes what it can and
-then exits (exit code 130 for `SIGINT`, 143 for `SIGTERM`). This is idempotent
-and no-op outside Node.
+then exits (exit code 130 for `SIGINT`, 143 for `SIGTERM`). On Windows,
+`SIGBREAK` (Ctrl+Break) is also registered as a best-effort signal hook — note
+that `taskkill` and OS shutdown terminate without emitting any signal, so the
+`beforeExit` handler remains the only portable shutdown flush path. This is
+idempotent and no-op outside Node.
 
 ```ts
 const log = createLogger({ autoFlushOnExit: true }); // default

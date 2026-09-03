@@ -53,10 +53,21 @@ export function createProcessLifecycle(): LifecycleHooks {
       proc.on('beforeExit', onBeforeExit);
       proc.on('SIGINT', onSigInt);
       proc.on('SIGTERM', onSigTerm);
+      // Windows does not emit `SIGTERM`. Register `SIGBREAK` (Ctrl+Break) as a
+      // best-effort fallback so `autoFlushOnExit` has a signal hook on that
+      // platform. In practice taskkill / OS shutdown kills without emitting any
+      // Node signal, so no handler can cover that path — the `beforeExit` hook
+      // is the only portable shutdown flush mechanism.
+      if (process.platform === 'win32') {
+        proc.on('SIGBREAK', onSigInt);
+      }
       return () => {
         proc.removeListener('beforeExit', onBeforeExit);
         proc.removeListener('SIGINT', onSigInt);
         proc.removeListener('SIGTERM', onSigTerm);
+        if (process.platform === 'win32') {
+          proc.removeListener('SIGBREAK', onSigInt);
+        }
       };
     },
 

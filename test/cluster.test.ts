@@ -1,6 +1,10 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ClusterIpcTransport, registerClusterReceiver, _resetClusterReceiverState } from '../src/transport/cluster-ipc.js';
+import {
+  ClusterIpcTransport,
+  registerClusterReceiver,
+  _resetClusterReceiverState,
+} from '../src/transport/cluster-ipc.js';
 import { createNodeRuntime } from '../src/runtime/node.js';
 import type { LogEntry } from '../src/types.js';
 

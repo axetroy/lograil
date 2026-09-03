@@ -108,7 +108,9 @@ createNodeRuntime({
 当 `autoFlushOnExit` 开启时（默认），logger 会自动注册 `beforeExit`、
 `SIGINT` 和 `SIGTERM` 处理器。正常退出时事件循环会排空待写入的条目；
 收到信号时，logger 会尽力刷新后退出（`SIGINT` 退出码 130，`SIGTERM` 退出码 143）。
-该行为幂等，且在 Node 之外为空操作。
+在 Windows 上还会额外注册 `SIGBREAK`（Ctrl+Break）作为最佳努力的信号钩子——
+需要注意的是 `taskkill` 和系统关机不会发出任何信号，因此 `beforeExit` 仍是
+唯一可移植的关闭时刷线路径。该行为幂等，且在 Node 之外为空操作。
 
 ```ts
 const log = createLogger({ autoFlushOnExit: true }); // 默认

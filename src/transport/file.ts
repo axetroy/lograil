@@ -698,6 +698,8 @@ export class FileTransport implements Transport {
   readonly name: string;
   readonly formatter: Formatter;
   readonly filter?: (entry: LogEntry) => boolean;
+  /** Optional error hook, forwarded to the pipeline's global `onLoggerError`. */
+  onError?(err: unknown, entry: LogEntry): void;
 
   /** Effective capacity limits, for diagnostics (e.g. "why was my log file
    * deleted?"). `maxSize`/`maxFiles` reflect the active rotation mode;
@@ -730,7 +732,6 @@ export class FileTransport implements Transport {
   private readonly owned = new Set<string>();
   private readonly createdAt: number;
   private closed = false;
-  private reportedFirstError = false;
   private handle: Awaited<ReturnType<typeof open>> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private ownedScanned = false;
@@ -741,6 +742,9 @@ export class FileTransport implements Transport {
   private static readonly PERIODIC_INTERVAL_MS = 60_000;
   private writeCount = 0;
   private lastCheckMs = 0;
+  // Captured so the error handler can report the failed entry even though the
+  // queue serialises writes. Only the *last* entry is kept — errors are rare.
+  private _lastWrittenEntry: LogEntry | null = null;
 
   constructor(options: FileTransportOptions) {
     if (!options.appName) {
@@ -911,12 +915,20 @@ export class FileTransport implements Transport {
           });
         }
         const handle = await this.ensureHandle();
+        this._lastWrittenEntry = entry;
         await handle.write(line);
       })
       .catch((err) => {
-        if (!this.reportedFirstError) {
-          this.reportedFirstError = true;
-          console.error('[lograil] FileTransport write error (subsequent errors suppressed):', err);
+        // Report every write error so the user can detect disk-full, EPERM, etc.
+        if (this.onError) {
+          this.onError(
+            new Error(
+              `FileTransport write error: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+            this._lastWrittenEntry!,
+          );
+        } else {
+          console.error('[lograil] FileTransport write error:', err);
         }
       });
     this.queue = task;

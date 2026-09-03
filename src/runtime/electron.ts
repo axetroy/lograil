@@ -36,9 +36,9 @@ export function createElectronRuntime(options: ElectronRuntimeOptions = {}): Run
     : createElectronRendererRuntime({
         ipcRenderer:
           typeof require === 'function'
-            ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+            ? // eslint-disable-next-line
               require('electron').ipcRenderer
-            : import('electron').then((e) => e.ipcRenderer),
+            : undefined,
         ...options,
       });
 }

@@ -63,7 +63,7 @@ export class LiveTransport implements Transport {
       this.pushBuffer(entry);
       return;
     }
-    for (const sub of this.subscribers) {
+    for (const sub of Array.from(this.subscribers)) {
       try {
         sub(entry);
       } catch (err) {

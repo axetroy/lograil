@@ -69,6 +69,7 @@ export class Pipeline {
    * Run filters and processors. Returns `null` when the entry is filtered out.
    */
   process(entry: LogEntry): LogEntry | null {
+    const original = entry;
     if (this.filters.length) {
       if (this.cachedFilter === undefined) {
         this.cachedFilter =
@@ -90,7 +91,7 @@ export class Pipeline {
       } catch (err) {
         // A broken processor must not crash logging. Keep the last good entry
         // and continue with the remaining processors.
-        this.onError?.(err, { phase: 'process', entry });
+        this.onError?.(err, { phase: 'process', entry: original });
       }
       if (!current) return null;
     }

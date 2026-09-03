@@ -66,6 +66,10 @@ logger 的设计目标是 **`log.*` 调用永远不会抛出**。当某个内部
 `Filter` 会丢弃该条目（作为安全默认）。异步 `Transport.write` 若未在 `writeTimeoutMs`
 内 settle，会被作为超时失败上报，队列继续前进，因此 `flush()` / `destroy()` 总会 resolve。
 
+**`FileTransport` 的写错误每次都会上报**（不再只报一次）。传输器调用 `onError` 钩子
+并传入出错的 `LogEntry`，你可以借此检测磁盘满、EPERM 等临时故障并采取措施（例如
+切换到备用路径）。若未设置 `onError`，错误会输出到 `console.error`。
+
 ## 日志级别
 
 级别按严重程度排序：

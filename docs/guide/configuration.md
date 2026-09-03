@@ -70,6 +70,12 @@ dropped); a throwing `Filter` drops the entry (as a safe default). An async
 `Transport.write` that does not settle within `writeTimeoutMs` is reported as a
 timeout failure and the queue moves on, so `flush()`/`destroy()` always resolve.
 
+**FileTransport write errors are reported on every occurrence** (not just the
+first). The transport calls its `onError` hook with the failing `LogEntry` so you
+can detect disk-full, EPERM, and other transient errors and take action (e.g.
+switch to a fallback path). If no `onError` hook is set, the error is logged to
+`console.error`.
+
 ## Log levels
 
 Levels are ordered by severity:

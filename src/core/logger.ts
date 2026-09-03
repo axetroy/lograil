@@ -741,7 +741,7 @@ export class Logger implements LoggerMethods {
 
   /** Await a transport's async `flush`, but never let it stall teardown. */
   private guardFlush(p: () => void | Promise<void>): Promise<void> {
-    if (!this.writeTimeoutMs) return Promise.resolve();
+    if (!this.flushTimeoutMs) return Promise.resolve();
     const result = p();
     if (!result || typeof (result as Promise<void>).then !== 'function') return Promise.resolve();
     return this.guardWrite(result as Promise<void>);
@@ -859,6 +859,14 @@ export class Logger implements LoggerMethods {
     proc.on('beforeExit', onBeforeExit);
     proc.on('SIGINT', onSigInt);
     proc.on('SIGTERM', onSigTerm);
+    // Windows does not emit `SIGTERM`. Register `SIGBREAK` (Ctrl+Break) as a
+    // best-effort fallback so `autoFlushOnExit` has a signal hook on that
+    // platform. In practice taskkill / OS shutdown kills without emitting any
+    // Node signal, so no handler can cover that path — the `beforeExit` hook
+    // is the only portable shutdown flush mechanism.
+    if (process.platform === 'win32') {
+      proc.on('SIGBREAK', onSigInt);
+    }
     this.processHandlersAttached = true;
     const prev = this.removeProcessHandlers;
     this.removeProcessHandlers = () => {
