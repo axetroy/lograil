@@ -5,7 +5,7 @@
     "rootDir": ".",
     "types": ["node"],
     "paths": {
-      "@opentelemetry/api": ["./node_modules/@opentelemetry/api/build/src/index.js"]
+      "@opentelemetry/api": ["./node_modules/@opentelemetry/api/build/src/index.d.ts"]
     },
     "baseUrl": "."
   },

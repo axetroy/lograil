@@ -10,7 +10,7 @@ function makeEntry(overrides: Partial<LogEntry> = {}): LogEntry {
     args: [],
     timestamp: Date.now(),
     time: new Date().toISOString(),
-    scope: null,
+    scope: undefined,
     pid: 1,
     context: {},
     metadata: {},
@@ -45,7 +45,7 @@ describe('formatter - shared WeakSet bug fix', () => {
   });
 
   it('shares WeakSet across error and entry data for circular detection', () => {
-    const obj = { name: 'root' };
+    const obj: { name: string; self?: unknown } = { name: 'root' };
     const err = new Error('boom');
     (err as { cause?: unknown }).cause = obj;
     obj.self = obj; // circular in obj
@@ -90,7 +90,7 @@ describe('cluster-ipc - error reporting', () => {
     vi.stubGlobal('console', { ...console, error: spy });
     const { ClusterIpcTransport } = await import('../src/transport/cluster-ipc.js');
     const origSend = process.send;
-    process.send = ((_msg, cb) => {
+    process.send = ((_msg: unknown, cb?: (error: Error | null) => void) => {
       cb?.(new Error('EPIPE'));
       return true;
     }) as typeof process.send;

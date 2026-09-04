@@ -76,7 +76,11 @@ describe('registerWorkerReceiver', () => {
       on: vi.fn((event: string, cb: (data: unknown) => void) => {
         if (event === 'message') workerHandlers.push(cb);
       }),
-    } as unknown as { on: ReturnType<typeof vi.fn> };
+      postMessage: vi.fn(),
+    } as unknown as {
+      on: ReturnType<typeof vi.fn>;
+      postMessage: (message: unknown, transfer?: unknown[]) => void;
+    };
 
     registerWorkerReceiver(ingest, { worker });
 
@@ -94,7 +98,11 @@ describe('registerWorkerReceiver', () => {
       on: vi.fn((event: string, cb: (data: unknown) => void) => {
         if (event === 'message') workerHandlers.push(cb);
       }),
-    } as unknown as { on: ReturnType<typeof vi.fn> };
+      postMessage: vi.fn(),
+    } as unknown as {
+      on: ReturnType<typeof vi.fn>;
+      postMessage: (message: unknown, transfer?: unknown[]) => void;
+    };
 
     registerWorkerReceiver(ingest, { worker, onLevelCommand });
 

@@ -13,7 +13,7 @@ function entry(message: string): LogEntry {
     args: [],
     timestamp: Date.now(),
     time: new Date().toISOString(),
-    scope: null,
+    scope: undefined,
     pid: 1,
     context: {},
     metadata: {},
@@ -30,8 +30,10 @@ describe('FileTransport - write error reporting', () => {
         appName: 'app',
         dir,
         ext: 'log',
-        onError,
       });
+      // onError is an instance property on FileTransport (also part of the
+      // Transport interface), assigned after construction.
+      t.onError = onError;
       const e = entry('hello');
       t.write(e, 'line');
       await t.flush();
@@ -108,8 +110,8 @@ describe('FileTransport - onError reports entry', () => {
         appName: 'app',
         dir,
         ext: 'log',
-        onError,
       });
+      t.onError = onError;
       // Directly trigger an error by writing to a non-existent path scenario:
       // we can't easily force fs errors cross-platform, so verify the hook
       // exists and is callable via the Transport interface contract.
