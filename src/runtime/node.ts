@@ -121,21 +121,20 @@ export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdap
   const transports: Transport[] = [new ConsoleTransport()];
   if (!options.disableFile) {
     const appName = options.appName ?? inferAppName();
-    if (!appName) {
-      throw new Error(
-        'Node runtime requires an "appName" (or a determinable script path) for the file transport',
+    // Gracefully skip file transport when appName cannot be determined (e.g. REPL,
+    // serverless hosts, embedded runtimes). This avoids crashing at import time.
+    if (appName) {
+      transports.push(
+        new FileTransport({
+          mode: 'rotate-time',
+          unit: 'day',
+          appName,
+          dir: tmpdir(),
+          ...DEFAULT_FILE_CAPS,
+          ...options.fileTransportOptions,
+        }),
       );
     }
-    transports.push(
-      new FileTransport({
-        mode: 'rotate-time',
-        unit: 'day',
-        appName,
-        dir: tmpdir(),
-        ...DEFAULT_FILE_CAPS,
-        ...options.fileTransportOptions,
-      }),
-    );
   }
 
   return {

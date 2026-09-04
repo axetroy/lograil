@@ -194,8 +194,11 @@ describe('edge cases — untested code paths', () => {
       // createNodeRuntime with explicit appName bypasses inferAppName.
       const rt = createNodeRuntime({ appName: 'explicit' });
       expect(rt.name).toBe('node');
-      // Without appName the runtime would throw from inferAppName catch.
-      expect(() => createNodeRuntime()).toThrow('appName');
+      // Without appName the runtime should gracefully fall back to console-only,
+      // not throw — safe for REPL / serverless / embedded hosts.
+      expect(() => createNodeRuntime()).not.toThrow();
+      const rtFallback = createNodeRuntime();
+      expect(rtFallback.defaultTransports().map((t) => t.name)).toEqual(['console']);
     } finally {
       if (originalArgv1) {
         Object.defineProperty(process, 'argv', originalArgv1);
