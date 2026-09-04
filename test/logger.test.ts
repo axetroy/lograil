@@ -176,4 +176,23 @@ describe('Logger', () => {
     expect(t.entries[0].levelName).toBe('info');
     expect(t.lines[0]).toContain('INFO');
   });
+
+  it('setOnLevelCommand wires the peer level callback', () => {
+    const t = new MemoryTransport();
+    // Custom runtime without attachReceiver so no onLevelCommand is auto-wired.
+    const runtime = {
+      name: 'node' as const,
+      now: () => 0,
+      pid: () => undefined,
+      hasFileSystem: () => false,
+      defaultTransports: () => [t],
+    } as unknown as Logger['runtime'];
+    const logger = new Logger({ transports: [t], level: 'info', runtime });
+    const cb = vi.fn();
+    logger.setOnLevelCommand(cb);
+    expect(runtime.onLevelCommand).toBe(cb);
+    // Simulate a peer sending a level command.
+    runtime.onLevelCommand!(20);
+    expect(cb).toHaveBeenCalledWith(20);
+  });
 });

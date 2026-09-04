@@ -75,6 +75,23 @@ describe('Plugins', () => {
     logger.removeTransport('extra');
     expect(logger.getTransports().map((t) => t.name)).toEqual(['main']);
   });
+  it('PluginContext can remove transports and unregister sibling plugins', async () => {
+    const main = new MemoryTransport('main');
+    const extra = new MemoryTransport('extra');
+    const logger = new Logger({ transports: [main, extra], level: 'debug' });
+    await logger.use(new TagPlugin());
+    const rewirer: Plugin = {
+      name: 'rewirer',
+      onInit(ctx) {
+        ctx.removeTransport('extra');
+        ctx.unregisterPlugin('tag');
+      },
+    };
+    await logger.use(rewirer);
+    expect(logger.getTransports().map((t) => t.name)).toEqual(['main']);
+    expect(logger.hasPlugin('tag')).toBe(false);
+    expect(logger.hasPlugin('rewirer')).toBe(true);
+  });
 
   it('a plugin can reshape the pipeline (filter + formatter)', async () => {
     const t = new MemoryTransport('mem');
