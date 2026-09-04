@@ -29,6 +29,20 @@ Guidance for AI coding agents working on **lograil** — a high-performance, sec
 - Avoid `any` where possible; it is a warning, not an error.
 - Internal module imports use explicit `.js` extensions (ESM resolution style), e.g. `import { Logger } from './core/logger.js'`.
 
+## Type checking
+
+- Two separate typechecks must both pass:
+  - `yarn typecheck` — validates `src/` against `tsconfig.json` (strict, noEmit)
+  - `yarn typecheck:test` — validates `test/` against `tsconfig.test.json` (strict, noEmit)
+- **`tsconfig.test.json`** extends `tsconfig.esm.json` with `rootDir: "."` and `include: ["src", "test"]` (excludes `test/fixtures`). It adds a `paths` override for `@opentelemetry/api` that **must point to the `.d.ts` file**, not `.js`. If you see TS7016 "Cannot find module '@opentelemetry/api'" after changing test config, check the paths value.
+- **Module resolution**: `moduleResolution: "Bundler"` — package `types` fields resolve automatically; explicit `paths` overrides are only needed for peer dependencies with unusual layouts.
+- **Common test‑type pitfalls** (from real CI fixes):
+  1. `LogEntry.scope` is `string | undefined` — pass `undefined`, never `null`.
+  2. `FileTransport.onError` is an **instance property** (inherited from the `Transport` interface), not a constructor option. Assign after construction: `t.onError = fn`.
+  3. When mocking `process.send`, annotate the arrow‑function parameters explicitly and cast back to `typeof process.send` — the union type includes `Socket`/`Server` which make `cb` uncallable without a type assertion.
+  4. `as unknown as <T>` casts erase the literal type — the target `T` must include every property the consumer actually calls (e.g. `postMessage` for `MessageTarget`).
+  5. Dynamic optional peer dependencies (e.g. `await import('@opentelemetry/api')`) should use `.d.ts` path mappings when the package is a devDependency.
+
 ## Testing instructions
 
 - Tests live in `test/` as `*.test.ts` and run with **Vitest** (`yarn test`).
