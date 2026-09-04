@@ -68,6 +68,12 @@ export interface LoggerErrorInfo {
  */
 export type LoggerErrorHandler = (error: unknown, info: LoggerErrorInfo) => void;
 
+/** Per-transport queue entry: chains writes sequentially while tracking depth. */
+interface TransportQueueEntry {
+  promise: Promise<void>;
+  depth: number;
+}
+
 // ---- Namespace (scope) filtering ----
 
 interface NamespacePattern {
@@ -163,6 +169,15 @@ export interface LoggerOptions {
    * a stalled sink can never hang `flush()`/`destroy()`. Default `5000`.
    */
   writeTimeoutMs?: number;
+  /**
+   * Per-transport async write-queue depth limit. When a transport's pending
+   * queue exceeds this depth, the newest entry is dropped immediately and
+   * reported via {@link LoggerErrorInfo} (`phase: 'transport'`, `source` set to
+   * the transport name). A value of `0` disables the limit (backward-compatible).
+   * Applied after each transport's own `queueLimit` if both are set — the tighter
+   * bound wins. Default `0` (unlimited).
+   */
+  maxQueueDepth?: number;
   /**
    * Maximum time (ms) to spend flushing on process exit (`beforeExit`,
    * `SIGINT`, `SIGTERM`) before giving up and letting the process exit, so a
@@ -269,8 +284,9 @@ export class Logger implements LoggerMethods {
   private dispatchInflight = 0;
   private dispatchDrain: Promise<void> | null = null;
   private dispatchDrainResolve: (() => void) | undefined = undefined;
-  /** Independent async-write queue per transport. */
-  private transportQueues = new Map<Transport, Promise<void>>();
+  /** Independent async-write queue per transport. Each entry tracks its depth
+   * so overflow can be detected without traversing the promise chain. */
+  private transportQueues = new Map<Transport, TransportQueueEntry>();
   private destroyed = false;
   private detachReceiver?: () => void;
   private processHandlersAttached = false;
@@ -279,6 +295,7 @@ export class Logger implements LoggerMethods {
   private onLoggerError?: LoggerErrorHandler;
   private writeTimeoutMs!: number;
   private flushTimeoutMs!: number;
+  private maxQueueDepth = 0;
   private _exiting = false;
   private scopeFilter?: NamespaceFilter;
   /** True for loggers created via `scope`/`child` (share the parent's plumbing). */
@@ -340,6 +357,7 @@ export class Logger implements LoggerMethods {
     this.onLoggerError = options.onError;
     this.writeTimeoutMs = options.writeTimeoutMs ?? 5000;
     this.flushTimeoutMs = options.flushTimeoutMs ?? 2000;
+    this.maxQueueDepth = options.maxQueueDepth ?? 0;
     // Wire the pipeline/plugin error sinks into the unified handler.
     this.pipeline.onError = (err, info) => this.reportError(info.phase, err, info.entry);
     this.plugins.onError = (name, err, entry) => this.reportError('plugin', err, entry, name);
@@ -365,6 +383,7 @@ export class Logger implements LoggerMethods {
     this.onLoggerError = parent.onLoggerError;
     this.writeTimeoutMs = parent.writeTimeoutMs;
     this.flushTimeoutMs = parent.flushTimeoutMs;
+    this.maxQueueDepth = parent.maxQueueDepth;
     if (opts.levelOverride !== undefined) this.levelOverride = opts.levelOverride;
   }
 
@@ -433,7 +452,8 @@ export class Logger implements LoggerMethods {
     const removed = this.transports.filter((t) => t.name === name);
     this.transports = this.transports.filter((t) => t.name !== name);
     for (const transport of removed) {
-      const prev = this.transportQueues.get(transport) ?? Promise.resolve();
+      const existing = this.transportQueues.get(transport);
+      const prev = existing?.promise ?? Promise.resolve();
       const teardown = prev
         .then(async () => {
           if (transport.flush) await this.guardFlush(transport.flush.bind(transport));
@@ -443,7 +463,7 @@ export class Logger implements LoggerMethods {
         .finally(() => {
           this.transportQueues.delete(transport);
         });
-      this.transportQueues.set(transport, teardown);
+      this.transportQueues.set(transport, { promise: teardown, depth: existing?.depth ?? 0 });
     }
   }
 
@@ -712,11 +732,29 @@ export class Logger implements LoggerMethods {
           const guarded = this.guardWrite(result as Promise<void>);
           // Chain onto THIS transport's own queue, not a shared one, so a stalled
           // write here cannot block other transports (or the front dispatch queue).
-          const prev = this.transportQueues.get(transport) ?? Promise.resolve();
-          const next = prev
-            .then(() => guarded)
-            .catch((err) => this.reportTransportError(err, frozen, onErr));
-          this.transportQueues.set(transport, next);
+          const existing = this.transportQueues.get(transport);
+          const entryDepth = existing?.depth ?? 0;
+          // Per-transport limit takes precedence over the global one when both set.
+          const limit = transport.queueLimit ?? this.maxQueueDepth;
+          if (limit > 0 && entryDepth >= limit) {
+            // Drop the newest entry to protect against memory growth.
+            if (transport.onOverflow) transport.onOverflow(frozen, entryDepth + 1);
+            this.reportError(
+              'transport',
+              new Error(`queue full (depth ${entryDepth + 1} >= ${limit})`),
+              frozen,
+              transport.name,
+            );
+            continue;
+          }
+          const next = existing?.promise ?? Promise.resolve();
+          const nextEntry: TransportQueueEntry = {
+            promise: next
+              .then(() => guarded)
+              .catch((err) => this.reportTransportError(err, frozen, onErr)),
+            depth: entryDepth + 1,
+          };
+          this.transportQueues.set(transport, nextEntry);
         }
       } catch (err) {
         this.reportTransportError(err, frozen, onErr);
@@ -766,7 +804,7 @@ export class Logger implements LoggerMethods {
     // Aggregate all per-transport async-write queues. `allSettled` means a
     // rejected/errored transport queue never rejects flush; a stalled one is
     // bounded by `writeTimeoutMs` via `guardWrite`.
-    await Promise.allSettled(Array.from(this.transportQueues.values()));
+    await Promise.allSettled(Array.from(this.transportQueues.values()).map((e) => e.promise));
     // Flush each transport's internal buffers with the same timeout guard so
     // a stalled flush can never hang shutdown or caller code.
     await Promise.allSettled(

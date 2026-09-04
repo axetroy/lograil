@@ -34,6 +34,14 @@ interface LoggerOptions {
    */
   writeTimeoutMs?: number;
   /**
+   * Global per-transport async write-queue depth limit. When any transport's
+   * pending queue depth reaches this value, the newest entry is dropped and
+   * reported via `onError` (`phase: 'transport'`). A transport's own
+   * `queueLimit` takes precedence when both are set — the tighter bound wins.
+   * `0` disables the global limit (backward-compatible). Default `0`.
+   */
+  maxQueueDepth?: number;
+  /**
    * Environment variable (name) whose value — if set to a valid level name —
    * overrides `level`. Defaults to `"LOG_LEVEL"`. Set to `null` to disable.
    */

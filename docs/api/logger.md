@@ -173,6 +173,12 @@ never propagated to the caller. An async `Transport.write` that does not settle
 within `writeTimeoutMs` (default 5000ms) is reported as a timeout so `flush()` /
 `destroy()` always resolve. See [Configuration](/guide/configuration) for details.
 
+When `maxQueueDepth` (or a transport's `queueLimit`) is set and the pending queue
+depth reaches that value, the newest entry is **dropped immediately** and reported
+via `onError` (`phase: 'transport'`). This prevents unbounded memory growth when
+a sink is slow — only the dropped entry is lost; earlier entries in the queue
+continue to be written in order.
+
 ## Lifecycle
 
 ```ts

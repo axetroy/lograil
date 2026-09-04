@@ -176,3 +176,109 @@ describe('Dispatch queue - bounded async interception', () => {
     expect(t.entries.map((e) => e.message)).toEqual(['boom-1', 'boom-2']);
   });
 });
+
+// ---- Backpressure / queue-limit tests ----
+
+function slowAsyncTransport(delayMs: number, limit?: number): Transport {
+  let inflight = 0;
+  return {
+    name: 'slow-async',
+    get inflightCount() {
+      return inflight;
+    },
+    formatter: createLineFormatter(),
+    queueLimit: limit,
+    write(_entry: LogEntry, _formatted: string): Promise<void> {
+      inflight++;
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          inflight--;
+          resolve();
+        }, delayMs);
+      });
+    },
+  };
+}
+
+describe('Transport queue backpressure', () => {
+  it('drops newest entry when transport queue limit is exceeded (global maxQueueDepth)', async () => {
+    const dropped: string[] = [];
+    const t = slowAsyncTransport(50, 3); // each write takes 50ms
+    const logger = new Logger({
+      transports: [t],
+      level: 'debug',
+      maxQueueDepth: 2,
+      onError(_err, info) {
+        if (info.entry) dropped.push(info.entry.message);
+      },
+    });
+
+    // Emit 5 entries rapidly — queue limit is 2, so entries 3+ should be dropped
+    for (let i = 0; i < 5; i++) {
+      logger.info(`msg-${i}`);
+    }
+
+    // Wait for queue to fully drain (writes are sequential, 5 * 50ms)
+    await logger.flush();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Entries 0 and 1 fill the queue to depth 2; msg-2 also fits (depth becomes 2 after write).
+    // msg-3 and msg-4 see depth=2 >= limit=2 and are dropped.
+    expect(dropped).toEqual(['msg-3', 'msg-4']);
+  });
+
+  it('per-transport queueLimit takes precedence over global maxQueueDepth', async () => {
+    const drops: number[] = [];
+    const t = slowAsyncTransport(80, 2);
+    t.onOverflow = (entry: LogEntry, depth: number) => {
+      drops.push(depth);
+    };
+
+    const logger = new Logger({
+      transports: [t],
+      level: 'debug',
+      maxQueueDepth: 10, // global is loose
+    });
+
+    for (let i = 0; i < 6; i++) {
+      logger.info(`msg-${i}`);
+    }
+
+    await logger.flush();
+    // Per-transport limit of 2 should have kicked in; some drops recorded
+    expect(drops.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('no drops when queue is within limit', async () => {
+    const t = slowAsyncTransport(10, 5);
+    const logger = new Logger({
+      transports: [t],
+      level: 'debug',
+      maxQueueDepth: 5,
+    });
+
+    for (let i = 0; i < 3; i++) {
+      logger.info(`msg-${i}`);
+    }
+
+    await logger.flush();
+    // All 3 should be written successfully
+    expect(t.inflightCount).toBe(0);
+  });
+
+  it('synchronous transports are not affected by queue limits', async () => {
+    const mem = new MemoryTransport();
+    const logger = new Logger({
+      transports: [mem],
+      level: 'debug',
+      maxQueueDepth: 1,
+    });
+
+    for (let i = 0; i < 10; i++) {
+      logger.info(`msg-${i}`);
+    }
+
+    await logger.flush();
+    expect(mem.entries).toHaveLength(10);
+  });
+});

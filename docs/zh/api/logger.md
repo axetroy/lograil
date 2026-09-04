@@ -149,10 +149,12 @@ await logger.destroy(): Promise<void>;
 
 `log.*` 调用永远不会抛出。当 `Filter` / `Processor` / `plugin.onEntry` 抛错、`Formatter`
 抛错，或 `Transport.write` 抛错 / 卡住时，错误会通过 `onError` 选项（默认：原生
-`console.error`）上报一次，并携带 `info.phase`（`'filter' | 'process' | 'plugin' |
-'formatter' | 'transport'`），且**绝不**向上抛给调用方。异步 `Transport.write` 若在
-`writeTimeoutMs`（默认 5000ms）内未 settle，会被作为超时错误上报，因此 `flush()` /
-`destroy()` 总会 resolve。详见 [配置](/zh/guide/configuration)。
+`console.error`）上报一次，并携带 `info.phase`（`'filter' | 'process' | 'plugin' |\
+'formatter' | 'transport'`），且**绝不**向上抛给调用方。异步 `Transport.write` 若在\
+`writeTimeoutMs`（默认 5000ms）内未 settle，会被作为超时错误上报，因此 `flush()` /\
+`destroy()` 总会 resolve。详见 [配置](/zh/guide/configuration)。\
+
+当设置了 `maxQueueDepth`（或传输器自身的 `queueLimit`）且 pending 队列深度达到上限时，最新条目会**立即被丢弃**并通过 `onError` 上报（`phase: 'transport'`）。此举防止慢 sink 导致内存无限增长；只有被丢弃的条目丢失，已在队列中的早期条目仍按顺序正常写入。
 
 ## 进程集成
 

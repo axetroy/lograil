@@ -32,4 +32,16 @@ export interface Transport {
   flush?(): void | Promise<void>;
   /** Optional teardown. */
   close?(): void | Promise<void>;
+  /**
+   * Maximum pending async-write queue depth for this transport. When the
+   * queue exceeds this length, the newest entry is dropped immediately and
+   * `onOverflow` is called (if provided). A value of `0` disables the limit
+   * (the global {@link LoggerOptions.maxQueueDepth} then applies if set).
+   */
+  queueLimit?: number;
+  /**
+   * Called when this transport's queue is full and an entry must be dropped.
+   * Receives the dropped entry and the current queue depth at drop time.
+   */
+  onOverflow?(entry: LogEntry, queueDepth: number): void;
 }

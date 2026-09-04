@@ -11,6 +11,13 @@ interface Transport {
   onError?(err: unknown, entry: LogEntry): void; // write 失败时由 logger 调用
   flush?(): void | Promise<void>;
   close?(): void | Promise<void>;
+  /**
+   * 异步写入队列的最大深度。超出时最新条目被丢弃，并调用 `onOverflow`。
+   * `0` 表示使用全局 {@link LoggerOptions.maxQueueDepth}。默认 `0`。
+   */
+  queueLimit?: number;
+  /** 当该传输器队列已满、条目被丢弃时回调。 */
+  onOverflow?(entry: LogEntry, queueDepth: number): void;
 }
 ```
 

@@ -11,6 +11,14 @@ interface Transport {
   onError?(err: unknown, entry: LogEntry): void; // called by the logger if write fails
   flush?(): void | Promise<void>;
   close?(): void | Promise<void>;
+  /**
+   * Max pending async-write queue depth. When exceeded, the newest entry is
+   * dropped and `onOverflow` is called. `0` means "use the global
+   * {@link LoggerOptions.maxQueueDepth} instead". Default `0`.
+   */
+  queueLimit?: number;
+  /** Called when this transport's queue is full and an entry is dropped. */
+  onOverflow?(entry: LogEntry, queueDepth: number): void;
 }
 ```
 

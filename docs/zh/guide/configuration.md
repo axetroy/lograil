@@ -33,6 +33,13 @@ interface LoggerOptions {
    */
   writeTimeoutMs?: number;
   /**
+   * 全局异步写入队列深度上限。当任意传输器的 pending 队列深度达到此值时，
+   * 最新条目被丢弃并通过 `onError` 上报（`phase: 'transport'`）。
+   * 若传输器同时设置了 `queueLimit`，两者取严格者。`0` 表示不启用全局限制
+   * （向后兼容）。默认 `0`。
+   */
+  maxQueueDepth?: number;
+  /**
    * 环境变量（名称），若其值被设为合法级别名，则覆盖 `level`。默认为
    * `"LOG_LEVEL"`。设为 `null` 可禁用。
    */
