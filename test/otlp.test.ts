@@ -62,14 +62,28 @@ describe('OtlpTransport', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('reports non-2xx responses via onError', async () => {
-    const errors: unknown[] = [];
+  it('reports non-2xx responses via onError (4xx fails fast, 5xx retries then fails)', async () => {
+    // 4xx: client error, fails immediately without retry
+    const errors4xx: unknown[] = [];
+    fetchMock.mockResolvedValue({ ok: false, status: 400, statusText: 'Bad Request' });
+    const t4 = new OtlpTransport({ onError: (e) => void errors4xx.push(e), maxRetries: 3 });
+    t4.write(makeEntry(), 'x');
+    await t4.flush();
+    expect(errors4xx).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // 5xx: server error, retries maxRetries times then gives up
+    const errors5xx: unknown[] = [];
+    const callsBefore = fetchMock.mock.calls.length;
     fetchMock.mockResolvedValue({ ok: false, status: 500, statusText: 'Internal' });
-    const t = new OtlpTransport({ onError: (e) => void errors.push(e) });
-    t.write(makeEntry(), 'x');
-    await t.flush();
-    expect(errors).toHaveLength(1);
-    expect(String((errors[0] as Error).message)).toContain('500');
+    const t5 = new OtlpTransport({ onError: (e) => void errors5xx.push(e), maxRetries: 2 });
+    t5.write(makeEntry(), 'y');
+    await t5.flush();
+    expect(errors5xx).toHaveLength(1);
+    // maxRetries=2: attempt1(1>2 false→retry), attempt2(2>2 false→retry), attempt3(3>2 true→drop)
+    // = 3 fetch calls for this transport only
+    expect(fetchMock.mock.calls.length - callsBefore).toBe(3);
+    expect(String((errors5xx[0] as Error).message)).toContain('500');
   });
 
   it('maps traceId/spanId context into OTLP trace fields', async () => {
@@ -143,13 +157,16 @@ describe('OtlpTransport', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('reports a network error (fetch rejection) via onError', async () => {
+  it('reports a network error (fetch rejection) via onError (retries then fails)', async () => {
     const errors: unknown[] = [];
+    const callsBefore = fetchMock.mock.calls.length;
     fetchMock.mockRejectedValue(new Error('network down'));
-    const t = new OtlpTransport({ onError: (e) => void errors.push(e) });
+    const t = new OtlpTransport({ onError: (e) => void errors.push(e), maxRetries: 1 });
     t.write(makeEntry(), 'x');
     await t.flush();
     expect(errors).toHaveLength(1);
+    // attempt=0 fail → requeue, attempt=1 >= maxRetries(1) → drop. 2 fetch calls.
+    expect(fetchMock).toHaveBeenCalledTimes(callsBefore + 2);
     expect(String((errors[0] as Error).message)).toContain('network down');
   });
 
@@ -171,5 +188,61 @@ describe('OtlpTransport', () => {
     await t.flush();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-queues batch on network error and retries', async () => {
+    const errors: unknown[] = [];
+    const callsBefore = fetchMock.mock.calls.length;
+    // First 3 calls fail, 4th succeeds
+    let callCount = 0;
+    fetchMock.mockImplementation(() => {
+      callCount++;
+      if (callCount <= 3) return Promise.reject(new Error('network down'));
+      return Promise.resolve({ ok: true, status: 200, statusText: 'OK' });
+    });
+    const t = new OtlpTransport({
+      onError: (e) => void errors.push(e),
+      maxRetries: 3,
+      retryInitialDelayMs: 2,
+    });
+    t.write(makeEntry({ message: 'retry-me' }), 'x');
+    await t.flush();
+
+    // attempt 0,1,2 fail (3 retries), attempt=3 succeeds → 4 fetch calls total
+    expect(fetchMock).toHaveBeenCalledTimes(callsBefore + 4);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('drops batch after exhausting retries and increments dropCount', async () => {
+    const errors: unknown[] = [];
+    const callsBefore = fetchMock.mock.calls.length;
+    fetchMock.mockRejectedValue(new Error('network down'));
+    const t = new OtlpTransport({
+      onError: (e) => void errors.push(e),
+      maxRetries: 1,
+      retryInitialDelayMs: 2,
+    });
+    t.write(makeEntry({ message: 'lost' }), 'x');
+    await t.flush();
+
+    // attempt=0 fail, attempt=1 >= maxRetries(1) → drop. 2 fetch calls.
+    expect(fetchMock).toHaveBeenCalledTimes(callsBefore + 2);
+    expect(t.dropCount).toBe(1);
+    expect(errors).toHaveLength(1);
+  });
+
+  it('does not retry on 4xx client errors', async () => {
+    const errors: unknown[] = [];
+    fetchMock.mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
+    const t = new OtlpTransport({
+      onError: (e) => void errors.push(e),
+      maxRetries: 5,
+    });
+    t.write(makeEntry(), 'x');
+    await t.flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(t.dropCount).toBe(0); // 4xx is not a drop — it's a permanent error
+    expect(errors).toHaveLength(1);
   });
 });

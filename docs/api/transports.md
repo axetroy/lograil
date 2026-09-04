@@ -227,6 +227,22 @@ interface OtlpTransportOptions {
   batchSize?: number; // default 100
   formatter?: Formatter; // interface parity; OTLP serializes the entry itself
   onError?: (err: unknown) => void;
+  /**
+   * Max retry attempts after a transient failure (network error or 5xx).
+   * Each failed attempt is re-queued and retried with exponential backoff.
+   * On exhaustion the batch is dropped and {@link dropCount} increments.
+   * Default `3`. Set to `0` to disable retries entirely (fail fast).
+   */
+  maxRetries?: number;
+  /**
+   * Initial backoff delay in ms before the first retry. Doubles after each
+   * retry, capped at {@link retryMaxDelayMs}. Default `1000`.
+   */
+  retryInitialDelayMs?: number;
+  /**
+   * Maximum backoff delay in ms. Default `30000`.
+   */
+  retryMaxDelayMs?: number;
 }
 
 class OtlpTransport implements Transport;

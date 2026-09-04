@@ -179,7 +179,7 @@ describe('Dispatch queue - bounded async interception', () => {
 
 // ---- Backpressure / queue-limit tests ----
 
-function slowAsyncTransport(delayMs: number, limit?: number): Transport {
+function slowAsyncTransport(delayMs: number, limit?: number) {
   let inflight = 0;
   return {
     name: 'slow-async',
@@ -230,7 +230,7 @@ describe('Transport queue backpressure', () => {
   it('per-transport queueLimit takes precedence over global maxQueueDepth', async () => {
     const drops: number[] = [];
     const t = slowAsyncTransport(80, 2);
-    t.onOverflow = (entry: LogEntry, depth: number) => {
+    (t as unknown as Transport).onOverflow = (_entry: LogEntry, depth: number) => {
       drops.push(depth);
     };
 
@@ -263,7 +263,7 @@ describe('Transport queue backpressure', () => {
 
     await logger.flush();
     // All 3 should be written successfully
-    expect(t.inflightCount).toBe(0);
+    expect((t as unknown as { inflightCount: number }).inflightCount).toBe(0);
   });
 
   it('synchronous transports are not affected by queue limits', async () => {

@@ -200,6 +200,19 @@ interface OtlpTransportOptions {
   batchSize?: number; // 默认 100
   formatter?: Formatter; // 接口对齐用；OTLP 实际自行序列化条目
   onError?: (err: unknown) => void;
+  /**
+   * 瞬态失败（网络错误或 5xx）后的最大重试次数。每次失败会将 batch 重新入队并以指数退避重试。
+   * 重试耗尽后丢弃该 batch 并递增 {@link dropCount}。默认 `3`。设为 `0` 则禁用重试（快速失败）。
+   */
+  maxRetries?: number;
+  /**
+   * 首次重试前的初始退避延迟（毫秒）。每次重试翻倍，上限为 {@link retryMaxDelayMs}。默认 `1000`。
+   */
+  retryInitialDelayMs?: number;
+  /**
+   * 退避延迟上限（毫秒）。默认 `30000`。
+   */
+  retryMaxDelayMs?: number;
 }
 
 class OtlpTransport implements Transport;

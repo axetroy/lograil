@@ -194,6 +194,21 @@ export interface OtlpTransportOptions {
    * @default `console.error`
    */
   onError?: (err: unknown) => void;
+  /**
+   * Number of retry attempts per batch on transient failure (network error or
+   * 5xx). Retries use exponential backoff starting at `retryInitialDelayMs`.
+   * `0` disables retries (immediate fail-fast). Default `3`.
+   */
+  maxRetries?: number;
+  /**
+   * Initial backoff delay (ms) before the first retry. Subsequent retries
+   * double this delay up to `retryMaxDelayMs`. Default `250`.
+   */
+  retryInitialDelayMs?: number;
+  /**
+   * Maximum backoff delay (ms) between retries. Default `5000`.
+   */
+  retryMaxDelayMs?: number;
 }
 
 /**
@@ -217,10 +232,15 @@ export class OtlpTransport implements Transport {
   private readonly headers: Record<string, string>;
   private readonly scopeName: string;
   private readonly batchSize: number;
-  private readonly errorHandler: (err: unknown) => void;
+  private errorHandler: (err: unknown) => void;
   private readonly resourceAttributes: OtlpAttribute[];
   private queue: OtlpLogRecord[] = [];
   private flushPromise: Promise<void> | null = null;
+  /** Count of batches that were dropped after exhausting all retries. */
+  dropCount = 0;
+  private readonly maxRetries: number;
+  private readonly retryInitialDelayMs: number;
+  private readonly retryMaxDelayMs: number;
 
   constructor(options: OtlpTransportOptions = {}) {
     this.name = 'otlp';
@@ -231,6 +251,11 @@ export class OtlpTransport implements Transport {
     this.batchSize = options.batchSize && options.batchSize > 0 ? options.batchSize : 100;
     this.errorHandler =
       options.onError ?? ((err) => console.error('[lograil] OTLP send failed:', err));
+    const maxRetries =
+      options.maxRetries !== undefined && options.maxRetries > 0 ? options.maxRetries : 3;
+    this.retryInitialDelayMs = options.retryInitialDelayMs ?? 250;
+    this.retryMaxDelayMs = options.retryMaxDelayMs ?? 5000;
+    this.maxRetries = maxRetries;
     const resource: Record<string, unknown> = { 'service.name': options.serviceName ?? 'lograil' };
     if (options.resource) Object.assign(resource, options.resource);
     this.resourceAttributes = collectAttributes(resource) ?? [];
@@ -262,33 +287,66 @@ export class OtlpTransport implements Transport {
   }
 
   /**
-   * Send the buffered batch to the OTLP endpoint and clear the queue. Safe to
-   * call repeatedly — no-op while already flushing or when the queue is empty.
-   * On a non-2xx response or network error, `errorHandler` is invoked.
+   * Send the buffered batch to the OTLP endpoint. On transient failure (network
+   * error or 5xx), the batch is re-queued and retried with exponential backoff
+   * up to {@link OtlpTransportOptions.maxRetries}. After exhausting retries the
+   * batch is dropped and {@link dropCount} is incremented.
+   *
+   * Safe to call repeatedly — no-op while already flushing or when the queue is
+   * empty. Non-transient errors (4xx) fail fast without retry.
    */
   async flush(): Promise<void> {
-    if (this.flushPromise) return this.flushPromise;
+    // no-op if already flushing or queue is empty
+    if (this.flushPromise !== null || this.queue.length === 0) return;
     this.flushPromise = (async () => {
       while (this.queue.length > 0) {
-        const batch = this.queue;
-        this.queue = [];
-        try {
-          const res = await fetch(this.endpoint, {
-            method: 'POST',
-            headers: this.headers,
-            body: JSON.stringify(this.buildPayload(batch)),
-          });
-          if (!res.ok) {
-            this.errorHandler(new Error(`OTLP HTTP ${res.status} ${res.statusText}`));
+        // grab a snapshot of the current queue as the batch to send.
+        // entries written after this point go into the next iteration.
+        const batch = this.queue.splice(0);
+        let delay = this.retryInitialDelayMs;
+        for (let attempt = 1; attempt <= this.maxRetries + 1; attempt++) {
+          try {
+            const res = await fetch(this.endpoint, {
+              method: 'POST',
+              headers: this.headers,
+              body: JSON.stringify(this.buildPayload(batch)),
+            });
+            if (res.ok) break; // success — batch consumed
+            // 4xx: client error, fail fast (no retry)
+            if (res.status < 500) {
+              this.errorHandler(new Error(`OTLP HTTP ${res.status} ${res.statusText}`));
+              break;
+            }
+            // transient server error — retry or give up
+            if (attempt > this.maxRetries) {
+              this.dropCount++;
+              this.errorHandler(new Error(`OTLP HTTP ${res.status} after ${attempt - 1} retries`));
+              break;
+            }
+            await this.sleep(delay);
+            delay = Math.min(delay * 2, this.retryMaxDelayMs);
+            // stay in the for-loop: next iteration re-uses the same batch
+          } catch (err) {
+            // network error — retry or give up
+            if (attempt > this.maxRetries) {
+              this.dropCount++;
+              this.errorHandler(err);
+              break;
+            }
+            await this.sleep(delay);
+            delay = Math.min(delay * 2, this.retryMaxDelayMs);
+            // stay in the for-loop: next iteration re-uses the same batch
           }
-        } catch (err) {
-          this.errorHandler(err);
         }
       }
     })().finally(() => {
       this.flushPromise = null;
     });
     return this.flushPromise;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /** Tear down the transport by flushing any remaining buffered entries. */
