@@ -156,6 +156,27 @@ await logger.destroy(): Promise<void>;
 
 当设置了 `maxQueueDepth`（或传输器自身的 `queueLimit`）且 pending 队列深度达到上限时，最新条目会**立即被丢弃**并通过 `onError` 上报（`phase: 'transport'`）。此举防止慢 sink 导致内存无限增长；只有被丢弃的条目丢失，已在队列中的早期条目仍按顺序正常写入。
 
+## 安全说明
+
+默认情况下 lograil **不会**对敏感字段做脱敏处理。若 `context`、`metadata` 或 `args` 包含密码、token、API key、cookie 等敏感信息，它们会被原样传递给 formatter 和 transport 输出。如需自动脱敏常见机密 / PII 字段，创建 logger 时传入 `secure: true`：
+
+```ts
+const logger = createLogger({ secure: true });
+```
+
+这会在 pipeline 最前端注入 {@link createRedactProcessor}（使用
+{@link DEFAULT_SENSITIVE_KEYS} 内置密钥列表）。默认密钥列表涵盖
+`password`、`token`、`apiKey`、`authorization`、`cookie`、`privateKey`、
+`sessionId`、`csrf`、`otp`、`ssn`、`accessToken`、`bearer`、`appKey`、
+`appSecret`、`clientKey`、`clientSecret`、`publishableKey`、`secretKey`、
+`webhookSecret`、`cvv`、`pin` 等。已有的 pipeline processor 不受影响，
+脱敏处理器在其之后执行。设 `secure: false` 可关闭脱敏。
+
+> **注意误脱敏：** 字段名如 `token`、`password` 若出现在非机密业务数据中
+> （例如 `passwordResetCode`，或用户字段就叫 `token`）也会被替换为 `[REDACTED]`。
+> 若默认列表过宽，可传入显式列表覆盖：
+> `createLogger({ secure: true, pipeline: { processors: [createRedactProcessor(['secret', 'authorization'])] } })`。
+
 ## 进程集成
 
 lograil 会挂载宿主的生命周期钩子，从而在退出时不丢失日志、并自动捕获崩溃。接线是**运行时无关**的：Logger 把 flush / 崩溃行为委托给当前 `RuntimeAdapter` 的 `lifecycle` 钩子，因此每个运行时监听自己原生的事件：

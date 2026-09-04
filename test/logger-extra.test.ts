@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { Logger } from '../src/core/index.js';
 import { Pipeline } from '../src/pipeline/pipeline.js';
-import { createRedactProcessor } from '../src/pipeline/processor.js';
+import {
+  createRedactProcessor,
+  DEFAULT_SENSITIVE_KEYS_SNAKE,
+  DEFAULT_SENSITIVE_KEYS_KEBAB,
+} from '../src/pipeline/processor.js';
 import type { LogEntry } from '../src/types.js';
 import type { Plugin } from '../src/plugin/index.js';
 import { PluginManager } from '../src/plugin/index.js';
@@ -160,6 +164,81 @@ describe('Processor - redact', () => {
   });
 });
 
+describe('Logger - secure mode', () => {
+  it('injects a redact processor when secure is true', () => {
+    const log = new Logger({ level: 'debug', secure: true, transports: [] });
+    const pipeline = log.getPipeline();
+    // the redact processor must be present
+    const entry = {
+      level: 30,
+      levelName: 'info' as const,
+      message: 'test',
+      args: [{ password: 'secret123', token: 'abc' }],
+      timestamp: 1,
+      time: new Date(1).toISOString(),
+      context: {},
+      metadata: {},
+    };
+    const out = pipeline.process(entry);
+    expect(out).not.toBeNull();
+    const args = (out!.args as unknown[])[0] as Record<string, unknown>;
+    expect(args.password).toBe('[REDACTED]');
+    expect(args.token).toBe('[REDACTED]');
+  });
+
+  it('does not inject redact processor when secure is explicitly false', () => {
+    const log = new Logger({ level: 'debug', secure: false, transports: [] });
+    const pipeline = log.getPipeline();
+    const entry = {
+      level: 30,
+      levelName: 'info' as const,
+      message: 'test',
+      args: [{ password: 'secret123' }],
+      timestamp: 1,
+      time: new Date(1).toISOString(),
+      context: {},
+      metadata: {},
+    };
+    const out = pipeline.process(entry);
+    expect(out).not.toBeNull();
+    const args = (out!.args as unknown[])[0] as Record<string, unknown>;
+    // explicit secure: false → no redaction
+    expect(args.password).toBe('secret123');
+  });
+
+  it('adds the redact processor after existing pipeline processors', () => {
+    let customCalled = false;
+    const log = new Logger({
+      level: 'debug',
+      secure: true,
+      pipeline: {
+        processors: [
+          (entry) => {
+            customCalled = true;
+            return entry;
+          },
+        ],
+      },
+      transports: [],
+    });
+    const pipeline = log.getPipeline();
+    const entry = {
+      level: 30,
+      levelName: 'info' as const,
+      message: 'test',
+      args: [{ password: 'x' }],
+      timestamp: 1,
+      time: new Date(1).toISOString(),
+      context: {},
+      metadata: {},
+    };
+    pipeline.process(entry);
+    expect(customCalled).toBe(true);
+    const out = pipeline.process(entry);
+    expect((out!.args as unknown[])[0]).toEqual({ password: '[REDACTED]' });
+  });
+});
+
 describe('Logger - async transport (RotatingFile)', () => {
   let dir: string;
   beforeEach(async () => {
@@ -292,5 +371,112 @@ describe('Plugin adds a transport', () => {
     await log.flush();
     expect(main.entries).toHaveLength(1);
     expect(extra.entries).toHaveLength(1);
+  });
+});
+
+describe('DEFAULT_SENSITIVE_KEYS conversion', () => {
+  it('snake_case variant matches common JS/JSON snake keys', () => {
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('access_token');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('refresh_token');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('api_key');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('private_key');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('session_id');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('csrf_token');
+    // new entries
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('app_key');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('app_secret');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('client_key');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('client_secret');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('secret_key');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('webhook_secret');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('private_key_value');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('publishable_key');
+    // header-style flat names stay flat
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('x_api_key');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('x_api_token');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('x_auth');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('x_forwarded_for');
+    // flat words stay flat
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('auth');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('authorization');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('password');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('token');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('secret');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('bearer');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('cookie');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('otp');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('ssn');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('cvv');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('pin');
+    expect(DEFAULT_SENSITIVE_KEYS_SNAKE).toContain('signature');
+  });
+
+  it('kebab-case variant matches common HTTP header / CSS style keys', () => {
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('x-api-key');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('set-cookie');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('access-token');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('refresh-token');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('api-key');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('private-key');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('session-id');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('csrf-token');
+    // new entries
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('app-key');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('app-secret');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('client-key');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('client-secret');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('secret-key');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('webhook-secret');
+    // 'private_key_value' is already snake — conversion is a no-op, stays as-is
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('private_key_value');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('publishable-key');
+    // header-style flat names stay flat
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('x-api-key');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('x-api-token');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('x-auth');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('x-forwarded-for');
+    // flat words stay flat
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('auth');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('authorization');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('password');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('token');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('secret');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('bearer');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('cookie');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('otp');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('ssn');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('cvv');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('pin');
+    expect(DEFAULT_SENSITIVE_KEYS_KEBAB).toContain('signature');
+  });
+
+  it('generated snake/kebab lists are consumed correctly by createRedactProcessor', () => {
+    // snake_case list should redact snake_case keys
+    const snakeEntry = {
+      level: 30,
+      levelName: 'info' as const,
+      message: 'test',
+      args: [{ access_token: 'tok1', x_api_key: 'key1' }],
+      timestamp: 1,
+      time: new Date(1).toISOString(),
+      context: {},
+      metadata: {},
+    };
+    const snakeOut = createRedactProcessor(DEFAULT_SENSITIVE_KEYS_SNAKE)(snakeEntry);
+    expect(snakeOut!.args[0]).toEqual({ access_token: '[REDACTED]', x_api_key: '[REDACTED]' });
+
+    // kebab-case list should redact kebab-case keys
+    const kebabEntry = {
+      level: 30,
+      levelName: 'info' as const,
+      message: 'test',
+      args: [{ 'access-token': 'tok2', 'x-api-key': 'key2' }],
+      timestamp: 1,
+      time: new Date(1).toISOString(),
+      context: {},
+      metadata: {},
+    };
+    const kebabOut = createRedactProcessor(DEFAULT_SENSITIVE_KEYS_KEBAB)(kebabEntry);
+    expect(kebabOut!.args[0]).toEqual({ 'access-token': '[REDACTED]', 'x-api-key': '[REDACTED]' });
   });
 });

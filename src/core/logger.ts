@@ -6,6 +6,7 @@ import type { PipelineOptions } from '../pipeline/pipeline.js';
 import { Pipeline } from '../pipeline/pipeline.js';
 import type { Formatter } from '../pipeline/formatter.js';
 import { createLineFormatter } from '../pipeline/formatter.js';
+import { createRedactProcessor } from '../pipeline/processor.js';
 import type { Transport } from '../transport/transport.js';
 import type { Plugin, PluginContext } from '../plugin/index.js';
 import { PluginManager } from '../plugin/index.js';
@@ -194,6 +195,15 @@ export interface LoggerOptions {
   transports?: Transport[];
   /** Pipeline configuration or instance. */
   pipeline?: Pipeline | PipelineOptions;
+  /**
+   * Enable built-in redaction of common secret / PII fields (password, token,
+   * apiKey, cookie, authorization, private key, sessionId, csrf, otp, ssn, …).
+   * Injects {@link createRedactProcessor} with {@link DEFAULT_SENSITIVE_KEYS}
+   * as the first processor in the pipeline. Runs after any user-supplied
+   * processors, so custom enrichment runs before redaction. Default `true` —
+   * set to `false` to opt out.
+   */
+  secure?: boolean;
   /** Shared plugin manager. Internal: used by {@link scope}. */
   plugins?: PluginManager;
   /**
@@ -323,6 +333,9 @@ export class Logger implements LoggerMethods {
       options.pipeline instanceof Pipeline ? options.pipeline : new Pipeline(pipelineOpts ?? {});
     if (!(options.pipeline instanceof Pipeline) && !pipelineOpts?.formatter) {
       this.pipeline.setFormatter(createLineFormatter());
+    }
+    if (options.secure !== false) {
+      this.pipeline.addProcessor(createRedactProcessor());
     }
     this.plugins = options.plugins ?? new PluginManager(this.buildPluginContext());
     this.transports = options.transports ?? this.runtime.defaultTransports();

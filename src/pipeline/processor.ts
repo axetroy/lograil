@@ -114,33 +114,69 @@ function redactNode(
  * no explicit key list is supplied. Covers passwords, tokens, API keys, auth
  * headers, cookies, private keys and a few PII fields.
  */
+/** All canonical forms of this list — the public entry point for `createRedactProcessor`. */
 export const DEFAULT_SENSITIVE_KEYS: string[] = [
+  // authentication & credentials
   'password',
   'passwd',
   'pwd',
   'secret',
   'token',
   'accessToken',
+  'access_token_value',
   'refreshToken',
   'apiKey',
-  'api_key',
+  'api_key_value',
   'authorization',
   'auth',
+  'bearer',
   'cookie',
   'setCookie',
-  'set-cookie',
-  'privateKey',
-  'private_key',
   'credentials',
   'credential',
+  'privateKey',
+  'private_key_value',
+  // session & identity
   'sessionId',
   'session',
   'csrfToken',
   'csrf',
   'otp',
   'ssn',
-  'x-api-key',
+  // API / service keys
+  'appKey',
+  'appSecret',
+  'clientKey',
+  'clientSecret',
+  'publishableKey',
+  'secretKey',
+  'webhookSecret',
+  'signature',
+  // payment
+  'cvv',
+  'pin',
+  // header-style flat names (X- prefixed or well-known auth headers)
+  'xApiKey',
+  'xApiToken',
+  'xAuth',
+  'xForwardedFor',
 ];
+
+/** Snake-case variant of {@link DEFAULT_SENSITIVE_KEYS}. */
+export const DEFAULT_SENSITIVE_KEYS_SNAKE: string[] = DEFAULT_SENSITIVE_KEYS.map(toSnakeCase);
+
+/** Kebab-case variant of {@link DEFAULT_SENSITIVE_KEYS}. */
+export const DEFAULT_SENSITIVE_KEYS_KEBAB: string[] = DEFAULT_SENSITIVE_KEYS.map(toKebabCase);
+
+/** Convert `camelCase` to `snake_case` (no-op for already-snake or flat words). */
+function toSnakeCase(s: string): string {
+  return s.replace(/([A-Z])/g, '_$1').toLowerCase();
+}
+
+/** Convert `camelCase` to `kebab-case` (no-op for already-kebab or flat words). */
+function toKebabCase(s: string): string {
+  return s.replace(/([A-Z])/g, '-$1').toLowerCase();
+}
 
 export function createRedactProcessor(
   keys: string[] = DEFAULT_SENSITIVE_KEYS,
