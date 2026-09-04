@@ -125,7 +125,7 @@ describe('ElectronIpcTransport (electron present)', () => {
     expect(ingest).not.toHaveBeenCalled();
   });
 
-  it('does not register duplicate handlers for the same channel', () => {
+  it('both subscribers receive messages on the same channel', () => {
     const ingest1 = vi.fn();
     const ingest2 = vi.fn();
 
@@ -133,23 +133,38 @@ describe('ElectronIpcTransport (electron present)', () => {
     trackUnregister(unregister1);
     expect(on).toHaveBeenCalledTimes(1);
 
-    // Second registration should not add another handler
+    // Second registration reuses the same handler — does not add another
     const unregister2 = registerIpcReceiver(ingest2);
     trackUnregister(unregister2);
     expect(on).toHaveBeenCalledTimes(1);
 
-    // Verify only the first ingest is called when a message arrives
+    // Both subscribers should receive the message
     const handler = on.mock.calls[0][1] as (event: unknown, payload: unknown) => void;
     handler({}, entry());
     expect(ingest1).toHaveBeenCalledTimes(1);
-    expect(ingest2).not.toHaveBeenCalled();
+    expect(ingest2).toHaveBeenCalledTimes(1);
 
-    // Unregister should allow re-registration
+    // Unregister first only — handler stays, second still receives
+    unregister1();
+    expect(removeListener).toHaveBeenCalledTimes(0);
+    handler({}, entry());
+    expect(ingest1).toHaveBeenCalledTimes(1);
+    expect(ingest2).toHaveBeenCalledTimes(2);
+
+    // Unregister second — now handler is removed
+    unregister2();
+    expect(removeListener).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-registration after last unsubscribe adds a new handler', () => {
+    const ingest1 = vi.fn();
+    const unregister1 = registerIpcReceiver(ingest1);
     unregister1();
     expect(removeListener).toHaveBeenCalledTimes(1);
 
-    const unregister3 = registerIpcReceiver(vi.fn());
-    trackUnregister(unregister3);
+    const ingest2 = vi.fn();
+    const unregister2 = registerIpcReceiver(ingest2);
+    trackUnregister(unregister2);
     expect(on).toHaveBeenCalledTimes(2);
   });
 });

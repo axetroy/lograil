@@ -64,28 +64,39 @@ export interface ClusterReceiverOptions {
   channel?: string;
 }
 /**
- * Shared dedup state on globalThis so that multiple bundled copies of this
- * module all share the same registration flag and callbacks.
+ * Subscriber entry tracked on globalThis so that multiple bundled copies of
+ * this module (e.g. from node_modules hoisting or chunk splitting) share the
+ * same registration set instead of each keeping their own independent one.
  */
-const _DEDUP_CLUSTER = Symbol('lograil:cluster-ipc:dedup');
-interface _ClusterDedupState {
-  registered: boolean;
-  ingest: ((entry: LogEntry) => void) | null;
-  onLevelCommand: ((level: number) => void) | null;
+interface _ClusterSubscriber {
+  ingest: (entry: LogEntry) => void;
+  onLevelCommand?: (level: number) => void;
 }
-function _getClusterState(): _ClusterDedupState {
-  if (typeof globalThis !== 'undefined' && _DEDUP_CLUSTER in globalThis)
-    return globalThis[_DEDUP_CLUSTER as unknown as keyof typeof globalThis] as _ClusterDedupState;
-  const s: _ClusterDedupState = { registered: false, ingest: null, onLevelCommand: null };
+interface _ClusterProcessState {
+  subscribers: _ClusterSubscriber[];
+  handler: (message: unknown) => void;
+}
+const _STATE_CLUSTER = Symbol('lograil:cluster-ipc:state');
+function _getClusterState(): Map<symbol, _ClusterProcessState> {
+  if (typeof globalThis !== 'undefined' && _STATE_CLUSTER in globalThis)
+    return globalThis[_STATE_CLUSTER as unknown as keyof typeof globalThis] as Map<
+      symbol,
+      _ClusterProcessState
+    >;
+  const m = new Map<symbol, _ClusterProcessState>();
   if (typeof globalThis !== 'undefined')
-    (globalThis as Record<symbol, _ClusterDedupState>)[_DEDUP_CLUSTER] = s;
-  return s;
+    (globalThis as Record<symbol, Map<symbol, _ClusterProcessState>>)[_STATE_CLUSTER] = m;
+  return m;
 }
 /**
  * Primary-side helper: listen on the cluster IPC channel and feed received
  * worker entries into the provided `ingest` callback (typically
  * `logger.ingestEntry`). Level-change commands are forwarded to
  * `onLevelCommand` when provided. Returns an unregister function.
+ *
+ * Multiple loggers can safely register on the same process; each receives its
+ * own copy of every message. The 'message' listener is removed only when the
+ * last subscriber unregisters.
  */
 export function registerClusterReceiver(
   ingest: (entry: LogEntry) => void,
@@ -97,51 +108,50 @@ export function registerClusterReceiver(
     removeListener?: (event: string, cb: (...args: unknown[]) => void) => void;
   };
   if (!proc.on || !proc.removeListener) return () => {};
-  // Guard against duplicate registration on the same process.
-  // Use globalThis-based state so multiple bundled copies share the same flag.
-  const state = _getClusterState();
-  if (state.registered) {
-    // Update the callback so the existing handler processes new loggers
-    state.ingest = ingest;
-    state.onLevelCommand = onLevelCommand ?? null;
-    return () => {
-      if (state.ingest === ingest) {
-        state.ingest = null;
-        state.onLevelCommand = null;
+  const stateMap = _getClusterState();
+  let procState = stateMap.get(_STATE_CLUSTER);
+  if (!procState) {
+    // First subscriber for this process — attach a single 'message' handler
+    // that fans out to all registered subscribers.
+    const subscribers: _ClusterSubscriber[] = [];
+    const handler = (message: unknown): void => {
+      if (isLogLevelCommand(message)) {
+        for (const sub of subscribers) {
+          sub.onLevelCommand?.(normalizeLevel(message.level));
+        }
+        return;
+      }
+      if (
+        message &&
+        typeof message === 'object' &&
+        'level' in message &&
+        'message' in message &&
+        'timestamp' in message
+      ) {
+        const entry = message as LogEntry;
+        for (const sub of subscribers) {
+          sub.ingest(entry);
+        }
       }
     };
+    proc.on('message', handler);
+    procState = { subscribers, handler };
+    stateMap.set(_STATE_CLUSTER, procState);
   }
-  state.registered = true;
-  state.ingest = ingest;
-  state.onLevelCommand = onLevelCommand ?? null;
-  const handler = (message: unknown): void => {
-    if (state.onLevelCommand && isLogLevelCommand(message)) {
-      state.onLevelCommand(normalizeLevel(message.level));
-      return;
-    }
-    if (
-      state.ingest &&
-      message &&
-      typeof message === 'object' &&
-      'level' in message &&
-      'message' in message &&
-      'timestamp' in message
-    ) {
-      state.ingest(message as LogEntry);
-    }
-  };
-  proc.on('message', handler);
+  procState.subscribers.push({ ingest, onLevelCommand });
   return () => {
-    state.registered = false;
-    state.ingest = null;
-    state.onLevelCommand = null;
-    proc.removeListener?.('message', handler);
+    const idx = procState.subscribers.findIndex(
+      (s) => s.ingest === ingest && s.onLevelCommand === onLevelCommand,
+    );
+    if (idx !== -1) procState.subscribers.splice(idx, 1);
+    if (procState.subscribers.length === 0) {
+      stateMap.delete(_STATE_CLUSTER);
+      proc.removeListener?.('message', procState.handler);
+    }
   };
 }
 /** Reset internal state for testing. */
 export function _resetClusterReceiverState(): void {
-  const state = _getClusterState();
-  state.registered = false;
-  state.ingest = null;
-  state.onLevelCommand = null;
+  const stateMap = _getClusterState();
+  stateMap.delete(_STATE_CLUSTER);
 }

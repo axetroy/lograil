@@ -134,21 +134,38 @@ describe('registerClusterReceiver', () => {
     expect(ingest).not.toHaveBeenCalled();
   });
 
-  it('second registration updates callback without adding duplicate handler', () => {
+  it('second registration adds subscriber without adding duplicate handler — both receive messages', () => {
     const ingest1 = vi.fn();
     const ingest2 = vi.fn();
-    registerClusterReceiver(ingest1);
-
-    expect(listeners['message']).toHaveLength(1);
-
+    const unregister1 = registerClusterReceiver(ingest1);
     const unregister2 = registerClusterReceiver(ingest2);
 
     expect(listeners['message']).toHaveLength(1);
-    listeners['message'][0](makeEntry({ message: 'second' }));
-    expect(ingest1).not.toHaveBeenCalled();
-    expect(ingest2).toHaveBeenCalledOnce();
+    listeners['message'][0](makeEntry({ message: 'first' }));
+    expect(ingest1).toHaveBeenCalledTimes(1);
+    expect(ingest2).toHaveBeenCalledTimes(1);
 
+    // Unregister first — listener stays, second still receives
+    unregister1();
+    expect(listeners['message']).toHaveLength(1);
+    listeners['message'][0](makeEntry({ message: 'after-unregister-1' }));
+    expect(ingest1).toHaveBeenCalledTimes(1);
+    expect(ingest2).toHaveBeenCalledTimes(2);
+
+    // Unregister second — listener removed
     unregister2();
+    expect(listeners['message']).toBeUndefined();
+  });
+
+  it('level commands are forwarded to all subscribers onLevelCommand', () => {
+    const onLevelCommand1 = vi.fn();
+    const onLevelCommand2 = vi.fn();
+    registerClusterReceiver(vi.fn(), { onLevelCommand: onLevelCommand1 });
+    registerClusterReceiver(vi.fn(), { onLevelCommand: onLevelCommand2 });
+
+    listeners['message'][0]({ __lograilCmd: true, __lograilCmdType: 'setLevel', level: 20 });
+    expect(onLevelCommand1).toHaveBeenCalledWith(20);
+    expect(onLevelCommand2).toHaveBeenCalledWith(20);
   });
 });
 

@@ -96,24 +96,37 @@ export interface IpcReceiverOptions {
   channel?: string;
 }
 /**
- * Shared dedup state on globalThis so that multiple bundled copies of this
- * module (e.g. from node_modules hoisting or chunk splitting) all share the
+ * Subscriber entry tracked on globalThis so that multiple bundled copies of
+ * this module (e.g. from node_modules hoisting or chunk splitting) share the
  * same registration set instead of each keeping their own independent one.
  */
-const _DEDUP_ELECTRON = Symbol('lograil:electron-ipc:dedup');
-function _getRegisteredChannels(): Set<string> {
-  if (typeof globalThis !== 'undefined' && _DEDUP_ELECTRON in globalThis)
-    return globalThis[_DEDUP_ELECTRON as unknown as keyof typeof globalThis] as Set<string>;
-  const s = new Set<string>();
+interface _ElectronSubscriber {
+  ingest: (entry: LogEntry) => void;
+  onLevelCommand?: (level: number) => void;
+}
+interface _ElectronChannelState {
+  subscribers: _ElectronSubscriber[];
+  handler: (event: unknown, payload: unknown) => void;
+}
+const _STATE_ELECTRON = Symbol('lograil:electron-ipc:state');
+function _getElectronState(): Map<string, _ElectronChannelState> {
+  if (typeof globalThis !== 'undefined' && _STATE_ELECTRON in globalThis)
+    return globalThis[_STATE_ELECTRON as unknown as keyof typeof globalThis] as Map<
+      string,
+      _ElectronChannelState
+    >;
+  const m = new Map<string, _ElectronChannelState>();
   if (typeof globalThis !== 'undefined')
-    (globalThis as Record<symbol, Set<string>>)[_DEDUP_ELECTRON] = s;
-  return s;
+    (globalThis as Record<symbol, Map<string, _ElectronChannelState>>)[_STATE_ELECTRON] = m;
+  return m;
 }
 /**
  * Main-side helper: listen on the IPC channel and feed received renderer
  * entries into the provided `ingest` callback (typically `logger.ingestEntry`).
  * Level-change commands are forwarded to `onLevelCommand` when provided.
- * Returns an unregister function.
+ * Multiple loggers can safely register on the same channel; each receives its
+ * own copy of every message. The IPC listener is removed only when the last
+ * subscriber unregisters.
  */
 export function registerIpcReceiver(
   ingest: (entry: LogEntry) => void,
@@ -123,30 +136,42 @@ export function registerIpcReceiver(
   const onLevelCommand = options.onLevelCommand;
   // `electron` is only present in a main process; resolve it lazily.
   const ipcMain = getElectron().ipcMain;
-  const handler = (_event: unknown, payload: unknown): void => {
-    const data = payload as LogEntry | LogLevelCommand;
-    if (isLogLevelCommand(data)) {
-      onLevelCommand?.(normalizeLevel(data.level));
-      return;
-    }
-    const entry = data as LogEntry;
-    // Copy-on-write: mark renderer-origin without mutating a shared/frozen entry.
-    ingest({
-      ...entry,
-      metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
-    });
-  };
-  // Guard against duplicate registration: if this channel is already tracked,
-  // do not add another handler (multiple loggers on the same channel would
-  // cause each IPC message to be processed once per logger).
-  const registeredChannels = _getRegisteredChannels();
-  if (registeredChannels.has(channel)) {
-    return () => {};
+  const stateMap = _getElectronState();
+  let channelState = stateMap.get(channel);
+  if (!channelState) {
+    // First subscriber for this channel — attach a single IPC handler that
+    // fans out to all registered subscribers.
+    const subscribers: _ElectronSubscriber[] = [];
+    const handler = (_event: unknown, payload: unknown): void => {
+      const data = payload as LogEntry | LogLevelCommand;
+      if (isLogLevelCommand(data)) {
+        for (const sub of subscribers) {
+          sub.onLevelCommand?.(normalizeLevel(data.level));
+        }
+        return;
+      }
+      const entry = data as LogEntry;
+      for (const sub of subscribers) {
+        // Copy-on-write: mark renderer-origin without mutating a shared/frozen entry.
+        sub.ingest({
+          ...entry,
+          metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
+        });
+      }
+    };
+    ipcMain.on(channel, handler);
+    channelState = { subscribers, handler };
+    stateMap.set(channel, channelState);
   }
-  registeredChannels.add(channel);
-  ipcMain.on(channel, handler);
+  channelState.subscribers.push({ ingest, onLevelCommand });
   return () => {
-    registeredChannels.delete(channel);
-    ipcMain.removeListener(channel, handler);
+    const idx = channelState.subscribers.findIndex(
+      (s) => s.ingest === ingest && s.onLevelCommand === onLevelCommand,
+    );
+    if (idx !== -1) channelState.subscribers.splice(idx, 1);
+    if (channelState.subscribers.length === 0) {
+      stateMap.delete(channel);
+      ipcMain.removeListener(channel, channelState.handler);
+    }
   };
 }

@@ -54,22 +54,29 @@ export interface WorkerReceiverOptions {
   worker?: MessageTarget;
 }
 /**
- * Shared dedup state on globalThis so that multiple bundled copies of this
- * module all share the same registration flag and callbacks.
+ * Subscriber entry tracked on globalThis so that multiple bundled copies of
+ * this module (e.g. from node_modules hoisting or chunk splitting) share the
+ * same registration set instead of each keeping their own independent one.
  */
-const _DEDUP_WORKER = Symbol('lograil:worker-ipc:dedup');
-interface _WorkerDedupState {
-  registered: boolean;
-  ingest: ((entry: LogEntry) => void) | null;
-  onLevelCommand: ((level: number) => void) | null;
+interface _WorkerSubscriber {
+  ingest: (entry: LogEntry) => void;
+  onLevelCommand?: (level: number) => void;
 }
-function _getWorkerState(): _WorkerDedupState {
-  if (typeof globalThis !== 'undefined' && _DEDUP_WORKER in globalThis)
-    return globalThis[_DEDUP_WORKER as unknown as keyof typeof globalThis] as _WorkerDedupState;
-  const s: _WorkerDedupState = { registered: false, ingest: null, onLevelCommand: null };
+interface _WorkerGlobalState {
+  subscribers: _WorkerSubscriber[];
+  handler: (event: MessageEvent) => void;
+}
+const _STATE_WORKER = Symbol('lograil:worker-ipc:state');
+function _getWorkerState(): Map<symbol, _WorkerGlobalState> {
+  if (typeof globalThis !== 'undefined' && _STATE_WORKER in globalThis)
+    return globalThis[_STATE_WORKER as unknown as keyof typeof globalThis] as Map<
+      symbol,
+      _WorkerGlobalState
+    >;
+  const m = new Map<symbol, _WorkerGlobalState>();
   if (typeof globalThis !== 'undefined')
-    (globalThis as Record<symbol, _WorkerDedupState>)[_DEDUP_WORKER] = s;
-  return s;
+    (globalThis as Record<symbol, Map<symbol, _WorkerGlobalState>>)[_STATE_WORKER] = m;
+  return m;
 }
 /**
  * Main-thread helper: listen for worker entries and feed them into the
@@ -137,61 +144,61 @@ export function registerWorkerReceiver(
     }
   }
   // Global self.onmessage — shared worker / fallback
-  // Guard against duplicate registration on the global scope.
-  // Use globalThis-based state so multiple bundled copies share the same flag.
-  const state = _getWorkerState();
-  if (state.registered) {
-    // Update the callback so the existing handler processes new loggers
-    state.ingest = ingest;
-    state.onLevelCommand = onLevelCommand ?? null;
-    return () => {
-      if (state.ingest === ingest) {
-        state.ingest = null;
-        state.onLevelCommand = null;
+  const stateMap = _getWorkerState();
+  let globalState = stateMap.get(_STATE_WORKER);
+  if (!globalState) {
+    // First subscriber — attach a single handler that fans out to all subscribers.
+    const subscribers: _WorkerSubscriber[] = [];
+    const globalHandler = (event: MessageEvent): void => {
+      const data = event.data;
+      if (
+        data &&
+        typeof data === 'object' &&
+        '__lograilWorker' in data &&
+        data.__lograilWorker === true &&
+        'entry' in data
+      ) {
+        for (const sub of subscribers) {
+          sub.ingest(data.entry as LogEntry);
+        }
+      } else if (isLogLevelCommand(data)) {
+        for (const sub of subscribers) {
+          sub.onLevelCommand?.(normalizeLevel(data.level));
+        }
       }
     };
+    const targetSelf = typeof self !== 'undefined' ? self : null;
+    if (targetSelf) {
+      targetSelf.addEventListener('message', globalHandler as EventListener);
+      globalState = { subscribers, handler: globalHandler };
+      stateMap.set(_STATE_WORKER, globalState);
+    }
   }
-  state.registered = true;
-  state.ingest = ingest;
-  state.onLevelCommand = onLevelCommand ?? null;
-  const globalHandler = (event: MessageEvent): void => {
-    const data = event.data;
-    if (
-      data &&
-      typeof data === 'object' &&
-      '__lograilWorker' in data &&
-      data.__lograilWorker === true &&
-      'entry' in data
-    ) {
-      if (state.ingest) {
-        state.ingest(data.entry as LogEntry);
+  if (!globalState) {
+    // No `self` available in this environment — no-op
+    return () => {};
+  }
+  globalState.subscribers.push({ ingest, onLevelCommand });
+  return () => {
+    const idx = globalState.subscribers.findIndex(
+      (s) => s.ingest === ingest && s.onLevelCommand === onLevelCommand,
+    );
+    if (idx !== -1) globalState.subscribers.splice(idx, 1);
+    if (globalState.subscribers.length === 0) {
+      const targetSelf = typeof self !== 'undefined' ? self : null;
+      if (targetSelf) {
+        targetSelf.removeEventListener('message', globalState.handler as EventListener);
+        // Restore previous onmessage if it was set by something else
+        if (targetSelf.onmessage === globalState.handler) {
+          targetSelf.onmessage = null;
+        }
       }
-    } else if (isLogLevelCommand(data) && state.onLevelCommand) {
-      state.onLevelCommand(normalizeLevel(data.level));
+      stateMap.delete(_STATE_WORKER);
     }
   };
-  // Safe access to self — only in environments where self exists
-  const targetSelf = typeof self !== 'undefined' ? self : null;
-  if (targetSelf) {
-    const prevOnMessage = targetSelf.onmessage;
-    targetSelf.addEventListener('message', globalHandler as EventListener);
-    return () => {
-      state.registered = false;
-      state.ingest = null;
-      state.onLevelCommand = null;
-      targetSelf.removeEventListener('message', globalHandler as EventListener);
-      if (targetSelf.onmessage === globalHandler || targetSelf.onmessage === prevOnMessage) {
-        targetSelf.onmessage = prevOnMessage;
-      }
-    };
-  }
-  // Fallback for Node environments without self — no-op
-  return () => {};
 }
 /** Reset internal state for testing. */
 export function _resetWorkerReceiverState(): void {
-  const state = _getWorkerState();
-  state.registered = false;
-  state.ingest = null;
-  state.onLevelCommand = null;
+  const stateMap = _getWorkerState();
+  stateMap.delete(_STATE_WORKER);
 }
