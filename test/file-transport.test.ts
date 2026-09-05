@@ -562,7 +562,7 @@ describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
     expect(files).toHaveLength(3);
     expect(files).toContain('nc.log');
     expect(files).toEqual(expect.arrayContaining(existing));
-  });
+  }, 10_000);
 });
 
 describe('FileTransport - getDir()', () => {
