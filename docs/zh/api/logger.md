@@ -165,8 +165,8 @@ settle，会被作为超时错误上报，因此 `flush()` / `destroy()` 总会 
 const logger = createLogger({ secure: false });
 ```
 
-这会默认启用 {@link createRedactProcessor}（使用
-{@link DEFAULT_SENSITIVE_KEYS} 内置密钥列表）。默认密钥列表涵盖
+这会默认启用 `createRedactProcessor`（使用
+`DEFAULT_SENSITIVE_KEYS` 内置密钥列表）。默认密钥列表涵盖
 `password`、`token`、`apiKey`、`authorization`、`cookie`、`privateKey`、
 `sessionId`、`csrf`、`otp`、`ssn`、`accessToken`、`bearer`、`appKey`、
 `appSecret`、`clientKey`、`clientSecret`、`publishableKey`、`secretKey`、

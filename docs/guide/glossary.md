@@ -127,8 +127,9 @@ A namespace used to separate logs by module and for filtering. Calling
 (for example `app` -> `app:http`).
 
 ```ts
-const http = logger.scope('http'); // scope: 'http'
-http.info('request received'); // entry includes scope 'http'
+const app = logger.scope('app');
+const http = app.scope('http'); // scope: 'app:http'
+http.info('request received'); // entry includes scope 'app:http'
 ```
 
 ## Context
