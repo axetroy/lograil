@@ -170,8 +170,8 @@ const logger = createLogger({ secure: false });
 `password`、`token`、`apiKey`、`authorization`、`cookie`、`privateKey`、
 `sessionId`、`csrf`、`otp`、`ssn`、`accessToken`、`bearer`、`appKey`、
 `appSecret`、`clientKey`、`clientSecret`、`publishableKey`、`secretKey`、
-`webhookSecret`、`cvv`、`pin` 等。已有的 pipeline processor 不受影响，
-脱敏会在这些现有 processor 之后执行。
+`webhookSecret`、`cvv`、`pin` 等。已有的管线处理器不受影响，
+脱敏会在这些现有处理器之后执行。
 
 > **注意误脱敏：** 字段名如 `token`、`password` 若出现在非机密业务数据中
 > （例如 `passwordResetCode`，或用户字段就叫 `token`）也会被替换为 `[REDACTED]`。

@@ -188,8 +188,8 @@ that off, pass `secure: false` when creating the logger:
 const logger = createLogger({ secure: false });
 ```
 
-By default this enables `createRedactProcessor` (with
-`DEFAULT_SENSITIVE_KEYS`). The
+By default this enables redaction by running `createRedactProcessor` with
+`DEFAULT_SENSITIVE_KEYS`. The
 default key list covers `password`, `token`, `apiKey`, `authorization`, `cookie`,
 `privateKey`, `sessionId`, `csrf`, `otp`, `ssn`, `accessToken`, `bearer`,
 `appKey`, `appSecret`, `clientKey`, `clientSecret`, `publishableKey`,
