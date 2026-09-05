@@ -136,6 +136,8 @@ http.info('request received'); // entry includes scope 'app:http'
 
 Key/value pairs set via `setContext()` and attached to every log entry automatically. Useful for request-scoped data like `userId` and `requestId`.
 
+This is logger-owned context (stored on the logger itself), not ambient async context propagation.
+
 Children inherit context from the parent, but with isolated copies.
 
 ```ts

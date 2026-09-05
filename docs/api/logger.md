@@ -188,8 +188,8 @@ that off, pass `secure: false` when creating the logger:
 const logger = createLogger({ secure: false });
 ```
 
-This injects {@link createRedactProcessor} (with
-{@link DEFAULT_SENSITIVE_KEYS}) as the first processor in the pipeline. The
+This appends {@link createRedactProcessor} (with
+{@link DEFAULT_SENSITIVE_KEYS}) to the pipeline's processor chain by default. The
 default key list covers `password`, `token`, `apiKey`, `authorization`, `cookie`,
 `privateKey`, `sessionId`, `csrf`, `otp`, `ssn`, `accessToken`, `bearer`,
 `appKey`, `appSecret`, `clientKey`, `clientSecret`, `publishableKey`,

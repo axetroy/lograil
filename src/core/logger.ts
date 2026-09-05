@@ -199,8 +199,8 @@ export interface LoggerOptions {
    * Enable built-in redaction of common secret / PII fields (password, token,
    * apiKey, cookie, authorization, private key, sessionId, csrf, otp, ssn, …).
    * Injects {@link createRedactProcessor} with {@link DEFAULT_SENSITIVE_KEYS}
-   * as the first processor in the pipeline. Runs after any user-supplied
-   * processors, so custom enrichment runs before redaction. Default `true` —
+   * after any user-supplied processors, so custom enrichment runs before
+   * redaction. Default `true` —
    * set to `false` to opt out.
    */
   secure?: boolean;

@@ -140,6 +140,8 @@ http.info('request received');    // 日志中包含 scope: 'app:http'
 
 通过 `setContext()` 设置的键值对，会**自动附加到每条日志**。用于请求级数据，如 `userId`、`requestId`。
 
+这里指的是 logger 自身持有的上下文（绑定在 logger 实例上），不是后文的环境异步上下文传播。
+
 子 logger 会从父级继承 context，但每个子 logger 有独立的拷贝。
 
 ```ts
