@@ -11,7 +11,7 @@ import {
 import { mkdir, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileTransport, createLineFormatter, enforceGlobalCaps } from '../src/index.js';
+import { FileTransport, createLineFormatter } from '../src/index.js';
 
 function entry(message: string): never {
   return { levelName: 'info', message } as never;
@@ -540,28 +540,11 @@ describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
     t.write(entry('new'), 'new');
     await t.flush();
     await t.close();
-    expect(readdirSync(dir).filter((f) => f.startsWith('nc.') && f !== 'nc.log')).toHaveLength(3);
+    const files = readdirSync(dir)
+      .filter((f) => f.startsWith('nc.'))
+      .sort();
+    expect(files).toEqual(['nc.1.log', 'nc.2.log', 'nc.3.log', 'nc.log']);
   }, 10_000);
-
-  it('global caps helper is a no-op when no caps are configured', async () => {
-    const dir = join(base, 'none-helper');
-    await mkdir(dir, { recursive: true });
-    const stale = 'nh.1.log';
-    writeFileSync(join(dir, stale), 'data');
-    const owned = new Set<string>([stale]);
-
-    await enforceGlobalCaps({
-      dir,
-      activePath: join(dir, 'nh.log'),
-      maxTotalSize: Number.POSITIVE_INFINITY,
-      maxAge: -1,
-      now: Date.now(),
-      owned,
-    });
-
-    expect(existsSync(join(dir, stale))).toBe(true);
-    expect(owned.has(stale)).toBe(true);
-  });
 });
 
 describe('FileTransport - getDir()', () => {
