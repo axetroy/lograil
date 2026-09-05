@@ -3,7 +3,7 @@ import { basename, dirname, join } from '../shims/index.js';
 import { tmpdir } from '../shims/index.js';
 import type { LogEntry } from '../types.js';
 import type { Formatter } from '../pipeline/formatter.js';
-import { createJsonFormatter } from '../pipeline/formatter.js';
+import { createLineFormatter } from '../pipeline/formatter.js';
 import type { Transport } from './transport.js';
 import type {
   FileTransportOptions,
@@ -99,7 +99,7 @@ export class FileTransport implements Transport {
     this.dir = options.dir ?? tmpdir();
     this.ext = options.ext ?? 'log';
     this.name = options.name ?? `file:${options.appName}`;
-    this.formatter = options.formatter ?? createJsonFormatter();
+    this.formatter = options.formatter ?? createLineFormatter();
     this.filter = options.filter;
     this.maxTotalSize = options.maxTotalSize ?? Infinity;
     this.maxAge = options.maxAge ?? -1;

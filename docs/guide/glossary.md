@@ -58,7 +58,7 @@ type Processor = (entry: LogEntry) => LogEntry | null;
 
 内置格式化器：
 - `createLineFormatter()` — 可读的行格式（用于控制台）
-- `createJsonFormatter()` — JSON 格式（用于文件）
+- `createJsonFormatter()` — JSON 格式（结构化输出）
 
 ```ts
 type Formatter = (entry: LogEntry, config: FormatterConfig) => string;

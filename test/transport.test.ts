@@ -171,7 +171,7 @@ describe('FileTransport (rotate-time mode)', () => {
     await t.close();
     const content = (await readFile(join(dir, 'app.2024-01-01.0.log'), 'utf8')).trim();
     expect(content.split('\n')).toHaveLength(1);
-    expect(JSON.parse(content).message).toBe('one');
+    expect(content).toContain('one');
   });
 
   it('opens a new dated file on a new day, keeping the previous day file', async () => {
