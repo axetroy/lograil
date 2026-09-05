@@ -27,8 +27,6 @@ features:
     details: Web、Node.js 与 Electron 开箱即用，运行时会自动探测——一套 API，无需为不同平台写额外代码。
   - title: 插件可扩展
     details: 插件可在运行时添加传输器、重构管道、拦截日志条目，甚至注册其他插件。实现自定义运行时适配器，即可支持任意其他平台。
-  - title: 插件系统
-    details: 插件可在运行时添加传输器、重构管道、拦截日志条目，甚至注册其他插件。
   - title: 轻量且类型完备
     details: 使用 TypeScript 编写，同时提供 ESM 与 CJS 构建，基于 MIT 许可，并通过子路径导出支持按需引入。
   - title: 按传输器路由
@@ -43,10 +41,9 @@ features:
 
 - **贡献指南** — 本地环境、测试/lint 门禁与规范：
   [CONTRIBUTING.md](https://github.com/axetroy/lograil/blob/main/CONTRIBUTING.md)
-- **安全策略** — 如何 privately 上报安全漏洞：
+- **安全策略** — 如何私下上报安全漏洞：
   [SECURITY.md](https://github.com/axetroy/lograil/blob/main/SECURITY.md)
 - **更新日志** — 每次发版由 git 历史自动生成：
   [CHANGELOG.md](https://github.com/axetroy/lograil/blob/main/CHANGELOG.md)
 - **迁移指南**（来自 `electron-log` / `winston` / `pino`）：[指南](/zh/guide/migrating)
 - **故障排查与 FAQ**：[指南](/zh/guide/troubleshooting)
-

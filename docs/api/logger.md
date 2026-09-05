@@ -181,24 +181,20 @@ continue to be written in order.
 
 ## Security note
 
-By default lograil does **not** redact sensitive fields. If `context`, `metadata`
-or `args` contain passwords, tokens, API keys, cookies or other secrets they will
-be passed through to formatters and transports verbatim. To enable automatic
-redaction of common secret / PII fields, pass `secure: true` when creating the
-logger:
+By default lograil **does** redact common sensitive fields. If you want to turn
+that off, pass `secure: false` when creating the logger:
 
 ```ts
-const logger = createLogger({ secure: true });
+const logger = createLogger({ secure: false });
 ```
 
-This injects {@link createRedactProcessor} (with
-{@link DEFAULT_SENSITIVE_KEYS}) as the first processor in the pipeline. The
+By default this enables redaction by running `createRedactProcessor` with
+`DEFAULT_SENSITIVE_KEYS`. The
 default key list covers `password`, `token`, `apiKey`, `authorization`, `cookie`,
 `privateKey`, `sessionId`, `csrf`, `otp`, `ssn`, `accessToken`, `bearer`,
 `appKey`, `appSecret`, `clientKey`, `clientSecret`, `publishableKey`,
 `secretKey`, `webhookSecret`, `cvv`, `pin` and more. Existing pipeline
-processors are preserved and the redact processor runs after them. To disable
-redaction set `secure: false`.
+processors are preserved, and redaction runs after any existing processors.
 
 > **Beware of false positives:** keys like `token` or `password` that appear in
 > non-secret business data (e.g. `passwordResetCode`, `csrfToken` already covered,

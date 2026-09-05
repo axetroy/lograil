@@ -44,13 +44,11 @@ type Filter = (entry: LogEntry) => boolean;
 
 ### Processor（处理器）
 
-修改或增强日志条目。返回新的 `LogEntry`（或 `null` 丢弃）。
+在格式化前修改或增强日志条目。
+返回 `null` 时会丢弃该条目。
 
 典型用途：添加元数据、脱敏敏感字段、采样。
 
-```ts
-type Processor = (entry: LogEntry) => LogEntry | null;
-```
 
 ### Formatter（格式化器）
 
@@ -129,16 +127,21 @@ lograil 同时提供两种格式的构建，方便不同项目使用。
 
 ## 作用域（Scope）
 
-用 `:` 分隔的模块标识，如 `app:http`、`app:db`。用于区分不同模块的日志，也可用于过滤器。
+用于区分模块日志与过滤的作用域标识。
+当从已带作用域的 logger 再派生时，会用 `:` 拼接
+（例如从作用域为 `app` 的 logger 再派生：`app` -> `app:http`）。
 
 ```ts
-const http = logger.scope('http'); // scope 为 'app:http'
-http.info('request received');    // 日志中包含 scope: 'app:http'
+const app = logger.scope('app');
+const http = app.scope('http'); // scope 为 'app:http'
+http.info('request received');  // 日志中包含 scope: 'app:http'
 ```
 
 ## 上下文（Context）
 
 通过 `setContext()` 设置的键值对，会**自动附加到每条日志**。用于请求级数据，如 `userId`、`requestId`。
+
+这里指的是 logger 自身持有的上下文（绑定在 logger 实例上），不是后文的环境异步上下文传播。
 
 子 logger 会从父级继承 context，但每个子 logger 有独立的拷贝。
 
@@ -152,24 +155,18 @@ logger.info('hello'); // → { context: { userId: 'u-123' }, ... }
 单条日志的额外字段，通常由 **processor** 或 **plugin** 注入。不会跨调用持久化。
 
 ```ts
-// processor 示例：添加耗时
-const timingProcessor: Processor = (entry) => ({
+// processor 示例：添加来源标签
+const metadataProcessor = (entry: LogEntry) => ({
   ...entry,
-  metadata: { ...entry.metadata, durationMs: Date.now() - entry.startTime },
+  metadata: { ...entry.metadata, source: 'api' },
 });
 ```
 
 ## 异步上下文
 
 基于 Node.js `AsyncLocalStorage` 的上下文管理。在异步操作链中自动传播上下文，无需手动传递。
-
-```ts
-import { asyncContext } from 'lograil';
-
-asyncContext.with({ traceId: 'abc' }, async () => {
-  await someAsyncWork(); // 这条异步链路中的日志都会携带 traceId
-});
-```
+导出的 API 名称是 `asyncContext`（以及 `runWithContext`）。
+精确签名与用法请见 [Context](/zh/api/context)。
 
 ## 插件（Plugin）
 

@@ -147,30 +147,31 @@ await logger.destroy(): Promise<void>;
 
 ## 错误处理
 
-`log.*` 调用永远不会抛出。当 `Filter` / `Processor` / `plugin.onEntry` 抛错、`Formatter`
-抛错，或 `Transport.write` 抛错 / 卡住时，错误会通过 `onError` 选项（默认：原生
-`console.error`）上报一次，并携带 `info.phase`（`'filter' | 'process' | 'plugin' |\
-'formatter' | 'transport'`），且**绝不**向上抛给调用方。异步 `Transport.write` 若在\
-`writeTimeoutMs`（默认 5000ms）内未 settle，会被作为超时错误上报，因此 `flush()` /\
-`destroy()` 总会 resolve。详见 [配置](/zh/guide/configuration)。\
+`log.*` 调用永远不会抛出。当 `Filter` / `Processor` / `plugin.onEntry` 抛错、
+`Formatter` 抛错，或 `Transport.write` 抛错 / 卡住时，错误会通过 `onError`
+选项（默认：原生 `console.error`）上报一次，并携带 `info.phase`
+（`'filter' | 'process' | 'plugin' | 'formatter' | 'transport'`），且**绝不**
+向上抛给调用方。异步 `Transport.write` 若在 `writeTimeoutMs`（默认 5000ms）内未
+settle，会被作为超时错误上报，因此 `flush()` / `destroy()` 总会 resolve。详见
+[配置](/zh/guide/configuration)。
 
 当设置了 `maxQueueDepth`（或传输器自身的 `queueLimit`）且 pending 队列深度达到上限时，最新条目会**立即被丢弃**并通过 `onError` 上报（`phase: 'transport'`）。此举防止慢 sink 导致内存无限增长；只有被丢弃的条目丢失，已在队列中的早期条目仍按顺序正常写入。
 
 ## 安全说明
 
-默认情况下 lograil **不会**对敏感字段做脱敏处理。若 `context`、`metadata` 或 `args` 包含密码、token、API key、cookie 等敏感信息，它们会被原样传递给 formatter 和 transport 输出。如需自动脱敏常见机密 / PII 字段，创建 logger 时传入 `secure: true`：
+默认情况下 lograil **会**对常见敏感字段做脱敏处理。若你想关闭它，创建 logger 时传入 `secure: false`：
 
 ```ts
-const logger = createLogger({ secure: true });
+const logger = createLogger({ secure: false });
 ```
 
-这会在 pipeline 最前端注入 {@link createRedactProcessor}（使用
-{@link DEFAULT_SENSITIVE_KEYS} 内置密钥列表）。默认密钥列表涵盖
+这会默认启用 `createRedactProcessor`（使用
+`DEFAULT_SENSITIVE_KEYS` 内置密钥列表）。默认密钥列表涵盖
 `password`、`token`、`apiKey`、`authorization`、`cookie`、`privateKey`、
 `sessionId`、`csrf`、`otp`、`ssn`、`accessToken`、`bearer`、`appKey`、
 `appSecret`、`clientKey`、`clientSecret`、`publishableKey`、`secretKey`、
-`webhookSecret`、`cvv`、`pin` 等。已有的 pipeline processor 不受影响，
-脱敏处理器在其之后执行。设 `secure: false` 可关闭脱敏。
+`webhookSecret`、`cvv`、`pin` 等。已有的管线处理器不受影响，
+脱敏会在这些现有处理器之后执行。
 
 > **注意误脱敏：** 字段名如 `token`、`password` 若出现在非机密业务数据中
 > （例如 `passwordResetCode`，或用户字段就叫 `token`）也会被替换为 `[REDACTED]`。
