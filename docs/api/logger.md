@@ -188,13 +188,13 @@ that off, pass `secure: false` when creating the logger:
 const logger = createLogger({ secure: false });
 ```
 
-This appends {@link createRedactProcessor} (with
-{@link DEFAULT_SENSITIVE_KEYS}) to the pipeline's processor chain by default. The
+By default this enables {@link createRedactProcessor} (with
+{@link DEFAULT_SENSITIVE_KEYS}). The
 default key list covers `password`, `token`, `apiKey`, `authorization`, `cookie`,
 `privateKey`, `sessionId`, `csrf`, `otp`, `ssn`, `accessToken`, `bearer`,
 `appKey`, `appSecret`, `clientKey`, `clientSecret`, `publishableKey`,
 `secretKey`, `webhookSecret`, `cvv`, `pin` and more. Existing pipeline
-processors are preserved and the redact processor runs after them.
+processors are preserved, and redaction runs after any existing processors.
 
 > **Beware of false positives:** keys like `token` or `password` that appear in
 > non-secret business data (e.g. `passwordResetCode`, `csrfToken` already covered,

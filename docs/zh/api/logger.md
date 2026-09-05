@@ -165,13 +165,13 @@ settle，会被作为超时错误上报，因此 `flush()` / `destroy()` 总会 
 const logger = createLogger({ secure: false });
 ```
 
-这会默认将 {@link createRedactProcessor}（使用
-{@link DEFAULT_SENSITIVE_KEYS} 内置密钥列表）追加到 pipeline 的处理器链末尾。默认密钥列表涵盖
+这会默认启用 {@link createRedactProcessor}（使用
+{@link DEFAULT_SENSITIVE_KEYS} 内置密钥列表）。默认密钥列表涵盖
 `password`、`token`、`apiKey`、`authorization`、`cookie`、`privateKey`、
 `sessionId`、`csrf`、`otp`、`ssn`、`accessToken`、`bearer`、`appKey`、
 `appSecret`、`clientKey`、`clientSecret`、`publishableKey`、`secretKey`、
 `webhookSecret`、`cvv`、`pin` 等。已有的 pipeline processor 不受影响，
-脱敏处理器在其之后执行。
+脱敏会在这些现有 processor 之后执行。
 
 > **注意误脱敏：** 字段名如 `token`、`password` 若出现在非机密业务数据中
 > （例如 `passwordResetCode`，或用户字段就叫 `token`）也会被替换为 `[REDACTED]`。
