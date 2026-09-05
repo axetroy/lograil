@@ -130,8 +130,8 @@ lograil 同时提供两种格式的构建，方便不同项目使用。
 用 `:` 分隔的模块标识，如 `app:http`、`app:db`。用于区分不同模块的日志，也可用于过滤器。
 
 ```ts
-const http = logger.scope('http'); // scope 为 'app:http'
-http.info('request received');    // 日志中包含 scope: 'app:http'
+const http = logger.scope('http'); // scope 为 'http'
+http.info('request received');    // 日志中包含 scope: 'http'
 ```
 
 ## 上下文（Context）

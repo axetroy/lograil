@@ -125,8 +125,8 @@ From low to high:
 A `:`-joined namespace, such as `app:http` or `app:db`, used to separate logs by module and for filtering.
 
 ```ts
-const http = logger.scope('http'); // scope: 'app:http'
-http.info('request received'); // entry includes scope 'app:http'
+const http = logger.scope('http'); // scope: 'http'
+http.info('request received'); // entry includes scope 'http'
 ```
 
 ## Context
