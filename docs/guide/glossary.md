@@ -150,9 +150,9 @@ logger.info('hello'); // -> { context: { userId: 'u-123' }, ... }
 Per-entry extra fields, usually injected by a processor or plugin. Metadata is not persistent across calls.
 
 ```ts
-const timingProcessor: Processor = (entry) => ({
+const metadataProcessor: Processor = (entry) => ({
   ...entry,
-  metadata: { ...entry.metadata, durationMs: 42 },
+  metadata: { ...entry.metadata, source: 'api' },
 });
 ```
 

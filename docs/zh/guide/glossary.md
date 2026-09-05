@@ -154,10 +154,10 @@ logger.info('hello'); // → { context: { userId: 'u-123' }, ... }
 单条日志的额外字段，通常由 **processor** 或 **plugin** 注入。不会跨调用持久化。
 
 ```ts
-// processor 示例：添加耗时
-const timingProcessor: Processor = (entry) => ({
+// processor 示例：添加来源标签
+const metadataProcessor: Processor = (entry) => ({
   ...entry,
-  metadata: { ...entry.metadata, durationMs: 42 },
+  metadata: { ...entry.metadata, source: 'api' },
 });
 ```
 
