@@ -546,6 +546,23 @@ describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
     expect(files).toContain('nc.log');
     expect(files).toEqual(expect.arrayContaining(history));
   }, 10_000);
+
+  it('preserves pre-existing matching files and still creates the active file in single mode', async () => {
+    const dir = join(base, 'none-preserve');
+    await mkdir(dir, { recursive: true });
+    const existing = ['nc.legacy.log', 'nc.prev.log'];
+    for (const name of existing) writeFileSync(join(dir, name), 'data');
+
+    const t = new FileTransport({ mode: 'single', appName: 'nc', dir, ext: 'log' });
+    t.write(entry('new'), 'new');
+    await t.flush();
+    await t.close();
+
+    const files = readdirSync(dir).filter((f) => f.startsWith('nc.'));
+    expect(files).toHaveLength(3);
+    expect(files).toContain('nc.log');
+    expect(files).toEqual(expect.arrayContaining(existing));
+  });
 });
 
 describe('FileTransport - getDir()', () => {
