@@ -122,9 +122,9 @@ From low to high:
 
 ## Scope
 
-A namespace used to separate logs by module and for filtering. Calling
-`logger.scope('http')` produces `http`; chaining scopes joins with `:`
-(for example `app` -> `app:http`).
+A namespace used to separate logs by module and for filtering.
+Direct derivation (`logger.scope('http')`) produces `http`.
+Chained derivation joins scopes with `:` (for example `app` -> `app:http`).
 
 ```ts
 const app = logger.scope('app');
@@ -150,7 +150,7 @@ logger.info('hello'); // -> { context: { userId: 'u-123' }, ... }
 Per-entry extra fields, usually injected by a processor or plugin. Metadata is not persistent across calls.
 
 ```ts
-const metadataProcessor: Processor = (entry) => ({
+const metadataProcessor = (entry: LogEntry) => ({
   ...entry,
   metadata: { ...entry.metadata, source: 'api' },
 });

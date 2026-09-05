@@ -127,8 +127,9 @@ lograil 同时提供两种格式的构建，方便不同项目使用。
 
 ## 作用域（Scope）
 
-用于区分模块日志与过滤的作用域标识。调用 `logger.scope('http')` 会得到
-`http`；链式派生时会用 `:` 拼接（例如 `app` -> `app:http`）。
+用于区分模块日志与过滤的作用域标识。
+直接派生（`logger.scope('http')`）会得到 `http`。
+链式派生会用 `:` 拼接（例如 `app` -> `app:http`）。
 
 ```ts
 const app = logger.scope('app');
@@ -155,7 +156,7 @@ logger.info('hello'); // → { context: { userId: 'u-123' }, ... }
 
 ```ts
 // processor 示例：添加来源标签
-const metadataProcessor: Processor = (entry) => ({
+const metadataProcessor = (entry: LogEntry) => ({
   ...entry,
   metadata: { ...entry.metadata, source: 'api' },
 });
