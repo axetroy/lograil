@@ -118,7 +118,7 @@ import { Logger, ConsoleTransport } from 'lograil';
 const logger = new Logger({
   transports: [
     // Local file: all levels
-    new FileTransport({ name: 'file', path: './logs/app.log' }),
+    new FileTransport({ mode: 'single', appName: 'app', dir: './logs' }),
     // Remote: only errors and above
     new OtlpTransport({
       endpoint: 'http://localhost:4318/v1/logs',

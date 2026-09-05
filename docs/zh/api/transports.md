@@ -32,7 +32,7 @@ onError 不仅在 write() 失败时被调用，FileTransport 还会通过它上�
 ```ts
 interface ConsoleTransportOptions {
   name?: string;
-  formatter?: Formatter;
+  formatter?: Formatter; // 默认 createLineFormatter()
   methodMap?: Partial<Record<string, (...args: unknown[]) => void>>;
   /** 路由到 `console.error`（stderr）的级别。默认为空——内置 `methodMap` 已把
    * `error`/`fatal` 发往 stderr；可在此追加 `'warn'` 等。 */
@@ -50,7 +50,7 @@ class ConsoleTransport implements Transport;
 interface FileBaseOptions {
   appName: string; // 必填；日志文件名始终包含它
   dir?: string; // 默认 os.tmpdir()
-  formatter?: Formatter;
+  formatter?: Formatter; // 默认 createLineFormatter()
   filter?: (entry: LogEntry) => boolean; // 返回 false 时丢弃该条目
   name?: string; // 传输器名，用于诊断与 removeTransport；默认 `file:<appName>`（不参与文件名）
   /** 所有文件（活动 + 历史）的总体积上限。默认 Infinity。 */

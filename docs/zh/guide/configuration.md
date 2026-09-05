@@ -108,7 +108,7 @@ import { Logger, ConsoleTransport } from 'lograil';
 const logger = new Logger({
   transports: [
     // 本地文件：所有级别
-    new FileTransport({ name: 'file', path: './logs/app.log' }),
+    new FileTransport({ mode: 'single', appName: 'app', dir: './logs' }),
     // 远程：仅 error 及以上
     new OtlpTransport({
       endpoint: 'http://localhost:4318/v1/logs',

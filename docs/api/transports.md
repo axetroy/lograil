@@ -36,7 +36,7 @@ them via logging, metrics, or alerts.
 ```ts
 interface ConsoleTransportOptions {
   name?: string;
-  formatter?: Formatter;
+  formatter?: Formatter; // default createLineFormatter()
   methodMap?: Partial<Record<string, (...args: unknown[]) => void>>;
   /** Levels routed to `console.error` (stderr). Defaults to empty — the built-in
    * `methodMap` already sends `error`/`fatal` to stderr; add `'warn'` etc. here. */
@@ -56,7 +56,7 @@ piping warnings/errors to a separate stream.
 interface FileBaseOptions {
   appName: string; // required; the log file name always contains it
   dir?: string; // default os.tmpdir()
-  formatter?: Formatter;
+  formatter?: Formatter; // default createLineFormatter()
   filter?: (entry: LogEntry) => boolean; // drop entries when it returns false
   name?: string; // transport name for diagnostics & removeTransport; default `file:<appName>` (never part of file names)
   /** Global cap on total bytes of all owned files (active + history). Default Infinity. */
