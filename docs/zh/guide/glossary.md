@@ -127,7 +127,8 @@ lograil 同时提供两种格式的构建，方便不同项目使用。
 
 ## 作用域（Scope）
 
-用 `:` 分隔的模块标识，如 `app:http`、`app:db`。用于区分不同模块的日志，也可用于过滤器。
+用于区分模块日志与过滤的作用域标识。调用 `logger.scope('http')` 会得到
+`http`；链式派生时会用 `:` 拼接（例如 `app` -> `app:http`）。
 
 ```ts
 const http = logger.scope('http'); // scope 为 'http'

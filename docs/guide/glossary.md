@@ -122,7 +122,9 @@ From low to high:
 
 ## Scope
 
-A `:`-joined namespace, such as `app:http` or `app:db`, used to separate logs by module and for filtering.
+A namespace used to separate logs by module and for filtering. Calling
+`logger.scope('http')` produces `http`; chaining scopes joins with `:`
+(for example `app` -> `app:http`).
 
 ```ts
 const http = logger.scope('http'); // scope: 'http'
