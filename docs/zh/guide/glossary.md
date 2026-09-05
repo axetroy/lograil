@@ -44,12 +44,12 @@ type Filter = (entry: LogEntry) => boolean;
 
 ### Processor（处理器）
 
-修改或增强日志条目。返回新的 `LogEntry`（或 `null` 丢弃）。
+修改或增强日志条目。返回一个 `LogEntry`。
 
 典型用途：添加元数据、脱敏敏感字段、采样。
 
 ```ts
-type Processor = (entry: LogEntry) => LogEntry | null;
+type Processor = (entry: LogEntry) => LogEntry;
 ```
 
 ### Formatter（格式化器）

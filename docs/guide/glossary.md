@@ -42,10 +42,10 @@ type Filter = (entry: LogEntry) => boolean;
 
 ### Processor
 
-Transforms or enriches an entry. Returns a new `LogEntry` (or `null` to drop it).
+Transforms or enriches an entry. Returns a `LogEntry`.
 
 ```ts
-type Processor = (entry: LogEntry) => LogEntry | null;
+type Processor = (entry: LogEntry) => LogEntry;
 ```
 
 ### Formatter
