@@ -129,7 +129,7 @@ lograil 同时提供两种格式的构建，方便不同项目使用。
 
 用于区分模块日志与过滤的作用域标识。
 当从已带作用域的 logger 再派生时，会用 `:` 拼接
-（例如 `app` -> `app:http`）。
+（例如从无作用域的根 logger 开始：`app` -> `app:http`）。
 
 ```ts
 const app = logger.scope('app');
