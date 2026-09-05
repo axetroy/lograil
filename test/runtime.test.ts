@@ -24,6 +24,7 @@ import {
 import type { RuntimeAdapter } from '../src/runtime/index.js';
 import type { Transport } from '../src/transport/transport.js';
 import { FileTransport } from '../src/transport/file.js';
+import { WorkerIpcTransport } from '../src/transport/worker-ipc.js';
 import type { LogEntry } from '../src/types.js';
 
 describe('Web runtime', () => {
@@ -87,6 +88,59 @@ describe('Node runtime', () => {
   it('can disable the file transport', () => {
     const rt = createNodeRuntime({ appName: 'x', disableFile: true });
     expect(rt.defaultTransports()).toHaveLength(1);
+  });
+
+  it('infers appName from process.argv[1], stripping the extension', () => {
+    const originalArgv = process.argv;
+    process.argv = ['node', '/some/dir/my-script.js'];
+    try {
+      const rt = createNodeRuntime();
+      const names = rt.defaultTransports().map((t) => t.name);
+      expect(names).toContain('file:my-script');
+    } finally {
+      process.argv = originalArgv;
+    }
+  });
+
+  it('skips the file transport when appName cannot be inferred', () => {
+    const originalArgv = process.argv;
+    // No script argument -> inferAppName returns undefined -> file skipped.
+    process.argv = ['node'];
+    try {
+      const rt = createNodeRuntime();
+      expect(rt.defaultTransports()).toHaveLength(1);
+    } finally {
+      process.argv = originalArgv;
+    }
+  });
+});
+
+describe('Node runtime — worker_threads detection', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('returns a WorkerIpcTransport when running inside a worker_threads worker', () => {
+    const original = (globalThis as Record<string, unknown>).parentPort;
+    Object.defineProperty(globalThis, 'parentPort', {
+      value: { postMessage() {} },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const rt = createNodeRuntime();
+      const transports = rt.defaultTransports();
+      expect(transports.some((t) => t instanceof WorkerIpcTransport)).toBe(true);
+      expect(rt.hasFileSystem()).toBe(false);
+    } finally {
+      if (original === undefined) {
+        delete (globalThis as Record<string, unknown>).parentPort;
+      } else {
+        Object.defineProperty(globalThis, 'parentPort', {
+          value: original,
+          configurable: true,
+          writable: true,
+        });
+      }
+    }
   });
 });
 
