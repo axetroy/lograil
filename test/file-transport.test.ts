@@ -540,10 +540,8 @@ describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
     t.write(entry('new'), 'new');
     await t.flush();
     await t.close();
-    const files = readdirSync(dir)
-      .filter((f) => f.startsWith('nc.'))
-      .sort();
-    expect(files).toEqual(['nc.1.log', 'nc.2.log', 'nc.3.log', 'nc.log']);
+    const files = readdirSync(dir).filter((f) => f.startsWith('nc.'));
+    expect(new Set(files)).toEqual(new Set(['nc.1.log', 'nc.2.log', 'nc.3.log', 'nc.log']));
   }, 10_000);
 });
 
