@@ -132,6 +132,9 @@ lograil 同时提供两种格式的构建，方便不同项目使用。
 链式派生会用 `:` 拼接（例如 `app` -> `app:http`）。
 
 ```ts
+const direct = logger.scope('http'); // scope 为 'http'
+direct.info('request received');
+
 const app = logger.scope('app');
 const http = app.scope('http'); // scope 为 'app:http'
 http.info('request received');  // 日志中包含 scope: 'app:http'
