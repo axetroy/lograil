@@ -43,6 +43,7 @@ type Filter = (entry: LogEntry) => boolean;
 ### Processor
 
 Transforms or enriches an entry before formatting.
+Returning `null` drops the entry from the pipeline.
 
 ### Formatter
 
