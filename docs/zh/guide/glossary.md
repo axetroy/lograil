@@ -165,6 +165,7 @@ const metadataProcessor = (entry: LogEntry) => ({
 ## 异步上下文
 
 基于 Node.js `AsyncLocalStorage` 的上下文管理。在异步操作链中自动传播上下文，无需手动传递。
+导出的 API 名称是 `asyncContext`（以及 `runWithContext`）。
 精确签名与用法请见 [Context](/zh/api/context)。
 
 ## 插件（Plugin）

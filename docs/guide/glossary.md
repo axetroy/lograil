@@ -159,6 +159,7 @@ const metadataProcessor = (entry: LogEntry) => ({
 ## Ambient async context
 
 Request-scoped context propagation built on Node.js `AsyncLocalStorage`. Context flows across async boundaries without manual parameter plumbing.
+The exported API is `asyncContext` (plus `runWithContext`).
 See [Context](/api/context) for the exact API signature and usage.
 
 ## Plugin
