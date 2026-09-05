@@ -124,7 +124,7 @@ From low to high:
 
 A namespace used to separate logs by module and for filtering.
 When deriving from an already-scoped logger, scopes are joined with `:`
-(for example, starting from an unscoped root logger: `app` -> `app:http`).
+(for example, from a logger whose scope is `app`: `app` -> `app:http`).
 
 ```ts
 const app = logger.scope('app');
