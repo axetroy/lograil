@@ -155,7 +155,7 @@ logger.info('hello'); // → { context: { userId: 'u-123' }, ... }
 // processor 示例：添加耗时
 const timingProcessor: Processor = (entry) => ({
   ...entry,
-  metadata: { ...entry.metadata, durationMs: Date.now() - entry.startTime },
+  metadata: { ...entry.metadata, durationMs: 42 },
 });
 ```
 
@@ -164,11 +164,11 @@ const timingProcessor: Processor = (entry) => ({
 基于 Node.js `AsyncLocalStorage` 的上下文管理。在异步操作链中自动传播上下文，无需手动传递。
 
 ```ts
-import { asyncContext } from 'lograil';
+import { runWithContext } from 'lograil';
 
-asyncContext.with({ traceId: 'abc' }, async () => {
+runWithContext(async () => {
   await someAsyncWork(); // 这条异步链路中的日志都会携带 traceId
-});
+}, { traceId: 'abc' });
 ```
 
 ## 插件（Plugin）
