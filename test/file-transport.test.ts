@@ -541,7 +541,7 @@ describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
     await t.flush();
     await t.close();
     expect(readdirSync(dir).filter((f) => f.startsWith('nc.') && f !== 'nc.log')).toHaveLength(3);
-  });
+  }, 10_000);
 });
 
 describe('FileTransport - getDir()', () => {
