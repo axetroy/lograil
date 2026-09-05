@@ -159,6 +159,7 @@ const metadataProcessor: Processor = (entry) => ({
 ## Ambient async context
 
 Request-scoped context propagation built on Node.js `AsyncLocalStorage`. Context flows across async boundaries without manual parameter plumbing.
+Signature: `runWithContext(fn, context)`.
 
 ```ts
 import { runWithContext } from 'lograil';

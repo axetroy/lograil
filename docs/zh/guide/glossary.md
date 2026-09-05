@@ -164,6 +164,7 @@ const metadataProcessor: Processor = (entry) => ({
 ## 异步上下文
 
 基于 Node.js `AsyncLocalStorage` 的上下文管理。在异步操作链中自动传播上下文，无需手动传递。
+函数签名：`runWithContext(fn, context)`。
 
 ```ts
 import { runWithContext } from 'lograil';
