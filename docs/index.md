@@ -27,8 +27,6 @@ features:
     details: Web, Node.js and Electron are supported out of the box with auto-detected adapters — one API, no per-platform code.
   - title: Extensible via plugins
     details: Plugins add transports, reshape the pipeline, intercept entries and register other plugins at runtime. Bring your own runtime adapter to support any other platform.
-  - title: Plugin system
-    details: Plugins can add transports, reshape the pipeline, intercept entries and register other plugins at runtime.
   - title: Tiny & typed
     details: Written in TypeScript, ESM + CJS dual build, MIT licensed, with subpath exports for tree-shaking.
   - title: Per-transport routing
@@ -49,4 +47,3 @@ features:
   [CHANGELOG.md](https://github.com/axetroy/lograil/blob/main/CHANGELOG.md)
 - **Migrating** from `electron-log` / `winston` / `pino`: [guide](/guide/migrating)
 - **Troubleshooting & FAQ**: [guide](/guide/troubleshooting)
-
