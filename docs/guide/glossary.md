@@ -42,11 +42,7 @@ type Filter = (entry: LogEntry) => boolean;
 
 ### Processor
 
-Transforms or enriches an entry. Returns a `LogEntry`.
-
-```ts
-type Processor = (entry: LogEntry) => LogEntry;
-```
+Transforms or enriches an entry before formatting.
 
 ### Formatter
 
