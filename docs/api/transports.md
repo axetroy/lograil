@@ -26,6 +26,10 @@ interface Transport {
 below it are skipped by this sink only. Use it to split streams — e.g. send
 `error` and above to a remote sink while writing everything to a file.
 
+`onError` is called when `write()` fails, but also by `FileTransport` for internal
+filesystem errors such as failed rotations or backup deletions. These are
+non-fatal — the transport keeps running — but you can use `onError` to surface
+them via logging, metrics, or alerts.
 
 ## ConsoleTransport
 

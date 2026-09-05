@@ -293,3 +293,77 @@ const httpTransport: Transport = {
 log.addTransport(httpTransport);
 log.removeTransport('http');
 ```
+
+## 错误处理
+
+`Transport.onError` 在 `write()` 失败时被调用——logger 捕获错误后转发，
+而不是直接抛出。`FileTransport` 还会通过同一个钩子上报非致命的内部错误：
+轮转时文件删除失败、日志目录不可读、备份重命名失败等。
+
+这些内部错误按严重程度分级：
+
+- `'warn'` — 意外的最佳努力操作失败（例如容量检查时的 `readdir` 或
+  `rm`）。传输器继续运行，但需要排查原因。
+- `'debug'` — 常规清理步骤失败（例如删除备份文件）。通常无害，
+  仅在深度调试时有用。
+
+在传输器实例上设置 `onError` 即可观察这些错误：
+
+```ts
+import { FileTransport } from 'lograil';
+
+const ft = new FileTransport({
+  mode: 'rotate-size',
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024,
+  maxFiles: 5,
+});
+
+ft.onError = (err, entry) => {
+  console.error('[file-transport]', err.message, entry.levelName);
+};
+```
+
+在 Electron 应用中，如果你调用了 `redirectConsole()`，请避免将 `onError`
+路由到 `console.*`——使用 `process.stderr` 或专用 sink 以防止无限递归。
+详见[故障排除](/zh/guide/troubleshooting#1-console-output-causes-infinite-recursion-stack-overflow)。
+
+大多数传输器错误是暂时性的，会自行恢复（例如文件被临时锁定）。如果
+`onError` 持续因相同原因触发，请检查磁盘空间、权限或杀毒软件干扰。
+
+## 错误处理
+
+`Transport.onError` 在 `write()` 失败时被调用——logger 捕获错误后转发，
+而不是直接抛出。`FileTransport` 还会通过同一个钩子上报非致命的内部错误：
+轮转时文件删除失败、日志目录不可读、备份重命名失败等。
+
+这些内部错误按严重程度分级：
+
+- `'warn'` — 意外的最佳努力操作失败（例如容量检查时的 `readdir` 或
+  `rm`）。传输器继续运行，但需要排查原因。
+- `'debug'` — 常规清理步骤失败（例如删除备份文件）。通常无害，
+  仅在深度调试时有用。
+
+在传输器实例上设置 `onError` 即可观察这些错误：
+
+```ts
+import { FileTransport } from 'lograil';
+
+const ft = new FileTransport({
+  mode: 'rotate-size',
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024,
+  maxFiles: 5,
+});
+
+ft.onError = (err, entry) => {
+  console.error('[file-transport]', err.message, entry.levelName);
+};
+```
+
+在 Electron 应用中，如果你调用了 `redirectConsole()`，请避免将 `onError`
+路由到 `console.*`——使用 `process.stderr` 或专用 sink 以防止无限递归。
+详见[故障排除](/zh/guide/troubleshooting#1-console-输出导致无限递归--栈溢出)。
+
+大多数传输器错误是暂时性的，会自行恢复（例如文件被临时锁定）。如果
+`onError` 持续因相同原因触发，请检查磁盘空间、权限或杀毒软件干扰。

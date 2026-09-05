@@ -23,6 +23,9 @@ interface Transport {
 
 `level` 会在 logger 级别过滤之外，单独限制该传输器：低于它的日志仅会被此 sink 跳过。可用它拆分日志流——例如把 `error` 及以上发往远端，其余写入文件。
 
+onError 不仅在 write() 失败时被调用，FileTransport 还会通过它上报内部
+文件系统错误，例如轮转失败或备份删除失败。这些错误不会中断传输器运行——
+你可以在 onError 中记录日志、上报指标或发出告警。
 
 ## ConsoleTransport
 

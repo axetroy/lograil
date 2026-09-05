@@ -3,6 +3,22 @@ import { basename, join } from '../shims/index.js';
 import type { LogEntry } from '../types.js';
 import type { Formatter } from '../pipeline/formatter.js';
 
+// ---- error callback type --------------------------------------------------
+
+/**
+ * Callback for non-fatal filesystem errors inside the file transport.
+ *
+ * The `level` indicates severity:
+ * - `'warn'` — a best-effort operation (readdir, delete) failed unexpectedly;
+ *   the transport keeps running but the problem should be investigated.
+ * - `'debug'` — a routine best-effort cleanup (e.g. `rm` of a backup) failed;
+ *   normally harmless but useful for deep debugging.
+ *
+ * The transport **never throws** from filesystem helpers; every error is
+ * forwarded here (if provided) so callers can log, metric, or ignore it.
+ */
+export type FileErrorCallback = (level: 'warn' | 'debug', message: string, cause?: unknown) => void;
+
 /** Fields every file mode shares. `appName` is required so the log file name
  * always embeds the application identity. */
 export interface FileBaseOptions {
@@ -186,6 +202,11 @@ export interface FileIo {
   getActiveSize(): Promise<number>;
   /** Files this transport has created — trimRing/trimTimeRing/caps only touch these. */
   owned: Set<string>;
+  /**
+   * Optional callback for non-fatal filesystem errors during trim/cap
+   * operations. When absent, errors are silently swallowed (legacy behaviour).
+   */
+  onError?: FileErrorCallback;
 }
 
 // ---- shared helpers -------------------------------------------------------
@@ -201,6 +222,7 @@ export async function trimRing(
   maxFiles: number,
   owned: Set<string>,
   exclude?: string,
+  onError?: FileErrorCallback,
 ): Promise<void> {
   // maxFiles<1 → no cap configured; 1 means "keep active only, no backups".
   if (maxFiles < 1) return;
@@ -218,11 +240,13 @@ export async function trimRing(
     const excess = backups.length - keep;
     for (let i = 0; i < excess; i++) {
       const toDelete = backups[i];
-      await rm(join(dir, toDelete), { force: true }).catch(() => {});
+      await rm(join(dir, toDelete), { force: true }).catch((err) => {
+        onError?.('debug', `trimRing: failed to delete ${toDelete}`, err);
+      });
       owned.delete(toDelete);
     }
-  } catch {
-    /* ignore */
+  } catch (err) {
+    onError?.('warn', `trimRing: readdir or filter failed in ${dir}`, err);
   }
 }
 
@@ -237,6 +261,7 @@ export async function trimTimeRing(
   ext: string,
   maxFiles: number,
   owned: Set<string>,
+  onError?: FileErrorCallback,
 ): Promise<void> {
   if (maxFiles < 1) return;
   const prefix = `${appName}.`;
@@ -266,12 +291,14 @@ export async function trimTimeRing(
     for (let i = 0; i < excess; i++) {
       const files = groups.get(stamps[i])!;
       for (const f of files) {
-        await rm(join(dir, f), { force: true }).catch(() => {});
+        await rm(join(dir, f), { force: true }).catch((err) => {
+          onError?.('debug', `trimTimeRing: failed to delete ${f}`, err);
+        });
         owned.delete(f);
       }
     }
-  } catch {
-    /* ignore */
+  } catch (err) {
+    onError?.('warn', `trimTimeRing: readdir or grouping failed in ${dir}`, err);
   }
 }
 
@@ -288,6 +315,7 @@ export async function trimBucketSeq(
   stamp: string,
   maxPerBucket: number,
   owned: Set<string>,
+  onError?: FileErrorCallback,
 ): Promise<void> {
   if (maxPerBucket <= 0) return;
   const prefix = `${appName}.${stamp}.`;
@@ -296,11 +324,13 @@ export async function trimBucketSeq(
     const files = [...owned].filter((f) => f.startsWith(prefix) && f.endsWith(suffix)).sort();
     const excess = files.length - maxPerBucket;
     for (let i = 0; i < excess; i++) {
-      await rm(join(dir, files[i]), { force: true }).catch(() => {});
+      await rm(join(dir, files[i]), { force: true }).catch((err) => {
+        onError?.('debug', `trimBucketSeq: failed to delete ${files[i]}`, err);
+      });
       owned.delete(files[i]);
     }
-  } catch {
-    /* ignore */
+  } catch (err) {
+    onError?.('warn', `trimBucketSeq: filter or delete failed in ${dir}`, err);
   }
 }
 
@@ -318,8 +348,9 @@ export async function enforceGlobalCaps(params: {
   maxAge: number; // -1 = no limit, 0 = delete all, >0 = threshold ms
   now: number;
   owned: Set<string>;
+  onError?: FileErrorCallback;
 }): Promise<void> {
-  const { dir, activePath, maxTotalSize, maxAge, now, owned } = params;
+  const { dir, activePath, maxTotalSize, maxAge, now, owned, onError } = params;
   if (!Number.isFinite(maxTotalSize) && maxAge < 0) return;
   try {
     const names = (await readdir(dir)).filter((f) => owned.has(f) && join(dir, f) !== activePath);
@@ -363,11 +394,13 @@ export async function enforceGlobalCaps(params: {
       }
     }
     for (const f of toDelete) {
-      await rm(join(dir, f), { force: true }).catch(() => {});
+      await rm(join(dir, f), { force: true }).catch((err) => {
+        onError?.('debug', `enforceGlobalCaps: failed to delete ${f}`, err);
+      });
       owned.delete(f);
     }
-  } catch {
-    /* ignore */
+  } catch (err) {
+    onError?.('warn', `enforceGlobalCaps: readdir or stat failed in ${dir}`, err);
   }
 }
 
@@ -422,7 +455,9 @@ export class TruncateRotator implements Rotator {
       await io.closeHandle();
       // Remove any previous backup first: on Windows `rename` refuses to
       // overwrite an existing target, which would otherwise block truncation.
-      await rm(this.backup, { force: true }).catch(() => {});
+      await rm(this.backup, { force: true }).catch((err) => {
+        io.onError?.('debug', `TruncateRotator: failed to remove backup ${this.backup}`, err);
+      });
       io.owned.delete(basename(this.backup));
       try {
         await rename(this.path, this.backup);
@@ -472,7 +507,9 @@ export class SizeRotator implements Rotator {
     if (size + bytes > this.maxSize) {
       await io.closeHandle();
       if (this.maxFiles <= 1) {
-        await rm(this.active, { force: true }).catch(() => {});
+        await rm(this.active, { force: true }).catch((err) => {
+          io.onError?.('debug', `SizeRotator: failed to remove active file ${this.active}`, err);
+        });
         return true;
       }
       const gens = this.maxFiles - 1;
@@ -598,10 +635,10 @@ export class TimeRotator implements Rotator {
         await io.closeHandle();
         this.path = this.stampPath(stamp, 0);
         io.owned.add(basename(this.path));
-        await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+        await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned, io.onError);
         return true;
       }
-      await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+      await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned, io.onError);
       return false;
     }
     if (stamp !== this.currentStamp) {
@@ -611,7 +648,7 @@ export class TimeRotator implements Rotator {
       await io.closeHandle();
       this.path = this.stampPath(stamp, 0);
       io.owned.add(basename(this.path));
-      await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+      await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned, io.onError);
       return true;
     }
     // Same time bucket — check size-based splitting within the bucket.
@@ -627,7 +664,7 @@ export class TimeRotator implements Rotator {
         await io.closeHandle();
         this.path = this.stampPath(this.currentStamp, this.seq);
         io.owned.add(basename(this.path));
-        await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+        await trimTimeRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned, io.onError);
         // Cap the seq count inside the current bucket (inner ring).
         await trimBucketSeq(
           io.dir,
@@ -636,6 +673,7 @@ export class TimeRotator implements Rotator {
           this.currentStamp,
           this.maxFilesPerBucket ?? 0,
           io.owned,
+          io.onError,
         );
         return true;
       }
@@ -688,7 +726,15 @@ export class CustomRotator implements Rotator {
       await io.closeHandle();
       this.path = join(io.dir, this.fileName(io.appName, this.seq, io.ext));
       io.owned.add(basename(this.path));
-      await trimRing(io.dir, io.appName, io.ext, this.maxFiles ?? 0, io.owned);
+      await trimRing(
+        io.dir,
+        io.appName,
+        io.ext,
+        this.maxFiles ?? 0,
+        io.owned,
+        undefined,
+        io.onError,
+      );
       return true;
     }
     return false;

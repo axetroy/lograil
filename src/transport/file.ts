@@ -36,6 +36,7 @@ export {
   trimTimeRing,
   enforceGlobalCaps,
   createRotator,
+  FileErrorCallback,
 } from './file-rotator.js';
 
 export class FileTransport implements Transport {
@@ -117,6 +118,23 @@ export class FileTransport implements Transport {
       closeHandle: () => this.closeHandle(),
       getActiveSize: () => this.getActiveSize(),
       owned: this.owned,
+      onError: (level, message, cause) => {
+        const err = new Error(`FileTransport ${level}: ${message}`);
+        if (cause !== undefined) Object.defineProperty(err, 'cause', { value: cause });
+        this.onError?.(
+          err,
+          this._lastWrittenEntry ?? {
+            level: 0,
+            levelName: 'info',
+            message: '',
+            args: [],
+            timestamp: 0,
+            time: '',
+            context: {},
+            metadata: {},
+          },
+        );
+      },
     };
   }
 
@@ -222,6 +240,7 @@ export class FileTransport implements Transport {
             maxAge: this.maxAge,
             now: nowMs,
             owned: this.io.owned,
+            onError: this.io.onError,
           });
         }
         // Throttled periodic check so caps are still honored between rotations
@@ -240,6 +259,7 @@ export class FileTransport implements Transport {
             maxAge: this.maxAge,
             now: nowMs,
             owned: this.io.owned,
+            onError: this.io.onError,
           });
         }
         const handle = await this.ensureHandle();

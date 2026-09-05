@@ -324,3 +324,83 @@ Add or remove transports at runtime:
 log.addTransport(httpTransport);
 log.removeTransport('http');
 ```
+
+## Error handling
+
+`Transport.onError` is called when `write()` fails — the logger catches the error
+and forwards it instead of throwing. `FileTransport` additionally reports
+non-fatal internal errors through the same hook: failed file deletions during
+rotation, unreadable log directories, or backup rename failures.
+
+These internal errors are classified by severity:
+
+- `'warn'` — an unexpected best-effort operation failed (e.g. `readdir` or
+  `rm` during a capacity check). The transport keeps running, but the problem
+  should be investigated.
+- `'debug'` — a routine cleanup step failed (e.g. deleting a backup file).
+  Normally harmless; useful only for deep debugging.
+
+To observe these errors, set `onError` on the transport instance:
+
+```ts
+import { FileTransport } from 'lograil';
+
+const ft = new FileTransport({
+  mode: 'rotate-size',
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024,
+  maxFiles: 5,
+});
+
+ft.onError = (err, entry) => {
+  console.error('[file-transport]', err.message, entry.levelName);
+};
+```
+
+In Electron apps, avoid routing `onError` through `console.*` if you have called
+`redirectConsole()` — use `process.stderr` or a dedicated sink instead to prevent
+infinite recursion. See [Troubleshooting](/guide/troubleshooting#1-console-output-causes-infinite-recursion-stack-overflow).
+
+Most transport errors are transient and self-healing (e.g. a temporarily locked
+file). If `onError` fires repeatedly for the same root cause, check disk space,
+permissions, or antivirus interference.
+
+## Error handling
+
+`Transport.onError` is called when `write()` fails — the logger catches the error
+and forwards it instead of throwing. `FileTransport` additionally reports
+non-fatal internal errors through the same hook: failed file deletions during
+rotation, unreadable log directories, or backup rename failures.
+
+These internal errors are classified by severity:
+
+- `'warn'` — an unexpected best-effort operation failed (e.g. `readdir` or
+  `rm` during a capacity check). The transport keeps running, but the problem
+  should be investigated.
+- `'debug'` — a routine cleanup step failed (e.g. deleting a backup file).
+  Normally harmless; useful only for deep debugging.
+
+To observe these errors, set `onError` on the transport instance:
+
+```ts
+import { FileTransport } from 'lograil';
+
+const ft = new FileTransport({
+  mode: 'rotate-size',
+  appName: 'my-app',
+  maxSize: 10 * 1024 * 1024,
+  maxFiles: 5,
+});
+
+ft.onError = (err, entry) => {
+  console.error('[file-transport]', err.message, entry.levelName);
+};
+```
+
+In Electron apps, avoid routing `onError` through `console.*` if you have called
+`redirectConsole()` — use `process.stderr` or a dedicated sink instead to prevent
+infinite recursion. See [Troubleshooting](/guide/troubleshooting#1-console-output-causes-infinite-recursion-stack-overflow).
+
+Most transport errors are transient and self-healing (e.g. a temporarily locked
+file). If `onError` fires repeatedly for the same root cause, check disk space,
+permissions, or antivirus interference.
