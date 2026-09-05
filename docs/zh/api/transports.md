@@ -216,12 +216,27 @@ interface OtlpTransportOptions {
    * 退避延迟上限（毫秒）。默认 `30000`。
    */
   retryMaxDelayMs?: number;
+  /**
+   * 内部缓冲区可容纳的最大条目数，超出后丢弃最新条目。`0` 表示不限制。默认 `10_000`。
+   */
+  maxQueueSize?: number;
+  /** 当达到 `maxQueueSize` 导致条目被丢弃时调用。 */
+  onQueueOverflow?: (entry: LogEntry, queueDepth: number) => void;
 }
 
-class OtlpTransport implements Transport;
+class OtlpTransport implements Transport {
+  /** 因队列溢出而丢弃的总条目数。 */
+  readonly overflowDropCount: number;
+  /** 缓冲区中等待发送的当前条目数。 */
+  readonly bufferLength: number;
+  /** 重试耗尽后丢弃的总 batch 数。 */
+  readonly dropCount: number;
+}
 ```
 
 通过 OTLP HTTP/JSON（`POST /v1/logs`）把日志转发到 OpenTelemetry Collector。日志会被缓冲并按批次发送；调用 `logger.flush()`（或开启 `autoFlushOnExit`）即可排空。需要全局 `fetch`（Node >= 18、现代浏览器、Electron 均支持）。
+
+由于 `write()` 是同步的，Logger 层的通用 `queueLimit` / `onOverflow` **不会**对 OTLP 生效。请使用 `maxQueueSize` / `onQueueOverflow` 控制 OTLP 的背压行为。
 
 ## registerIpcReceiver
 

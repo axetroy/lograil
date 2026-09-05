@@ -209,6 +209,18 @@ export interface OtlpTransportOptions {
    * Maximum backoff delay (ms) between retries. Default `5000`.
    */
   retryMaxDelayMs?: number;
+  /**
+   * Maximum number of entries that can be buffered in memory. When the queue
+   * is full, the **newest** entry is dropped immediately and {@link onQueueOverflow}
+   * is called (if provided). `0` disables the limit (not recommended for
+   * long-running services). Default `10_000`.
+   */
+  maxQueueSize?: number;
+  /**
+   * Called when an entry is dropped because the internal queue is full.
+   * Receives the original log entry and the current queue depth.
+   */
+  onQueueOverflow?(entry: LogEntry, queueDepth: number): void;
 }
 
 /**
@@ -238,9 +250,17 @@ export class OtlpTransport implements Transport {
   private flushPromise: Promise<void> | null = null;
   /** Count of batches that were dropped after exhausting all retries. */
   dropCount = 0;
+  /** Count of individual entries dropped due to queue overflow. */
+  overflowDropCount = 0;
   private readonly maxRetries: number;
   private readonly retryInitialDelayMs: number;
   private readonly retryMaxDelayMs: number;
+  private readonly maxQueueSize: number;
+  private onQueueOverflow: ((entry: LogEntry, queueDepth: number) => void) | undefined;
+  /** Optional per-transport queue limit enforced by the Logger dispatch. */
+  queueLimit?: number;
+  /** Optional overflow callback wired from the Logger dispatch. */
+  onOverflow?: (entry: LogEntry, queueDepth: number) => void;
 
   constructor(options: OtlpTransportOptions = {}) {
     this.name = 'otlp';
@@ -256,6 +276,11 @@ export class OtlpTransport implements Transport {
     this.retryInitialDelayMs = options.retryInitialDelayMs ?? 250;
     this.retryMaxDelayMs = options.retryMaxDelayMs ?? 5000;
     this.maxRetries = maxRetries;
+    this.maxQueueSize =
+      options.maxQueueSize !== undefined && options.maxQueueSize > 0
+        ? options.maxQueueSize
+        : 10_000;
+    this.onQueueOverflow = options.onQueueOverflow;
     const resource: Record<string, unknown> = { 'service.name': options.serviceName ?? 'lograil' };
     if (options.resource) Object.assign(resource, options.resource);
     this.resourceAttributes = collectAttributes(resource) ?? [];
@@ -268,6 +293,12 @@ export class OtlpTransport implements Transport {
    * @param _formatted The pipeline-formatted string (unused by OTLP).
    */
   write(entry: LogEntry, _formatted: string): void {
+    // Backpressure: drop the newest entry when the internal queue is full.
+    if (this.maxQueueSize > 0 && this.queue.length >= this.maxQueueSize) {
+      this.overflowDropCount++;
+      if (this.onQueueOverflow) this.onQueueOverflow(entry, this.queue.length);
+      return;
+    }
     this.queue.push(toLogRecord(entry));
     if (this.queue.length >= this.batchSize) {
       void this.flush();
@@ -352,5 +383,10 @@ export class OtlpTransport implements Transport {
   /** Tear down the transport by flushing any remaining buffered entries. */
   async close(): Promise<void> {
     await this.flush();
+  }
+
+  /** Current number of entries waiting to be flushed. */
+  get bufferLength(): number {
+    return this.queue.length;
   }
 }

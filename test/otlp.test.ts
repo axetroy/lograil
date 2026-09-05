@@ -245,4 +245,93 @@ describe('OtlpTransport', () => {
     expect(t.dropCount).toBe(0); // 4xx is not a drop — it's a permanent error
     expect(errors).toHaveLength(1);
   });
+
+  describe('queue overflow (maxQueueSize)', () => {
+    it('drops the newest entry when the queue is full', async () => {
+      const t = new OtlpTransport({ maxQueueSize: 3, batchSize: 100 });
+      t.write(makeEntry({ message: 'a' }), 'a');
+      t.write(makeEntry({ message: 'b' }), 'b');
+      t.write(makeEntry({ message: 'c' }), 'c');
+      // 4th write should be dropped
+      t.write(makeEntry({ message: 'd' }), 'd');
+
+      expect(t.overflowDropCount).toBe(1);
+      expect(t.bufferLength).toBe(3);
+
+      await t.flush();
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      const records = body.resourceLogs[0].scopeLogs[0].logRecords;
+      expect(records).toHaveLength(3);
+      expect(records.map((r: { body: { stringValue: string } }) => r.body.stringValue)).toEqual([
+        'a',
+        'b',
+        'c',
+      ]);
+    });
+
+    it('calls onQueueOverflow with the entry and queue depth', async () => {
+      const overflows: { message: string; depth: number }[] = [];
+      const t = new OtlpTransport({
+        maxQueueSize: 2,
+        onQueueOverflow: (entry, depth) => overflows.push({ message: entry.message, depth }),
+      });
+      t.write(makeEntry({ message: 'ok1' }), 'ok1');
+      t.write(makeEntry({ message: 'ok2' }), 'ok2');
+      t.write(makeEntry({ message: 'drop1' }), 'drop1');
+      t.write(makeEntry({ message: 'drop2' }), 'drop2');
+
+      expect(overflows).toEqual([
+        { message: 'drop1', depth: 2 },
+        { message: 'drop2', depth: 2 },
+      ]);
+      expect(t.overflowDropCount).toBe(2);
+    });
+
+    it('does not call onQueueOverflow when under the limit', async () => {
+      let called = false;
+      const t = new OtlpTransport({
+        maxQueueSize: 10,
+        onQueueOverflow: () => {
+          called = true;
+        },
+      });
+      t.write(makeEntry(), 'ok');
+      t.write(makeEntry(), 'ok');
+      expect(called).toBe(false);
+      expect(t.overflowDropCount).toBe(0);
+    });
+
+    it('maxQueueSize: 0 disables the limit', () => {
+      const t = new OtlpTransport({ maxQueueSize: 0, batchSize: 501 });
+      for (let i = 0; i < 500; i++) {
+        t.write(makeEntry({ message: `m${i}` }), `m${i}`);
+      }
+      expect(t.overflowDropCount).toBe(0);
+      expect(t.bufferLength).toBe(500);
+    });
+
+    it('default maxQueueSize is 10_000', () => {
+      const t = new OtlpTransport({ batchSize: 10_001 });
+      // Fill to 10_000 — should not drop
+      for (let i = 0; i < 10_000; i++) {
+        t.write(makeEntry(), 'x');
+      }
+      expect(t.overflowDropCount).toBe(0);
+      expect(t.bufferLength).toBe(10_000);
+      // 10_001st entry should drop
+      t.write(makeEntry(), 'overflow');
+      expect(t.overflowDropCount).toBe(1);
+      expect(t.bufferLength).toBe(10_000);
+    });
+
+    it('bufferLength reflects queue state after flush', async () => {
+      const t = new OtlpTransport({ maxQueueSize: 6, batchSize: 6 });
+      for (let i = 0; i < 5; i++) {
+        t.write(makeEntry({ message: `m${i}` }), `m${i}`);
+      }
+      expect(t.bufferLength).toBe(5);
+      await t.flush();
+      expect(t.bufferLength).toBe(0);
+    });
+  });
 });

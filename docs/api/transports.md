@@ -247,15 +247,33 @@ interface OtlpTransportOptions {
    * Maximum backoff delay in ms. Default `30000`.
    */
   retryMaxDelayMs?: number;
+  /**
+   * Max entries the internal buffer can hold before the newest entry is dropped.
+   * `0` means unlimited. Default `10_000`.
+   */
+  maxQueueSize?: number;
+  /** Called when `maxQueueSize` is reached and an entry is dropped. */
+  onQueueOverflow?: (entry: LogEntry, queueDepth: number) => void;
 }
 
-class OtlpTransport implements Transport;
+class OtlpTransport implements Transport {
+  /** Total entries dropped due to queue overflow. */
+  readonly overflowDropCount: number;
+  /** Current number of entries waiting in the buffer. */
+  readonly bufferLength: number;
+  /** Total batches dropped after exhausting retries. */
+  readonly dropCount: number;
+}
 ```
 
 Forwards entries to an OpenTelemetry Collector over OTLP HTTP/JSON (`POST
 /v1/logs`). Entries are buffered and sent in batches; call `logger.flush()` (or
 enable `autoFlushOnExit`) to drain them. Requires a global `fetch` (Node >= 18,
 modern browsers, Electron).
+
+Because `write()` is synchronous, the generic logger-level `queueLimit` / `onOverflow`
+does **not** apply. Use `maxQueueSize` / `onQueueOverflow` instead for OTLP
+backpressure control.
 
 ## registerIpcReceiver
 
