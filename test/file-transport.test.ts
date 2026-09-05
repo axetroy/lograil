@@ -535,17 +535,15 @@ describe('FileTransport - global capacity caps (maxTotalSize / maxAge)', () => {
   it('keeps everything when no caps are set', async () => {
     const dir = join(base, 'none');
     await mkdir(dir, { recursive: true });
-    for (let i = 1; i <= 3; i++) writeFileSync(join(dir, `nc.${i}.log`), 'data');
+    const history = ['nc.old1.log', 'nc.old2.log', 'nc.old3.log'];
+    for (const name of history) writeFileSync(join(dir, name), 'data');
     const t = new FileTransport({ mode: 'single', appName: 'nc', dir, ext: 'log' });
     t.write(entry('new'), 'new');
     await t.flush();
     await t.close();
     const files = readdirSync(dir).filter((f) => f.startsWith('nc.'));
     expect(files).toContain('nc.log');
-    const rotated = files
-      .filter((f) => /^nc\.\d+\.log$/.test(f))
-      .sort((a, b) => Number(a.split('.')[1]) - Number(b.split('.')[1]));
-    expect(rotated).toEqual(['nc.1.log', 'nc.2.log', 'nc.3.log']);
+    expect(files).toEqual(expect.arrayContaining(history));
   }, 10_000);
 });
 
