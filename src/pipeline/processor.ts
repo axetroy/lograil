@@ -276,7 +276,7 @@ export function createSerializeProcessor(serializers: Record<string, Serializer>
     if (error !== undefined && serializers['error']) {
       const r = serializers['error'](error, entry);
       if (r !== error) {
-        error = r as Error;
+        error = r;
         errorChanged = true;
       }
     }

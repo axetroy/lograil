@@ -52,7 +52,12 @@ first import — it runs `detectRuntime()`, wires up the default transports
 lifecycle hooks (`beforeExit`, `SIGINT`, `SIGTERM`).
 
 - All code in the same process shares this one logger, the same ambient
-  context (`AsyncLocalStorage`), and the same `process.*` listeners.
+  context (`AsyncLocalStorage` instance), and the same `process.*` listeners.
+  The ambient context is **global** — a `runWithContext` call from any code
+  affects every logger in the process, not just the one that called it. If you
+  create multiple independent loggers and need isolated ambient contexts per
+  logger, each logger needs its own `AsyncLocalStorage` store (currently there
+  is no per-logger API for this — use a single logger with `scope` instead).
 - If you need independent loggers (e.g. per-test harness, per-worker), use
   `createLogger(options)` instead.
 - Lifecycle hooks are not detached automatically. Call

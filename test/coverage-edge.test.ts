@@ -367,7 +367,7 @@ describe('edge cases — untested code paths', () => {
   });
 
   it('logger accepts string as error when no Error in args', () => {
-    // Cover the fallback: rest.find(string) when no Error found
+    // A plain string message goes into `message`, never into `error`.
     const errs: unknown[] = [];
     const transport = {
       name: 'mem',
@@ -381,5 +381,23 @@ describe('edge cases — untested code paths', () => {
     // String message becomes the message field, not error (message is string, not Error)
     expect((errs[0] as LogEntry).message).toBe('something went wrong');
     expect((errs[0] as LogEntry).error).toBeUndefined();
+  });
+
+  it('does not promote a trailing string arg to error', () => {
+    // Only Error instances are promoted; plain strings stay in args.
+    const errs: unknown[] = [];
+    const transport = {
+      name: 'mem',
+      write(e: unknown) {
+        errs.push(e);
+      },
+    };
+    const log = createLogger({ transports: [transport] });
+    log.error('msg', 'detail');
+    expect(errs).toHaveLength(1);
+    const entry = errs[0] as LogEntry;
+    expect(entry.message).toBe('msg');
+    expect(entry.error).toBeUndefined();
+    expect(entry.args).toEqual(['detail']);
   });
 });

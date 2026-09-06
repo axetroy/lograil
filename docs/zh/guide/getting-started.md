@@ -42,7 +42,7 @@ logger.error(new Error('boom'));
 
 导出的 `logger` 是一个**模块级单例**，在首次导入时同步创建——它会执行 `detectRuntime()`、初始化默认传输器（Node / Electron 主进程会创建一个 `FileTransport`）、并注册进程生命周期钩子（`beforeExit`、`SIGINT`、`SIGTERM`）。
 
-- 同一进程内的所有代码共享这一个 logger、同一个异步上下文（`AsyncLocalStorage`）以及同一组 `process.*` 监听器。
+- 同一进程内的所有代码共享这一个 logger、同一个异步上下文（`AsyncLocalStorage` 实例）以及同一组 `process.*` 监听器。异步上下文是**全局的**——任何代码调用 `runWithContext` 都会影响进程内的所有 logger，不只是调用者所在的 logger。如果你创建了多个独立 logger 并希望每个有隔离的异步上下文，目前每个 logger 需要自己的 `AsyncLocalStorage` store（暂不提供 per-logger API）——建议改用单个 logger 配合 `scope` 来隔离。
 - 如果你需要独立的 logger（例如测试 harness、每个 worker 一个），请使用 `createLogger(options)`。
 - 生命周期钩子不会自动解除。如果你的测试 import 了本模块，建议在 `afterAll` 钩子中调用 `await logger.destroy()`，以保证后续测试的干净环境。
 :::

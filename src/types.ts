@@ -68,9 +68,10 @@ export interface LogEntry {
   context: Record<string, unknown>;
   /** One-off metadata attached to this entry only. */
   metadata: Record<string, unknown>;
-  /** Error-like object when the entry was created from one. Supports both
-   * standard `Error` instances and arbitrary values (e.g. string messages) so
-   * callers can log non-Error exceptions without type casting. */
+  /** Error-like object when the entry was created from one. Populated when the
+   * message argument is an `Error` instance or when an `Error` is found among
+   * the positional args. Non-Error values (including strings) are NOT promoted
+   * to this field — they stay in {@link LogEntry.args}. */
   error?: unknown;
 }
 

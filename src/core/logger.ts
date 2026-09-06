@@ -680,9 +680,7 @@ export class Logger implements LoggerMethods {
     }
 
     if (!error) {
-      error =
-        rest.find((a) => a instanceof Error) ??
-        rest.find((a) => typeof a === 'string' && a.length > 0);
+      error = rest.find((a) => a instanceof Error);
     }
 
     const now = this.runtime.now();
