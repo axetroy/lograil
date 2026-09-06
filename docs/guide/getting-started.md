@@ -44,6 +44,22 @@ The default file transport is disk-safe out of the box: at most 10 MB per file,
 about two weeks of daily files, and 200 MB total. Tune or lift these caps via
 `fileTransportOptions` (see [Runtime](/api/runtime)).
 
+::: warning Single process-wide instance
+
+The exported `logger` is a **module-level singleton** created synchronously on
+first import — it runs `detectRuntime()`, wires up the default transports
+(including a `FileTransport` on Node / Electron main), and registers process
+lifecycle hooks (`beforeExit`, `SIGINT`, `SIGTERM`).
+
+- All code in the same process shares this one logger, the same ambient
+  context (`AsyncLocalStorage`), and the same `process.*` listeners.
+- If you need independent loggers (e.g. per-test harness, per-worker), use
+  `createLogger(options)` instead.
+- Lifecycle hooks are not detached automatically. Call
+  `await logger.destroy()` in an `afterAll` hook if your test imports this
+  module and you want a clean slate for sibling tests.
+:::
+
 See the runtime-specific guides for details:
 
 - [Web Runtime](/guide/runtime-web) — browser bundle safety, `createWebRuntime()`

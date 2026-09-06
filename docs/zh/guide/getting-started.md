@@ -38,6 +38,15 @@ logger.error(new Error('boom'));
 
 默认文件传输器开箱即磁盘安全：单文件最多 10 MB，保留约两周的按日文件，所有日志文件总体积最多 200 MB。可通过 `fileTransportOptions` 调整或放开这些上限（见 [Runtime](/zh/api/runtime)）。
 
+::: warning 单例约束
+
+导出的 `logger` 是一个**模块级单例**，在首次导入时同步创建——它会执行 `detectRuntime()`、初始化默认传输器（Node / Electron 主进程会创建一个 `FileTransport`）、并注册进程生命周期钩子（`beforeExit`、`SIGINT`、`SIGTERM`）。
+
+- 同一进程内的所有代码共享这一个 logger、同一个异步上下文（`AsyncLocalStorage`）以及同一组 `process.*` 监听器。
+- 如果你需要独立的 logger（例如测试 harness、每个 worker 一个），请使用 `createLogger(options)`。
+- 生命周期钩子不会自动解除。如果你的测试 import 了本模块，建议在 `afterAll` 钩子中调用 `await logger.destroy()`，以保证后续测试的干净环境。
+:::
+
 请参阅各运行时专属指南了解详情：
 
 - [Web 运行时](/zh/guide/runtime-web) — 浏览器打包安全、`createWebRuntime()`
