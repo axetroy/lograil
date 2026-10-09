@@ -8,6 +8,8 @@ import { LOG_LEVELS } from '../src/types.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { Logger } from '../src/core/logger.js';
+import type { Transport } from '../src/transport/transport.js';
 
 function makeEntry(over: Partial<LogEntry> = {}): LogEntry {
   return {
@@ -290,5 +292,58 @@ describe('ElectronIpcTransport - injected ipcRenderer', () => {
       ipcRenderer: { send: () => {} },
     });
     expect(t.name).toBe('ipc:my:chan');
+  });
+});
+
+describe('Logger.addTransport name dedupe (P2-11)', () => {
+  function memoryTransport(name: string) {
+    const entries: LogEntry[] = [];
+    const t: Transport = {
+      name,
+      write: (e: LogEntry) => void entries.push(e),
+    };
+    return { t, entries };
+  }
+
+  it('does not double-write when a transport with the same name is re-added', async () => {
+    const { t: first, entries: firstEntries } = memoryTransport('mem');
+    const { t: second, entries: secondEntries } = memoryTransport('mem');
+    const logger = new Logger({ transports: [first], level: 'debug' });
+
+    // Replace the existing "mem" transport with a second instance.
+    logger.addTransport(second);
+
+    logger.info('a');
+    await logger.flush();
+
+    // Only the *new* instance should receive the entry — no silent
+    // double-write from the old one (which was flushed+closed on replace).
+    expect(secondEntries).toHaveLength(1);
+    expect(firstEntries).toHaveLength(0);
+    await logger.destroy();
+  });
+
+  it('closing the replaced transport drains its in-flight queue first', async () => {
+    // Old transport records every close() call so the test can assert it was
+    // torn down.
+    const closed: string[] = [];
+    const { t: first } = memoryTransport('mem');
+    first.close = () => {
+      closed.push('first');
+      return Promise.resolve();
+    };
+    const { t: second, entries: secondEntries } = memoryTransport('mem');
+    const logger = new Logger({ transports: [first], level: 'debug' });
+
+    logger.info('x');
+    await logger.flush();
+    expect(secondEntries).toHaveLength(0);
+
+    logger.addTransport(second);
+    logger.info('y');
+    await logger.flush();
+    expect(secondEntries).toHaveLength(1);
+    expect(closed).toEqual(['first']);
+    await logger.destroy();
   });
 });

@@ -456,7 +456,29 @@ export class Logger implements LoggerMethods {
 
   // ---- Transports ----
 
+  /**
+   * Register a transport with this logger. Transports are keyed by their
+   * {@link Transport.name} — adding a transport whose name already exists
+   * *replaces* the previous instance (no silent double-write). The replaced
+   * instance is flushed and closed in the background, chained onto its
+   * existing in-flight queue so queued writes drain first.
+   */
   addTransport(transport: Transport): void {
+    const existing = this.transports.filter((t) => t.name === transport.name);
+    if (existing.length > 0) {
+      this.transports = this.transports.filter((t) => t.name !== transport.name);
+      for (const old of existing) {
+        const entry = this.transportQueues.get(old);
+        const prev = entry?.promise ?? Promise.resolve();
+        const teardown = prev
+          .then(async () => {
+            if (old.flush) await this.guardFlush(old.flush.bind(old));
+            if (old.close) await Promise.resolve(old.close());
+          })
+          .catch((err) => this.reportError('transport', err, undefined, old.name));
+        this.transportQueues.set(old, { promise: teardown, depth: entry?.depth ?? 0 });
+      }
+    }
     this.transports.push(transport);
     this.plugins.notifyTransport(transport);
   }
