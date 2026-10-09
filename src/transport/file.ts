@@ -117,6 +117,11 @@ export class FileTransport implements Transport {
       appName: options.appName,
       closeHandle: () => this.closeHandle(),
       getActiveSize: () => this.getActiveSize(),
+      // Bytes not yet flushed to disk. Node's `fs.FileHandle.write` is
+      // synchronous into the OS page cache, so `stat()` already sees the
+      // current size by the time the next write is scheduled. Exposing 0
+      // keeps the API surface stable and the rotator contract accurate.
+      bufferedBytes: () => 0,
       owned: this.owned,
       onError: (level, message, cause) => {
         const err = new Error(`FileTransport ${level}: ${message}`);

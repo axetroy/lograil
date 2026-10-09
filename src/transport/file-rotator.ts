@@ -200,6 +200,15 @@ export interface FileIo {
   closeHandle(): Promise<void>;
   /** Current bytes already written to the active file. */
   getActiveSize(): Promise<number>;
+  /**
+   * Bytes written to the active file since it was (re)opened, NOT yet flushed
+   * to disk. `stat()` only sees bytes that the kernel has actually persisted,
+   * so a sequence of fast writes can leave `stat().size` well below the true
+   * in-memory size. Rotators that decide "rotate now?" must add this
+   * accumulator to `stat()` to avoid under-counting. Reset to 0 by the
+   * transport after `closeHandle()` returns.
+   */
+  bufferedBytes(): number;
   /** Files this transport has created — trimRing/trimTimeRing/caps only touch these. */
   owned: Set<string>;
   /**
@@ -445,12 +454,15 @@ export class TruncateRotator implements Rotator {
   async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
     io.owned.add(basename(this.path));
     io.owned.add(basename(this.backup));
+    // `stat` only sees persisted bytes; add the not-yet-flushed buffered bytes
+    // so the threshold is checked against the true in-memory size.
     let size = 0;
     try {
       size = (await stat(this.path)).size;
     } catch {
       /* file not written yet */
     }
+    size += io.bufferedBytes();
     if (size + bytes > this.maxSize) {
       await io.closeHandle();
       // Remove any previous backup first: on Windows `rename` refuses to
@@ -498,12 +510,15 @@ export class SizeRotator implements Rotator {
   }
   async prepare(bytes: number, _entry: LogEntry, _now: Date, io: FileIo): Promise<boolean> {
     io.owned.add(basename(this.active));
+    // `stat` only sees persisted bytes; add the not-yet-flushed buffered bytes
+    // so the threshold is checked against the true in-memory size.
     let size = 0;
     try {
       size = (await stat(this.active)).size;
     } catch {
       /* file not written yet */
     }
+    size += io.bufferedBytes();
     if (size + bytes > this.maxSize) {
       await io.closeHandle();
       if (this.maxFiles <= 1) {
@@ -659,6 +674,9 @@ export class TimeRotator implements Rotator {
       } catch {
         /* file not written yet */
       }
+      // Add not-yet-flushed buffered bytes so the split threshold reflects the
+      // true in-memory size, not just what the kernel has persisted.
+      size += io.bufferedBytes();
       if (size + bytes > this.maxSize) {
         this.seq += 1;
         await io.closeHandle();
