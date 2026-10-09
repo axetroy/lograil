@@ -167,7 +167,9 @@ Cluster 工作进程。工作进程调用 `setLevel()` 时也会将命令发送�
 | **Worker**（`worker_threads`） | ❌ 禁用 | ✅ `WorkerIpcTransport`（`self.postMessage`） |
 
 复用与 Web Worker 相同的 `WorkerIpcTransport`——Web 和 Node Worker 共享同一套
-`postMessage` 协议。
+`postMessage` 协议。向 `registerWorkerReceiver({ worker })` 传入显式 Worker
+实例且它暴露单槽位 `onmessage` 属性时，已存在的 handler（如有）会被保存，
+并在返回的 unregister 函数中恢复，不会被静默覆盖。
 
 ```ts
 // parent.ts

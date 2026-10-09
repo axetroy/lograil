@@ -48,7 +48,9 @@ class ConsoleTransport implements Transport;
 
 Maps each level to a `console` method (override via `methodMap`). Levels listed in
 `stderrLevels` are additionally routed to `console.error` (stderr) — useful for
-piping warnings/errors to a separate stream.
+piping warnings/errors to a separate stream. The real `console` methods are
+captured at module load with a `typeof console` guard, so importing lograil in a
+minimal runtime that does not expose a global `console` does not throw.
 
 ## FileTransport
 
@@ -233,21 +235,24 @@ interface OtlpTransportOptions {
   onError?: (err: unknown) => void;
   /**
    * Max retry attempts after a transient failure (network error or 5xx).
-   * Each failed attempt is re-queued and retried with exponential backoff.
-   * On exhaustion the batch is dropped and {@link dropCount} increments.
-   * Default `3`. Set to `0` to disable retries entirely (fail fast).
+   * Failed attempts are retried in place with exponential backoff. After the
+   * final attempt a batch that still did not deliver (or was rejected with a
+   * 4xx) increments {@link dropCount}; the record set is remembered for
+   * exactly **one** more delivery attempt on the next `flush()` / `close()`
+   * and then dropped permanently, so a permanently-failing endpoint costs at
+   * most two flush cycles per batch. Default `3`. Set to `0` to disable
+   * retries within a batch (fail fast per attempt).
    */
   maxRetries?: number;
   /**
    * Initial backoff delay in ms before the first retry. Doubles after each
-   * retry, capped at {@link retryMaxDelayMs}. Default `1000`.
+   * retry, capped at {@link retryMaxDelayMs}. Default `250`.
    */
   retryInitialDelayMs?: number;
   /**
-   * Maximum backoff delay in ms. Default `30000`.
+   * Maximum backoff delay in ms. Default `5000`.
    */
-  retryMaxDelayMs?: number;
-  /**
+  retryMaxDelayMs?: number;  /**
    * Max entries the internal buffer can hold before the newest entry is dropped.
    * `0` means unlimited. Default `10_000`.
    */
@@ -261,7 +266,7 @@ class OtlpTransport implements Transport {
   readonly overflowDropCount: number;
   /** Current number of entries waiting in the buffer. */
   readonly bufferLength: number;
-  /** Total batches dropped after exhausting retries. */
+  /** Records that failed delivery after their retry cycles. */
   readonly dropCount: number;
 }
 ```

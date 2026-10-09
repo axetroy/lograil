@@ -42,7 +42,7 @@ interface ConsoleTransportOptions {
 class ConsoleTransport implements Transport;
 ```
 
-将每个级别映射到某个 `console` 方法（可通过 `methodMap` 覆盖）。列在 `stderrLevels` 中的级别会被额外路由到 `console.error`（stderr）——便于把 warning/error 引到单独的流。
+将每个级别映射到某个 `console` 方法（可通过 `methodMap` 覆盖）。列在 `stderrLevels` 中的级别会被额外路由到 `console.error`（stderr）——便于把 warning/error 引到单独的流。模块加载时会用 `typeof console` 保护捕获真实的 `console` 方法，因此在不提供全局 `console` 的精简运行时中导入 lograil 也不会抛错。
 
 ## FileTransport
 
@@ -204,16 +204,19 @@ interface OtlpTransportOptions {
   formatter?: Formatter; // 接口对齐用；OTLP 实际自行序列化条目
   onError?: (err: unknown) => void;
   /**
-   * 瞬态失败（网络错误或 5xx）后的最大重试次数。每次失败会将 batch 重新入队并以指数退避重试。
-   * 重试耗尽后丢弃该 batch 并递增 {@link dropCount}。默认 `3`。设为 `0` 则禁用重试（快速失败）。
+   * 瞬态失败（网络错误或 5xx）后的最大重试次数。失败尝试在原地以指数退避重试。
+   * 最后一次尝试仍未能投递（或被 4xx 直接拒绝）的 batch 会递增 {@link dropCount}；
+   * 其记录集合会被记住，供下一次 `flush()` / `close()` 再投递一次，之后永久丢弃——
+   * 因此一个始终失败的端点每个 batch 最多消耗两个 flush 周期。默认 `3`。
+   * 设为 `0` 则禁用 batch 内重试（每次尝试快速失败）。
    */
   maxRetries?: number;
   /**
-   * 首次重试前的初始退避延迟（毫秒）。每次重试翻倍，上限为 {@link retryMaxDelayMs}。默认 `1000`。
+   * 首次重试前的初始退避延迟（毫秒）。每次重试翻倍，上限为 {@link retryMaxDelayMs}。默认 `250`。
    */
   retryInitialDelayMs?: number;
   /**
-   * 退避延迟上限（毫秒）。默认 `30000`。
+   * 退避延迟上限（毫秒）。默认 `5000`。
    */
   retryMaxDelayMs?: number;
   /**
@@ -229,7 +232,7 @@ class OtlpTransport implements Transport {
   readonly overflowDropCount: number;
   /** 缓冲区中等待发送的当前条目数。 */
   readonly bufferLength: number;
-  /** 重试耗尽后丢弃的总 batch 数。 */
+  /** 重试耗尽后未能投递的记录数。 */
   readonly dropCount: number;
 }
 ```

@@ -134,7 +134,10 @@ function _getWorkerState(): Map<symbol, _WorkerGlobalState> {
  *
  * Works with `Worker` instances (dedicated workers). For a specific worker
  * pass `worker: myWorkerInstance`; otherwise listens on `self.onmessage`
- * for shared-worker / broadcast-channel patterns.
+ * for shared-worker / broadcast-channel patterns. When an explicit `worker`
+ * is given and it exposes a single-slot `onmessage` property, the
+ * pre-existing handler (if any) is saved and restored by the returned
+ * unregister function, so it is not silently clobbered.
  */
 export function registerWorkerReceiver(
   ingest: (entry: LogEntry) => void,

@@ -90,6 +90,10 @@ logger.removeTransport(name: string): void;
 logger.getTransports(): readonly Transport[];
 ```
 
+`addTransport` 以 name 作为 key。添加同名传输器会**替换**旧实例（避免静默双写）：
+旧实例会在后台被 flush 并 close，挂接到其未完成队列之上，排空后再关闭。
+需要卸载但不立即替换时用 `removeTransport`。
+
 ## 管道与插件
 
 ```ts
@@ -143,7 +147,10 @@ await logger.flush(): Promise<void>;
 await logger.destroy(): Promise<void>;
 ```
 
-`flush()` 会排空异步写入队列（包含异步传输器）；`destroy()` 会先 flush，再释放插件并关闭传输器。在进程退出前调用它们，可以避免丢失缓冲中的日志。
+`flush()` 会排空异步写入队列（包含异步传输器），并等待所有**进行中的**插件
+拦截完成——在 `flush()` 运行期间新启动的拦截同样会被等待。`destroy()` 会先
+flush，再释放插件并关闭传输器。在进程退出前调用它们，可以避免丢失缓冲中的
+日志。
 
 ## 错误处理
 

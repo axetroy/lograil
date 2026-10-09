@@ -107,6 +107,12 @@ logger.removeTransport(name: string): void;
 logger.getTransports(): readonly Transport[];
 ```
 
+`addTransport` keys transports by name. Adding a transport whose `name` already
+exists **replaces** the previous instance (no silent double-write): the old one
+is flushed and closed in the background, chained onto its in-flight queue so
+queued writes drain first. Use `removeTransport` to tear one down without
+immediately substituting.
+
 ## Pipeline & plugins
 
 ```ts
@@ -209,9 +215,11 @@ await logger.flush(): Promise<void>;
 await logger.destroy(): Promise<void>;
 ```
 
-`flush()` drains the async write queue (including async transports);
-`destroy()` flushes, tears down plugins and closes transports. Call them before
-your process exits to avoid losing buffered logs.
+`flush()` drains the async write queue (including async transports) and waits
+for every in-flight plugin interception to finish — interceptions that start
+while `flush()` is running are waited for as well. `destroy()` flushes, tears
+down plugins and closes transports. Call them before your process exits to
+avoid losing buffered logs.
 
 ## Process integration
 

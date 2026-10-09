@@ -185,6 +185,12 @@ const log = createLogger({ runtime: createElectronMainRuntime() });
 日志会被缓冲并按批次发送；在进程退出前调用 `flush()`（或开启 logger 的
 `autoFlushOnExit`）以排空。需要全局 `fetch`（Node >= 18、现代浏览器、Electron 均支持）。
 
+瞬态失败（网络错误或 5xx）在原地以指数退避重试（`maxRetries`、
+`retryInitialDelayMs`、`retryMaxDelayMs`）。一次批次在重试后仍未投递（或被 4xx
+直接拒绝）时，其记录计入 `dropCount`；这些记录在**下一次** `flush()` / `close()`
+只再投递一次，之后永久丢弃。因此一个始终失败的 Collector 对每个批次最多消耗
+两个 flush 周期，而不会在每次退出时反复重发。
+
 ```ts
 import { OtlpTransport } from 'lograil';
 

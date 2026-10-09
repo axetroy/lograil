@@ -207,6 +207,14 @@ over `POST /v1/logs`. Entries are buffered and sent in batches; call
 `flush()` (or enable `autoFlushOnExit` on the logger) to drain them before the
 process exits. Requires a global `fetch` (Node >= 18, modern browsers, Electron).
 
+Transient failures (network error or 5xx) are retried in place with exponential
+backoff (`maxRetries`, `retryInitialDelayMs`, `retryMaxDelayMs`). A batch that
+still does not deliver after its retries — or is rejected with a 4xx — counts
+its records into `dropCount`; the records get exactly **one more** delivery
+attempt on the next `flush()` / `close()` and are then dropped permanently.
+This bounds the re-send cost against a permanently-failing collector to two
+flush cycles per batch instead of re-sending on every shutdown.
+
 ```ts
 import { OtlpTransport } from 'lograil';
 

@@ -177,7 +177,11 @@ detects the worker context and sends entries to the parent thread via
 | **Worker** (`worker_threads`) | ❌ disabled | ✅ `WorkerIpcTransport` (`self.postMessage`) |
 
 This uses the same `WorkerIpcTransport` as Web Workers — both Web and Node
-workers share the same `postMessage` protocol.
+workers share the same `postMessage` protocol. When you pass an explicit
+Worker instance to `registerWorkerReceiver({ worker })` and it exposes a
+single-slot `onmessage` property, the pre-existing handler (if any) is saved
+and restored by the returned unregister function, so it is not silently
+clobbered.
 
 ```ts
 // parent.ts
