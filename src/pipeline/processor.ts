@@ -282,15 +282,27 @@ function serializeNode(
   }
   if (node !== null && typeof node === 'object') {
     let changed = false;
-    const out: Record<string, unknown> = {};
+    // `Object.create(null)` so attacker keys like `__proto__` cannot pollute
+    // `Object.prototype` (same hardening as the redact path above).
+    const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     for (const k of Object.keys(node as Record<string, unknown>)) {
       const v = (node as Record<string, unknown>)[k];
       if (serializers[k]) {
-        out[k] = serializers[k](v, entry);
+        Object.defineProperty(out, k, {
+          value: serializers[k](v, entry),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
         changed = true;
       } else {
         const r = serializeNode(v, serializers, entry);
-        out[k] = r;
+        Object.defineProperty(out, k, {
+          value: r,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
         if (r !== v) changed = true;
       }
     }

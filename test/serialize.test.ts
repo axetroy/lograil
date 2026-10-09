@@ -96,6 +96,30 @@ describe('createSerializeProcessor', () => {
     expect(entries[0].args[0]).toBe(ref);
   });
 
+  it('does not pollute Object.prototype when a serialized value has a __proto__ key', () => {
+    // P1-8: attacker-shaped JSON payloads (e.g. `JSON.parse('{"__proto__": {...}}')`)
+    // must not write into `Object.prototype` through the serializer's clone.
+    const { log, entries } = captureLogger({
+      user: (u: unknown) => ({ id: (u as { id: number }).id }),
+    });
+    // Build the object without an own `__proto__` key so JSON round-trip
+    // behaves identically to a real inbound payload.
+    const payload = JSON.parse('{"user":{"id":1,"__proto__":{"polluted":"true"}}}') as Record<
+      string,
+      unknown
+    >;
+    log.info('inbound', payload);
+
+    // Object.prototype must be untouched.
+    expect((Object.prototype as Record<string, unknown>).polluted).toBeUndefined();
+    expect(JSON.parse('{}').polluted).toBeUndefined();
+
+    // The serialized value must still round-trip as JSON.
+    const entry = entries[0];
+    const arg = entry.args[0] as Record<string, unknown>;
+    expect(JSON.parse(JSON.stringify(arg))).toEqual(expect.objectContaining({ user: { id: 1 } }));
+  });
+
   it('snapshots an entry with nested serializer applied', () => {
     const { log, entries } = captureLogger({
       user: (u: unknown) => ({ id: (u as { id: number }).id }),
