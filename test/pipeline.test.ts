@@ -27,6 +27,28 @@ describe('Pipeline', () => {
     expect(p.process(makeEntry({ level: LOG_LEVELS.error }))).not.toBeNull();
   });
 
+  it('drops the entry when a processor explicitly returns null (P2-8)', () => {
+    // A processor that decides the entry must not be logged returns null to
+    // signal a drop. The pipeline must honor that.
+    const dropProcessor = (_entry: LogEntry): LogEntry => null as unknown as LogEntry;
+    const p = new Pipeline({ processors: [dropProcessor] });
+    expect(p.process(makeEntry())).toBeNull();
+  });
+
+  it('does not drop an entry when a processor returns a falsy-but-valid value (P2-8)', () => {
+    // A processor that returns `undefined` signals a drop; any other falsy
+    // value (0, '', false) is treated as a post-processed entry and flows
+    // through to the formatter.
+    const undefinedProcessor = (_entry: LogEntry): LogEntry => undefined as unknown as LogEntry;
+    const p1 = new Pipeline({ processors: [undefinedProcessor] });
+    expect(p1.process(makeEntry())).toBeNull();
+
+    const zeroProcessor = (_entry: LogEntry): LogEntry => 0 as unknown as LogEntry;
+    const p2 = new Pipeline({ processors: [zeroProcessor] });
+    const out = p2.process(makeEntry());
+    expect(out).toBe(0);
+  });
+
   it('combines multiple filters', () => {
     const p = new Pipeline({
       filters: [createLevelFilter(LOG_LEVELS.info), createScopeFilter(['app'])],

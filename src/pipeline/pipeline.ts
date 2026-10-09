@@ -66,7 +66,11 @@ export class Pipeline {
   }
 
   /**
-   * Run filters and processors. Returns `null` when the entry is filtered out.
+   * Run filters and processors. Returns `null` when the entry is dropped —
+   * either by a filter (returns `false`) or by a processor that returns
+   * `null` / `undefined` to signal a drop. A processor that throws is
+   * reported via {@link Pipeline.onError} and the entry continues with the
+   * last good value (it does NOT drop the entry).
    */
   process(entry: LogEntry): LogEntry | null {
     const original = entry;
@@ -93,7 +97,12 @@ export class Pipeline {
         // and continue with the remaining processors.
         this.onError?.(err, { phase: 'process', entry: original });
       }
-      if (!current) return null;
+      // A processor may legitimately return `null` to drop the entry. Treat
+      // any *other* falsy value (0, '', false) as a valid post-processed entry
+      // and let it flow through — only `null` / `undefined` are drop signals.
+      if (current === null || current === undefined) {
+        return null;
+      }
     }
     return current;
   }
