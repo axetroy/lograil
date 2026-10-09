@@ -67,7 +67,7 @@ function safeRequireIpcRenderer():
     const electronModule: {
       ipcRenderer?: { send: (channel: string, ...args: unknown[]) => void };
     } =
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('electron');
     return electronModule?.ipcRenderer;
   } catch {
