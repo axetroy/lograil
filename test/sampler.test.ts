@@ -76,16 +76,47 @@ describe('createSampler', () => {
     rnd.mockRestore();
   });
 
-  it('rate limits with burst, refilling over time', () => {
-    const f = createSampler({ levels: ['info'], maxPerSecond: 2, burst: 2 });
-    expect(f(entry('info', 1000))).toBe(true);
-    expect(f(entry('info', 1000))).toBe(true); // burst exhausted
-    expect(f(entry('info', 1000))).toBe(false); // empty bucket
-    expect(f(entry('info', 2000))).toBe(true); // +2 tokens after 1s
-    expect(f(entry('info', 2000))).toBe(true);
-    expect(f(entry('info', 2000))).toBe(false);
-    expect(f(entry('info', 2500))).toBe(true); // +1 token after +0.5s
-    expect(f(entry('info', 2500))).toBe(false);
+  it('rate limits with burst, refilling over real time (Date.now-based)', () => {
+    // The token-bucket clock is real wall-clock time, not entry.timestamp, so
+    // we stub Date.now to simulate time passing.
+    const realNow = Date.now;
+    let fakeNow = 1_000_000;
+    Date.now = () => fakeNow;
+    try {
+      const f = createSampler({ levels: ['info'], maxPerSecond: 2, burst: 2 });
+      expect(f(entry('info'))).toBe(true); // token 1
+      expect(f(entry('info'))).toBe(true); // token 2, burst exhausted
+      expect(f(entry('info'))).toBe(false); // empty bucket
+      fakeNow += 1000; // +2 tokens
+      expect(f(entry('info'))).toBe(true);
+      expect(f(entry('info'))).toBe(true);
+      expect(f(entry('info'))).toBe(false);
+      fakeNow += 500; // +1 token
+      expect(f(entry('info'))).toBe(true);
+      expect(f(entry('info'))).toBe(false);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('rate limit is immune to regressing entry timestamps (shared sampler)', () => {
+    // A sampler shared across transports can see entries whose `timestamp`
+    // REGRESSES (an earlier-created entry dispatched later). The bucket must
+    // not treat that regression as "negative elapsed time" and skip the
+    // refill — otherwise the limit silently stops working. We prove this by
+    // pinning Date.now and feeding entries with wildly regressing timestamps.
+    const realNow = Date.now;
+    Date.now = () => 2_000_000; // frozen wall clock
+    try {
+      const f = createSampler({ levels: ['info'], maxPerSecond: 1, burst: 1 });
+      // All three entries carry regressing timestamps (5, 4, 3 ms), but
+      // wall-clock is frozen, so no refill happens between calls.
+      expect(f(entry('info', 5_000))).toBe(true); // the single burst token
+      expect(f(entry('info', 4_000))).toBe(false); // bucket empty
+      expect(f(entry('info', 3_000))).toBe(false); // still empty — no negative-time exploit
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   it('never rate-limits levels outside the opt-in set', () => {

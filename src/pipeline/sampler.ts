@@ -66,9 +66,16 @@ export function createSampler(options: SamplingOptions = {}): Filter {
     // Probabilistic sampling.
     if (rate < 1 && Math.random() >= rate) return false;
 
-    // Rate limiting (token bucket keyed on the entry's ms timestamp).
+    // Rate limiting (token bucket). The bucket's clock is `Date.now()`, NOT
+    // `entry.timestamp`: when the same sampler is shared across multiple
+    // transports (or when an entry is produced early and dispatched late),
+    // the entry's timestamp can *regress* relative to a previously-processed
+    // entry. A regressing `now` would make `elapsed` negative, the refill
+    // branch would be skipped, and the bucket would effectively never
+    // consume tokens — defeating the rate limit entirely. Real wall-clock
+    // time is the only correct basis for "max N entries per second".
     if (maxPerSecond !== undefined) {
-      const now = entry.timestamp;
+      const now = Date.now();
       if (lastRefill === 0) {
         lastRefill = now;
         tokens = capacity;
