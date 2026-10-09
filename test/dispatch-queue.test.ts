@@ -281,4 +281,88 @@ describe('Transport queue backpressure', () => {
     await logger.flush();
     expect(mem.entries).toHaveLength(10);
   });
+
+  /**
+   * Regression: a queue that once hit its cap must re-open after the in-flight
+   * writes settle. The old implementation stored a monotonic depth counter that
+   * never decremented, so after the first `limit` writes ever, every subsequent
+   * write was dropped forever.
+   */
+  it('queue limit re-opens after in-flight writes settle', async () => {
+    const written: string[] = [];
+    const t: Transport = {
+      name: 'reopening-transport',
+      formatter: createLineFormatter(),
+      queueLimit: 2,
+      write(_entry: LogEntry, formatted: string): Promise<void> {
+        written.push(formatted);
+        // 30ms so the queue visibly fills up and drains
+        return new Promise<void>((resolve) => setTimeout(resolve, 30));
+      },
+    };
+
+    const logger = new Logger({
+      transports: [t],
+      level: 'debug',
+      // no maxQueueDepth — only the per-transport limit applies
+    });
+
+    // Burst 1: 4 writes while the cap is 2 → 2 are accepted, 2 are dropped
+    for (let i = 0; i < 4; i++) {
+      logger.info(`burst1-${i}`);
+    }
+    // Let the 2 in-flight writes settle
+    await logger.flush();
+    expect(written).toHaveLength(2);
+
+    // Burst 2: 2 more writes. Under the old bug the depth counter had already
+    // hit 4 and would never drop, so both of these would be dropped too.
+    // After the fix, depth reset to 0 on settle, so both are accepted.
+    for (let i = 0; i < 2; i++) {
+      logger.info(`burst2-${i}`);
+    }
+    await logger.flush();
+    expect(written).toHaveLength(4);
+    expect(written[2]).toContain('burst2-0');
+    expect(written[3]).toContain('burst2-1');
+  });
+
+  it('per-transport limit re-opens across multiple bursts without unbounded drop', async () => {
+    const written: string[] = [];
+    const drops: number[] = [];
+    const t: Transport = {
+      name: 'bursting-transport',
+      formatter: createLineFormatter(),
+      queueLimit: 1,
+      write(_entry: LogEntry, formatted: string): Promise<void> {
+        written.push(formatted);
+        return new Promise<void>((resolve) => setTimeout(resolve, 5));
+      },
+      onOverflow(_entry: LogEntry, depth: number) {
+        drops.push(depth);
+      },
+    };
+
+    const logger = new Logger({
+      transports: [t],
+      level: 'debug',
+    });
+
+    // 60ms of bursts, 30ms apart. Each burst writes 3 entries; cap is 1.
+    for (let b = 0; b < 4; b++) {
+      for (let i = 0; i < 3; i++) {
+        logger.info(`b${b}-m${i}`);
+      }
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    await logger.flush();
+
+    // In the old implementation the drop count would keep growing with every
+    // burst because depth never reset; in the fixed version the number of
+    // drops is bounded by the per-burst overflow.
+    expect(drops.length).toBeLessThan(12); // strictly less than 4 bursts * 3 entries
+    // All 4 bursts should have had at least one write land (the first entry
+    // of each burst is accepted; the cap is 1).
+    expect(written.length).toBeGreaterThanOrEqual(4);
+  });
 });

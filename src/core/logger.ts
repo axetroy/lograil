@@ -738,34 +738,61 @@ export class Logger implements LoggerMethods {
       }
       const onErr = transport.onError;
       try {
+        // Decide whether to queue the write BEFORE invoking the transport so a
+        // dropped entry never triggers its side effects (file writes, HTTP
+        // requests, IPC sends). The depth check runs first; only if the queue
+        // is not full do we call `write()`.
+        const existing = this.transportQueues.get(transport);
+        const entryDepth = existing?.depth ?? 0;
+        // Per-transport limit takes precedence over the global one when both set.
+        const limit = transport.queueLimit ?? this.maxQueueDepth;
+        // `depth` is the in-flight count of queued writes for this transport:
+        // 1 on accept, +1 for each subsequent write chained onto the same
+        // queue, 0 once the chain settles. The overflow check compares the
+        // prospective depth (entryDepth + 1) against the limit, so a limit
+        // of N admits up to N in-flight writes and drops the (N+1)th.
+        if (limit > 0 && entryDepth + 1 > limit) {
+          // Drop the newest entry to protect against memory growth.
+          if (transport.onOverflow) transport.onOverflow(frozen, entryDepth + 1);
+          this.reportError(
+            'transport',
+            new Error(`queue full (depth ${entryDepth + 1} > ${limit})`),
+            frozen,
+            transport.name,
+          );
+          continue;
+        }
         const result = transport.write(frozen, String(formatted));
         if (result && typeof (result as Promise<void>).then === 'function') {
           const guarded = this.guardWrite(result as Promise<void>);
           // Chain onto THIS transport's own queue, not a shared one, so a stalled
           // write here cannot block other transports (or the front dispatch queue).
-          const existing = this.transportQueues.get(transport);
-          const entryDepth = existing?.depth ?? 0;
-          // Per-transport limit takes precedence over the global one when both set.
-          const limit = transport.queueLimit ?? this.maxQueueDepth;
-          if (limit > 0 && entryDepth >= limit) {
-            // Drop the newest entry to protect against memory growth.
-            if (transport.onOverflow) transport.onOverflow(frozen, entryDepth + 1);
-            this.reportError(
-              'transport',
-              new Error(`queue full (depth ${entryDepth + 1} >= ${limit})`),
-              frozen,
-              transport.name,
-            );
-            continue;
-          }
           const next = existing?.promise ?? Promise.resolve();
+          const chain = next.then(() => guarded);
+          // In-flight count: 1 if this is the first write on the queue, else
+          // existing.depth + 1 for a write chained onto a queue that already
+          // has pending writes. A final settle handler (registered below)
+          // resets depth to 0 so the overflow cap re-opens.
+          const nextDepth = existing ? existing.depth + 1 : 1;
           const nextEntry: TransportQueueEntry = {
-            promise: next
-              .then(() => guarded)
-              .catch((err) => this.reportTransportError(err, frozen, onErr)),
-            depth: entryDepth + 1,
+            promise: chain.catch((err) => this.reportTransportError(err, frozen, onErr)),
+            depth: nextDepth,
           };
           this.transportQueues.set(transport, nextEntry);
+          // Reset depth when the queued write settles so the overflow cap
+          // re-opens. Chained writes after this point see the up-to-date
+          // depth (>=1 while this write is in flight, 0 once it settles).
+          chain
+            .then(() => {
+              const cur = this.transportQueues.get(transport);
+              if (cur === nextEntry) this.transportQueues.set(transport, { ...cur, depth: 0 });
+            })
+            .catch(() => {
+              // already handled above; still clear depth so a stalled write
+              // does not wedge the queue.
+              const cur = this.transportQueues.get(transport);
+              if (cur === nextEntry) this.transportQueues.set(transport, { ...cur, depth: 0 });
+            });
         }
       } catch (err) {
         this.reportTransportError(err, frozen, onErr);
