@@ -73,18 +73,74 @@ function redactNode(
     }
     return changed ? out : node;
   }
+  if (node instanceof Map) {
+    let changed = false;
+    const out = new Map<unknown, unknown>();
+    node.forEach((value, key) => {
+      const k = key as string;
+      path.push(k);
+      if (matchers.some((m) => m(path))) {
+        out.set(key, replacement);
+        changed = true;
+      } else {
+        const r = redactNode(value, path, matchers, replacement);
+        out.set(key, r);
+        if (r !== value) changed = true;
+      }
+      path.pop();
+    });
+    return changed ? out : node;
+  }
+  if (node instanceof Set) {
+    let changed = false;
+    const out = new Set<unknown>();
+    node.forEach((value, index) => {
+      const k = String(index);
+      path.push(k);
+      if (matchers.some((m) => m(path))) {
+        out.add(replacement);
+        changed = true;
+      } else {
+        const r = redactNode(value, path, matchers, replacement);
+        out.add(r);
+        if (r !== value) changed = true;
+      }
+      path.pop();
+    });
+    return changed ? out : node;
+  }
   if (node !== null && typeof node === 'object') {
     let changed = false;
-    const out: Record<string, unknown> = {};
+    // Use `Object.create(null)` so that keys like `__proto__`, `constructor`
+    // or `toString` are stored as *own* properties instead of triggering
+    // prototype-chain pollution (the default `{}` target would write to
+    // `Object.prototype` when a key is `__proto__`).
+    const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     for (const k of Object.keys(node as Record<string, unknown>)) {
       path.push(k);
       const v = (node as Record<string, unknown>)[k];
       if (matchers.some((m) => m(path))) {
-        out[k] = replacement;
+        // `Object.defineProperty` sidesteps any special-key behaviour that a
+        // plain assignment would trigger.
+        Object.defineProperty(out, k, {
+          value: replacement,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
         changed = true;
       } else {
         const r = redactNode(v, path, matchers, replacement);
-        out[k] = r;
+        if (k === '__proto__') {
+          Object.defineProperty(out, k, {
+            value: r,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        } else {
+          out[k] = r;
+        }
         if (r !== v) changed = true;
       }
       path.pop();

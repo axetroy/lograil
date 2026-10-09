@@ -96,4 +96,63 @@ describe('Processor - redact (paths)', () => {
     expect((out.args as Record<string, unknown>[])[0].password).toBe('[REDACTED]');
     expect(orig[0].password).toBe('a'); // original untouched
   });
+
+  it('does not pollute the global Object.prototype when redacting a __proto__ key', () => {
+    const redact = createRedactProcessor(['password']);
+    // Simulate untrusted input that carries a literal `__proto__` own key.
+    const malicious: Record<string, unknown> = {
+      password: 'secret',
+      [Object.getOwnPropertyNames({} as object)[0]]: 'irrelevant',
+    };
+    // Build an object whose own key is literally `__proto__` without letting
+    // the literal assignment trigger the prototype setter.
+    Object.defineProperty(malicious, '__proto__', {
+      value: { admin: true },
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+
+    const out = redact(entry(malicious));
+    const c = out.context as Record<string, unknown>;
+    // The matched `password` was redacted.
+    expect(c.password).toBe('[REDACTED]');
+    // Crucially, the global Object.prototype must NOT have gained an `admin`
+    // property — that is the classic prototype-pollution exploit.
+    expect((Object.prototype as Record<string, unknown>).admin).toBeUndefined();
+    // A fresh object must not be affected either.
+    expect({} as unknown as Record<string, unknown>).not.toHaveProperty('admin');
+  });
+
+  it('redacts values nested inside Map entries', () => {
+    const redact = createRedactProcessor(['password']);
+    const m = new Map<string, unknown>([
+      ['user', { password: 'a', name: 'b' }],
+      ['safe', 'ok'],
+    ]);
+    const out = redact(entry({ m }));
+    const c = out.context as Record<string, unknown>;
+    const outMap = c.m as Map<string, unknown>;
+    expect(outMap instanceof Map).toBe(true);
+    const user = outMap.get('user') as Record<string, unknown>;
+    expect(user.password).toBe('[REDACTED]');
+    expect(user.name).toBe('b');
+    expect(outMap.get('safe')).toBe('ok');
+    // original Map untouched
+    expect((m.get('user') as Record<string, unknown>).password).toBe('a');
+  });
+
+  it('redacts values nested inside Set entries', () => {
+    const redact = createRedactProcessor(['password']);
+    const s = new Set<Record<string, unknown>>([{ password: 'a', id: 1 }]);
+    const out = redact(entry({ s }));
+    const c = out.context as Record<string, unknown>;
+    const outSet = c.s as Set<Record<string, unknown>>;
+    expect(outSet instanceof Set).toBe(true);
+    const only = outSet.values().next().value as Record<string, unknown>;
+    expect(only.password).toBe('[REDACTED]');
+    expect(only.id).toBe(1);
+    // original set untouched
+    expect((s.values().next().value as Record<string, unknown>).password).toBe('a');
+  });
 });
