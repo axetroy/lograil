@@ -250,6 +250,16 @@ export class OtlpTransport implements Transport {
   private flushPromise: Promise<void> | null = null;
   /** Count of batches that were dropped after exhausting all retries. */
   dropCount = 0;
+  /**
+   * Failed batches that have already completed one full retry cycle. Kept on
+   * the instance (rather than local to a single `flush()` IIFE) so that the
+   * *next* flush attempts exactly one more delivery before giving up for good
+   * (counted into `dropCount` and forgotten). This bounds the re-send work
+   * against a permanently-failing endpoint: each undelivered batch costs at
+   * most two flush cycles instead of being re-sent on every subsequent
+   * `flush()`/`close()` call.
+   */
+  private failedBatches: OtlpLogRecord[][] = [];
   /** Count of individual entries dropped due to queue overflow. */
   overflowDropCount = 0;
   private readonly maxRetries: number;
@@ -322,9 +332,10 @@ export class OtlpTransport implements Transport {
    * error or 5xx), the batch is retried in place with exponential backoff up to
    * {@link OtlpTransportOptions.maxRetries}. A batch that still has not been
    * delivered after its retries — or that is rejected outright by a 4xx — is
-   * counted in {@link dropCount} and re-queued at the front of the queue so a
-   * later `flush()` / `close()` gets one more attempt; a single `flush()`
-   * therefore never spins forever against a permanently-failing endpoint.
+   * counted in {@link dropCount} and remembered for exactly ONE more attempt on
+   * the next `flush()`; a second failure drops it permanently (bounded re-send
+   * work against a permanently-failing endpoint — see P1-10). A single
+   * `flush()` therefore never spins forever.
    *
    * Safe to call repeatedly — when a flush is already in flight it is awaited
    * rather than no-opped, so the caller knows when all in-flight HTTP has
@@ -338,19 +349,29 @@ export class OtlpTransport implements Transport {
     // makes the "queue is empty" check meaningful.
     if (this.flushPromise !== null) {
       await this.flushPromise;
-      // A new entry may have been queued while we were awaiting; drain it too.
-      if (this.queue.length === 0) return;
-    } else if (this.queue.length === 0) {
+      // New entries may have been queued while we were awaiting; drain them
+      // (along with any remembered failed batches) in a follow-up cycle.
+      if (this.queue.length === 0 && this.failedBatches.length === 0) return;
+    } else if (this.queue.length === 0 && this.failedBatches.length === 0) {
       return;
     }
     this.flushPromise = (async () => {
-      // Batches that failed to deliver are remembered here and re-queued ONCE
-      // at the front of the queue after the drain loop. Re-queueing at the
-      // front (rather than leaving them in place) makes `flush()` semantics
-      // well-defined: a single `flush()` attempt will not spin forever on a
-      // permanently-failing endpoint, but a subsequent `flush()` / `close()`
-      // gets one more chance to deliver the same records.
-      const failedBatches: OtlpLogRecord[][] = [];
+      // Batches that failed on the *previous* flush get exactly one more
+      // attempt here (the "one more chance" documented in the header), then
+      // are dropped permanently. The re-send state lives on the instance so
+      // a permanently-failing endpoint costs at most two flush cycles per
+      // undelivered batch instead of re-sending on every subsequent
+      // `flush()` / `close()` call.
+      const retriedFailed = this.failedBatches;
+      this.failedBatches = [];
+      const freshFailed: OtlpLogRecord[][] = [];
+      // Records coming from a *retried* previous-flush batch are marked so
+      // that if this cycle fails again they are dropped permanently instead
+      // of being remembered yet another time (bounds re-sends to two flush
+      // cycles per undelivered batch — see P1-10).
+      const retriedRecordIds = new Set<OtlpLogRecord>();
+      for (const b of retriedFailed) for (const r of b) retriedRecordIds.add(r);
+      this.queue.unshift(...retriedFailed.flat());
       while (this.queue.length > 0) {
         // grab a snapshot of the current queue as the batch to send.
         // entries written after this point go into the next iteration.
@@ -394,17 +415,18 @@ export class OtlpTransport implements Transport {
           }
         }
         if (!delivered) {
-          // Count the undelivered records and remember the batch so it can be
-          // re-queued once after the drain loop completes.
+          // Count the undelivered records. Records that were fresh this cycle
+          // are remembered for exactly ONE more attempt on the next flush
+          // (held on the instance, not re-queued on every flush — see P1-10);
+          // records that came from a retried previous-flush batch and failed
+          // again are dropped permanently here, so a permanently-failing
+          // endpoint costs at most two flush cycles per batch.
           this.dropCount += batch.length;
-          failedBatches.push(batch);
+          const freshRecords = batch.filter((r) => !retriedRecordIds.has(r));
+          if (freshRecords.length > 0) freshFailed.push(freshRecords);
         }
       }
-      // Re-queue failed batches at the front so a subsequent flush() can
-      // attempt them again. This is a safety net, not an infinite retry.
-      for (let i = failedBatches.length - 1; i >= 0; i--) {
-        this.queue.unshift(...failedBatches[i]);
-      }
+      this.failedBatches = freshFailed;
     })().finally(() => {
       this.flushPromise = null;
     });

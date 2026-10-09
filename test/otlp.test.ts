@@ -242,35 +242,53 @@ describe('OtlpTransport', () => {
     await t.flush();
 
     // The 4xx response means the endpoint rejected the payload; we make a
-    // single attempt (no retry) and fail fast. The batch is re-queued at the
-    // front so the entry is not lost from the queue, and `dropCount` counts
-    // the dropped record for diagnostics.
+    // single attempt (no retry) and fail fast. The batch is remembered for
+    // exactly ONE more attempt on the next flush (see P1-10), and
+    // `dropCount` counts the undelivered record for diagnostics.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(t.dropCount).toBe(1); // 1 record failed to deliver
     expect(errors).toHaveLength(1);
-    // The record is back in the queue (re-queued at the front on 4xx).
-    expect(t.bufferLength).toBe(1);
+    // The record is remembered for the next flush's one-and-only retry.
+    expect(t.bufferLength).toBe(0);
   });
 
-  it('re-queues a 5xx batch after retries are exhausted so entries are not lost', async () => {
+  it('retries a 5xx batch once on the next flush, then drops it permanently', async () => {
     const errors: unknown[] = [];
     fetchMock.mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable' });
     const t = new OtlpTransport({
       onError: (e) => void errors.push(e),
-      maxRetries: 1,
+      maxRetries: 0,
       retryInitialDelayMs: 1,
     });
     t.write(makeEntry({ message: 'x' }), 'x');
     t.write(makeEntry({ message: 'y' }), 'y');
     await t.flush();
 
-    // Both records were re-queued after the transient 5xx failed its retries;
-    // the queue keeps them so a subsequent flush can retry delivery.
+    // Both records undelivered after the retry cycle; remembered for the
+    // next flush's one-and-only retry. The queue itself is empty — the
+    // records are NOT re-queued into it (that was the P1-10 bug: re-queueing
+    // on every flush let new writes pile up behind them with no ceiling).
+    // `dropCount` counts undelivered records; `onError` fires once per
+    // batch that fails its attempts.
     expect(t.dropCount).toBe(2);
-    expect(t.bufferLength).toBe(2);
+    expect(t.bufferLength).toBe(0);
+    expect(errors).toHaveLength(1);
+
+    // The next flush retries the remembered batch once (still 503 → drop
+    // again, permanently this time).
+    await t.flush();
+    expect(t.dropCount).toBe(4);
+    expect(t.bufferLength).toBe(0);
+    expect(errors).toHaveLength(2);
+
+    // A third flush is a no-op: the batch is dropped and forgotten.
+    await t.flush();
+    expect(t.dropCount).toBe(4);
+    expect(t.bufferLength).toBe(0);
+    expect(errors).toHaveLength(2);
   });
 
-  it('re-queues a network-error batch after retries are exhausted', async () => {
+  it('retries a network-error batch once on the next flush, then drops it permanently', async () => {
     const errors: unknown[] = [];
     fetchMock.mockRejectedValue(new Error('network down'));
     const t = new OtlpTransport({
@@ -281,11 +299,66 @@ describe('OtlpTransport', () => {
     t.write(makeEntry({ message: 'z' }), 'z');
     await t.flush();
 
-    // Network error with maxRetries=0 → drop immediately, but re-queue the
-    // record so it is not silently lost.
+    // Network error with maxRetries=0 → drop immediately, but the record is
+    // remembered for exactly one more attempt on the next flush (not lost).
     expect(t.dropCount).toBe(1);
-    expect(t.bufferLength).toBe(1);
+    expect(t.bufferLength).toBe(0);
     expect(errors).toHaveLength(1);
+
+    // The next flush retries the remembered batch once (network still down →
+    // drop again, permanently this time).
+    await t.flush();
+    expect(t.dropCount).toBe(2);
+    expect(t.bufferLength).toBe(0);
+    expect(errors).toHaveLength(2);
+
+    // A third flush is a no-op.
+    await t.flush();
+    expect(t.dropCount).toBe(2);
+    expect(t.bufferLength).toBe(0);
+    expect(errors).toHaveLength(2);
+  });
+
+  it('new writes accumulate independently of remembered failed batches (P1-10)', async () => {
+    const errors: unknown[] = [];
+    // First flush: everything fails (4xx), so the batch is remembered.
+    fetchMock.mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
+    const t = new OtlpTransport({
+      onError: (e) => void errors.push(e),
+      maxRetries: 0,
+    });
+    t.write(makeEntry({ message: 'old' }), 'x');
+    await t.flush();
+    expect(t.dropCount).toBe(1);
+    expect(t.bufferLength).toBe(0);
+
+    // New entry written while the collector is still down; it is buffered
+    // normally and is NOT shadowed by the remembered failed batch.
+    t.write(makeEntry({ message: 'new' }), 'x');
+    expect(t.bufferLength).toBe(1);
+
+    // Collector recovers: the next flush delivers the NEW entry and retries
+    // the remembered old batch once (also succeeds now).
+    fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+    await t.flush();
+    expect(t.bufferLength).toBe(0);
+    // fetchMock call #1 was the failed 404; call #2 is the recovered cycle
+    // which delivers both the remembered "old" record and the new "new" record.
+    const bodies = fetchMock.mock.calls
+      .slice(1)
+      .map((c) => JSON.parse((c[1] as { body: string }).body));
+    const allRecords = bodies.flatMap(
+      (b: {
+        resourceLogs: { scopeLogs: { logRecords: { body: { stringValue: string } }[] }[] }[];
+      }) => b.resourceLogs[0].scopeLogs[0].logRecords.map((r) => r.body.stringValue),
+    );
+    expect(allRecords).toContain('old');
+    expect(allRecords).toContain('new');
+    // Successful delivery resets the remembered-batch state: a third flush
+    // is a no-op.
+    await t.flush();
+    expect(t.bufferLength).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   describe('queue overflow (maxQueueSize)', () => {
