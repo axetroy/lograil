@@ -24,13 +24,22 @@ export function createElectronLifecycle(): LifecycleHooks {
     onFlushBeforeExit(cb) {
       if (!app) return nodeFallback().onFlushBeforeExit(cb);
 
-      // `before-quit` fires first and covers the normal close path; `will-quit`
-      // covers the final teardown so a slow first flush still drains.
-      const onBeforeQuit = (): void => {
+      // `before-quit` fires first on the normal close path; `will-quit` fires
+      // on the final teardown. A single `flushed` flag ensures the flush
+      // callback runs at most once — the first event (usually `before-quit`)
+      // does the work and the second (if it fires after the first has already
+      // settled) is a no-op.
+      let flushed = false;
+      const flushOnce = (): void => {
+        if (flushed) return;
+        flushed = true;
         void cb();
       };
+      const onBeforeQuit = (): void => {
+        flushOnce();
+      };
       const onWillQuit = (): void => {
-        void cb();
+        flushOnce();
       };
       app.on('before-quit', onBeforeQuit);
       app.on('will-quit', onWillQuit);

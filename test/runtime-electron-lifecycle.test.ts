@@ -46,7 +46,7 @@ describe('createElectronLifecycle', () => {
     expect(app.removeListener).toHaveBeenCalledWith('will-quit', expect.any(Function));
   });
 
-  it('invokes the flush callback on app before-quit and will-quit', () => {
+  it('invokes the flush callback exactly once when both app events fire (P2-10)', () => {
     const app = makeApp();
     (getElectronApp as ReturnType<typeof vi.fn>).mockReturnValue(app);
     const lc = createElectronLifecycle();
@@ -54,7 +54,27 @@ describe('createElectronLifecycle', () => {
     lc.onFlushBeforeExit(cb);
     app.handlers['before-quit']();
     app.handlers['will-quit']();
-    expect(cb).toHaveBeenCalledTimes(2);
+    // The `flushed` flag guarantees the callback runs at most once: the first
+    // event (before-quit) does the work and the second (will-quit) is a no-op.
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-registers a fresh flush callback when the first registration is detached', () => {
+    const app = makeApp();
+    (getElectronApp as ReturnType<typeof vi.fn>).mockReturnValue(app);
+    const lc = createElectronLifecycle();
+    const cb1 = vi.fn();
+    const detach1 = lc.onFlushBeforeExit(cb1);
+    app.handlers['before-quit']();
+    expect(cb1).toHaveBeenCalledTimes(1);
+    detach1();
+
+    // A second registration gets its own `flushed` flag and fires again.
+    const cb2 = vi.fn();
+    const detach2 = lc.onFlushBeforeExit(cb2);
+    app.handlers['will-quit']();
+    expect(cb2).toHaveBeenCalledTimes(1);
+    detach2();
   });
 
   it('falls back to process hooks when app is unavailable', () => {
