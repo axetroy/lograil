@@ -268,6 +268,10 @@ export class FileTransport implements Transport {
       })
       .catch((err) => {
         // Report every write error so the user can detect disk-full, EPERM, etc.
+        // Re-throw after reporting so that the returned promise (stored in
+        // `this.queue`) still rejects — otherwise `flush()` / `close()` would
+        // `await` a promise that has already been swallowed by `.catch()` and
+        // would report success even when the write actually failed.
         if (this.onError) {
           this.onError(
             new Error(
@@ -278,6 +282,7 @@ export class FileTransport implements Transport {
         } else {
           console.error('[lograil] FileTransport write error:', err);
         }
+        throw err;
       });
     this.queue = task;
     return task;
