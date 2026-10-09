@@ -54,6 +54,41 @@ describe('Plugins', () => {
     expect(t.entries).toHaveLength(0);
   });
 
+  it('a plugin that mutates in place and throws does not leak its mutation (P2-9)', async () => {
+    // The manager passes a shallow snapshot to onEntry. Even if a plugin
+    // mutates the entry it receives AND throws, the next plugin (or the
+    // transports) still see the last *returned* value, not the mutation.
+    // (When the entry is frozen the mutation is a no-op anyway, but the
+    // snapshot contract protects the non-frozen paths too.)
+    const seen = { fields: {} as Record<string, unknown> };
+    const capture: Plugin = {
+      name: 'capture',
+      onEntry(entry) {
+        seen.fields = { ...entry.metadata };
+        return entry;
+      },
+    };
+    const bad: Plugin = {
+      name: 'bad',
+      onEntry(entry) {
+        // Mutate the snapshot in place, then throw.
+        entry.metadata = { ...entry.metadata, badField: 'leaked' };
+        throw new Error('boom');
+      },
+    };
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'debug' });
+    await logger.use(bad);
+    await logger.use(capture);
+    logger.info('hello');
+    await logger.flush();
+
+    // The capture plugin ran AFTER `bad` threw, so it must see the last
+    // good value — the original entry without `badField`.
+    expect(t.entries).toHaveLength(1);
+    expect(seen.fields.badField).toBeUndefined();
+  });
+
   it('rejects duplicate plugin names', async () => {
     const logger = new Logger({ level: 'debug' });
     await logger.use(new TagPlugin());

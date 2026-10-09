@@ -68,6 +68,11 @@ export class PluginManager {
   /**
    * Run every plugin's `onEntry` hook in registration order. A plugin may
    * return `null` to drop the entry, or a modified entry to pass downstream.
+   *
+   * Each hook receives a **shallow copy** of the entry, not the shared
+   * frozen original. A plugin that mutates the entry in place and then
+   * throws therefore cannot leak its partial mutation to later plugins or to
+   * the transports; the next hook still sees the last *returned* value.
    */
   async intercept(entry: LogEntry): Promise<LogEntry | null> {
     let current: LogEntry | null = entry;
@@ -75,10 +80,16 @@ export class PluginManager {
       if (!current) break;
       if (plugin.onEntry) {
         try {
-          current = await plugin.onEntry(current);
+          // Shallow snapshot: the plugin may read freely; if it mutates in
+          // place and throws, the mutation stays local to this copy.
+          const snapshot: LogEntry = { ...current };
+          const result = await plugin.onEntry(snapshot);
+          // `null` / `undefined` is an explicit drop signal from the plugin.
+          current = result === null || result === undefined ? null : result;
         } catch (err) {
           this.onError?.(plugin.name, err, entry);
-          // Keep the entry as-is; a faulty plugin must not drop or mutate it.
+          // Keep the last good value; a faulty plugin must not drop or
+          // mutate the entry that reaches the transports.
         }
       }
     }
