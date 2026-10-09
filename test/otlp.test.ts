@@ -241,8 +241,50 @@ describe('OtlpTransport', () => {
     t.write(makeEntry(), 'x');
     await t.flush();
 
+    // The 4xx response means the endpoint rejected the payload; we make a
+    // single attempt (no retry) and fail fast. The batch is re-queued at the
+    // front so the entry is not lost from the queue, and `dropCount` counts
+    // the dropped record for diagnostics.
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(t.dropCount).toBe(0); // 4xx is not a drop — it's a permanent error
+    expect(t.dropCount).toBe(1); // 1 record failed to deliver
+    expect(errors).toHaveLength(1);
+    // The record is back in the queue (re-queued at the front on 4xx).
+    expect(t.bufferLength).toBe(1);
+  });
+
+  it('re-queues a 5xx batch after retries are exhausted so entries are not lost', async () => {
+    const errors: unknown[] = [];
+    fetchMock.mockResolvedValue({ ok: false, status: 503, statusText: 'Service Unavailable' });
+    const t = new OtlpTransport({
+      onError: (e) => void errors.push(e),
+      maxRetries: 1,
+      retryInitialDelayMs: 1,
+    });
+    t.write(makeEntry({ message: 'x' }), 'x');
+    t.write(makeEntry({ message: 'y' }), 'y');
+    await t.flush();
+
+    // Both records were re-queued after the transient 5xx failed its retries;
+    // the queue keeps them so a subsequent flush can retry delivery.
+    expect(t.dropCount).toBe(2);
+    expect(t.bufferLength).toBe(2);
+  });
+
+  it('re-queues a network-error batch after retries are exhausted', async () => {
+    const errors: unknown[] = [];
+    fetchMock.mockRejectedValue(new Error('network down'));
+    const t = new OtlpTransport({
+      onError: (e) => void errors.push(e),
+      maxRetries: 0,
+      retryInitialDelayMs: 1,
+    });
+    t.write(makeEntry({ message: 'z' }), 'z');
+    await t.flush();
+
+    // Network error with maxRetries=0 → drop immediately, but re-queue the
+    // record so it is not silently lost.
+    expect(t.dropCount).toBe(1);
+    expect(t.bufferLength).toBe(1);
     expect(errors).toHaveLength(1);
   });
 

@@ -319,12 +319,16 @@ export class OtlpTransport implements Transport {
 
   /**
    * Send the buffered batch to the OTLP endpoint. On transient failure (network
-   * error or 5xx), the batch is re-queued and retried with exponential backoff
-   * up to {@link OtlpTransportOptions.maxRetries}. After exhausting retries the
-   * batch is dropped and {@link dropCount} is incremented.
+   * error or 5xx), the batch is retried in place with exponential backoff up to
+   * {@link OtlpTransportOptions.maxRetries}. A batch that still has not been
+   * delivered after its retries — or that is rejected outright by a 4xx — is
+   * counted in {@link dropCount} and re-queued at the front of the queue so a
+   * later `flush()` / `close()` gets one more attempt; a single `flush()`
+   * therefore never spins forever against a permanently-failing endpoint.
    *
-   * Safe to call repeatedly — no-op while already flushing or when the queue is
-   * empty. Non-transient errors (4xx) fail fast without retry.
+   * Safe to call repeatedly — when a flush is already in flight it is awaited
+   * rather than no-opped, so the caller knows when all in-flight HTTP has
+   * completed. Non-transient errors (4xx) fail fast without retry.
    */
   async flush(): Promise<void> {
     // If a flush is already in flight, await it rather than returning early:
@@ -340,11 +344,19 @@ export class OtlpTransport implements Transport {
       return;
     }
     this.flushPromise = (async () => {
+      // Batches that failed to deliver are remembered here and re-queued ONCE
+      // at the front of the queue after the drain loop. Re-queueing at the
+      // front (rather than leaving them in place) makes `flush()` semantics
+      // well-defined: a single `flush()` attempt will not spin forever on a
+      // permanently-failing endpoint, but a subsequent `flush()` / `close()`
+      // gets one more chance to deliver the same records.
+      const failedBatches: OtlpLogRecord[][] = [];
       while (this.queue.length > 0) {
         // grab a snapshot of the current queue as the batch to send.
         // entries written after this point go into the next iteration.
         const batch = this.queue.splice(0);
         let delay = this.retryInitialDelayMs;
+        let delivered = false;
         for (let attempt = 1; attempt <= this.maxRetries + 1; attempt++) {
           try {
             const res = await fetch(this.endpoint, {
@@ -352,15 +364,18 @@ export class OtlpTransport implements Transport {
               headers: this.headers,
               body: JSON.stringify(this.buildPayload(batch)),
             });
-            if (res.ok) break; // success — batch consumed
-            // 4xx: client error, fail fast (no retry)
+            if (res.ok) {
+              delivered = true;
+              break; // success — batch consumed
+            }
+            // 4xx: client error, fail fast (no retry) — the endpoint rejected
+            // the payload itself, so re-sending it would just fail again.
             if (res.status < 500) {
               this.errorHandler(new Error(`OTLP HTTP ${res.status} ${res.statusText}`));
               break;
             }
             // transient server error — retry or give up
             if (attempt > this.maxRetries) {
-              this.dropCount++;
               this.errorHandler(new Error(`OTLP HTTP ${res.status} after ${attempt - 1} retries`));
               break;
             }
@@ -370,7 +385,6 @@ export class OtlpTransport implements Transport {
           } catch (err) {
             // network error — retry or give up
             if (attempt > this.maxRetries) {
-              this.dropCount++;
               this.errorHandler(err);
               break;
             }
@@ -379,6 +393,17 @@ export class OtlpTransport implements Transport {
             // stay in the for-loop: next iteration re-uses the same batch
           }
         }
+        if (!delivered) {
+          // Count the undelivered records and remember the batch so it can be
+          // re-queued once after the drain loop completes.
+          this.dropCount += batch.length;
+          failedBatches.push(batch);
+        }
+      }
+      // Re-queue failed batches at the front so a subsequent flush() can
+      // attempt them again. This is a safety net, not an infinite retry.
+      for (let i = failedBatches.length - 1; i >= 0; i--) {
+        this.queue.unshift(...failedBatches[i]);
       }
     })().finally(() => {
       this.flushPromise = null;
