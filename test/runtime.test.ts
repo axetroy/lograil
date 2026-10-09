@@ -209,24 +209,41 @@ describe('Electron renderer runtime', () => {
 
 describe('Electron runtime (auto-detect)', () => {
   const originalType = (process as unknown as { type?: string }).type;
+  const originalVersions = (process as unknown as Record<string, unknown>).versions;
 
   afterEach(() => {
     (process as unknown as { type?: string }).type = originalType;
+    Object.defineProperty(process, 'versions', {
+      value: originalVersions,
+      writable: true,
+      configurable: true,
+    });
   });
+
+  /** Simulate running inside an Electron process by injecting `versions.electron`. */
+  function asElectronBrowser(): void {
+    Object.defineProperty(process, 'versions', {
+      value: { ...(originalVersions as Record<string, unknown>), electron: '28.0.0' },
+      writable: true,
+      configurable: true,
+    });
+    (process as unknown as { type?: string }).type = 'browser';
+  }
 
   it.skip('detects renderer when process.type is not browser', () => {
     // Skipped: require('electron') throws in test environments without the
     // electron binary (ELECTRON_SKIP_BINARY_DOWNLOAD=1 only skips download,
     // path.txt is still absent). CI runners (ubuntu/windows/macos) have the
     // real binary so this test passes there.
+    asElectronBrowser();
     (process as unknown as { type?: string }).type = 'renderer';
     const rt = createElectronRuntime({ ipcRenderer: { send() {} } });
     expect(rt.processType).toBe('renderer');
     expect(rt.defaultTransports().map((t) => t.name)).toEqual(['console', 'ipc:lograil:log']);
   });
 
-  it('detects main when process.type is browser', () => {
-    (process as unknown as { type?: string }).type = 'browser';
+  it('detects main when process.type is browser and Electron versions present', () => {
+    asElectronBrowser();
     const rt = createElectronRuntime();
     expect(rt.processType).toBe('main');
     const names = rt.defaultTransports().map((t) => t.name);
@@ -234,9 +251,17 @@ describe('Electron runtime (auto-detect)', () => {
   });
 
   it('treats an Electron process without an explicit renderer type as main', () => {
+    asElectronBrowser();
     (process as unknown as { type?: string }).type = undefined;
     const rt = createElectronRuntime();
     expect(rt.processType).toBe('main');
+  });
+
+  it('treats a plain Node process (no Electron versions) as non-main', () => {
+    // P1-6 regression: a missing `process.versions.electron` means we are not
+    // in Electron at all, so `isMainProcess()` must return false (renderer).
+    const rt = createElectronRuntime();
+    expect(rt.processType).toBe('renderer');
   });
 });
 

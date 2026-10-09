@@ -151,3 +151,69 @@ describe('createElectronMainRuntime', () => {
     expect(ts.some((t) => t instanceof FileTransport)).toBe(false);
   });
 });
+
+describe('createElectronRuntime (P1-6: process-type detection)', () => {
+  // `createElectronRuntime` chooses between the main and renderer runtimes
+  // using `process.versions.electron` / `process.type`. In the test
+  // environment (plain Node, no Electron), `isMainProcess()` must return
+  // false → renderer runtime. The renderer runtime is created successfully
+  // even without a real Electron install because `safeRequireIpcRenderer`
+  // in `electron.ts` swallows the missing-module error.
+  it('selects the renderer runtime in plain Node (no process.versions.electron)', async () => {
+    const { createElectronRuntime } = await import('../src/runtime/electron.js');
+    const adapter = createElectronRuntime();
+    expect((adapter as { processType?: string }).processType).toBe('renderer');
+  });
+
+  it('selects the main runtime when process.versions.electron is present', async () => {
+    const { createElectronRuntime } = await import('../src/runtime/electron.js');
+    const originalVersions = (process as unknown as Record<string, unknown>).versions;
+    Object.defineProperty(process, 'versions', {
+      value: { ...(originalVersions as Record<string, unknown>), electron: '28.0.0' },
+      writable: true,
+      configurable: true,
+    });
+    try {
+      const adapter = createElectronRuntime();
+      expect((adapter as { processType?: string }).processType).toBe('main');
+      expect((adapter as { attachReceiver?: unknown }).attachReceiver).toBeTypeOf('function');
+    } finally {
+      Object.defineProperty(process, 'versions', {
+        value: originalVersions,
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
+
+  it('selects the renderer runtime when process.type is "renderer" (Electron)', async () => {
+    const { createElectronRuntime } = await import('../src/runtime/electron.js');
+    const originalVersions = (process as unknown as Record<string, unknown>).versions;
+    const originalType = (process as unknown as Record<string, unknown>).type;
+    Object.defineProperty(process, 'versions', {
+      value: { ...(originalVersions as Record<string, unknown>), electron: '28.0.0' },
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(process, 'type', {
+      value: 'renderer',
+      writable: true,
+      configurable: true,
+    });
+    try {
+      const adapter = createElectronRuntime();
+      expect((adapter as { processType?: string }).processType).toBe('renderer');
+    } finally {
+      Object.defineProperty(process, 'versions', {
+        value: originalVersions,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(process, 'type', {
+        value: originalType,
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
+});
