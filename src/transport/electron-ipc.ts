@@ -84,21 +84,23 @@ export class ElectronIpcTransport implements Transport {
   write(entry: LogEntry, _formatted: string): void {
     const ipc = this.getIpc();
     if (!ipc) return;
-    // If the circuit is open, skip this entry and surface it via the
-    // transport's own `onError` hook so the Logger can report it without
-    // spamming the console.
-    if (this.breakerOpenUntil > 0 && Date.now() < this.breakerOpenUntil) {
-      this.onError?.(
-        new Error('electron-ipc circuit breaker open; entry dropped until next window'),
-        entry,
-      );
-      return;
-    }
+    // While the breaker is open we still attempt delivery on every write
+    // (so the channel can recover as soon as the peer comes back), but we
+    // suppress the per-entry error reporting that would otherwise spam the
+    // console. A single "breaker open" diagnostic is emitted when the
+    // breaker trips; individual failures inside the open window are silent.
+    const breakerOpen = this.breakerOpenUntil > 0 && Date.now() < this.breakerOpenUntil;
     try {
       ipc.send(this.channel, entry);
       this.consecutiveFailures = 0;
       this.breakerOpenUntil = 0;
     } catch (err) {
+      if (breakerOpen) {
+        // Still failing while the breaker is open — extend the window so a
+        // permanently-dead peer does not produce unbounded noise.
+        this.breakerOpenUntil = Date.now() + ElectronIpcTransport.OPEN_MS;
+        return;
+      }
       this.consecutiveFailures += 1;
       if (this.consecutiveFailures >= ElectronIpcTransport.BREAK_AFTER) {
         this.breakerOpenUntil = Date.now() + ElectronIpcTransport.OPEN_MS;

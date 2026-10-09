@@ -17,17 +17,63 @@ export interface WorkerIpcTransportOptions {
  * Worker-side transport that sends entries to the main thread via
  * `self.postMessage()`. Safe to import in non-Worker environments — the write
  * call is a no-op when `self.postMessage` is unavailable.
+ *
+ * A small circuit breaker protects against a dead main thread: when the peer
+ * is gone, every `postMessage` throws and the user-visible noise would be
+ * unbounded. The breaker tracks consecutive failures and, after
+ * {@link WorkerIpcTransport.BREAK_AFTER} in a row, suppresses per-entry
+ * error reporting for {@link WorkerIpcTransport.OPEN_MS} milliseconds.
+ * Delivery is still attempted on every write (so the channel recovers as
+ * soon as the peer returns); a single "breaker open" diagnostic is emitted
+ * when the breaker trips, and the window is extended while failures
+ * continue.
  */
 export class WorkerIpcTransport implements Transport {
   readonly name: string;
+  /** Optional hook, forwarded to the logger when the breaker opens. */
+  onError?: (err: unknown, entry: LogEntry) => void;
+  private consecutiveFailures = 0;
+  private breakerOpenUntil = 0;
+  private static readonly BREAK_AFTER = 5;
+  private static readonly OPEN_MS = 5_000;
+
   constructor(options: WorkerIpcTransportOptions = {}) {
     this.name = options.name ?? 'worker-ipc';
   }
+
   write(entry: LogEntry, _formatted: string): void {
     try {
+      // While the breaker is open we still attempt delivery on every write
+      // (so the channel can recover as soon as the peer comes back), but we
+      // suppress the per-entry error reporting that would otherwise spam the
+      // console. A single "breaker open" diagnostic is emitted when the
+      // breaker trips; individual failures inside the open window are silent.
+      const breakerOpen = this.breakerOpenUntil > 0 && Date.now() < this.breakerOpenUntil;
       const target = self as unknown as MessageTarget;
       if (typeof target.postMessage === 'function') {
-        target.postMessage({ __lograilWorker: true, entry });
+        try {
+          target.postMessage({ __lograilWorker: true, entry });
+          this.consecutiveFailures = 0;
+          this.breakerOpenUntil = 0;
+        } catch {
+          if (breakerOpen) {
+            // Still failing while the breaker is open — extend the window so
+            // a permanently-dead peer does not produce unbounded noise.
+            this.breakerOpenUntil = Date.now() + WorkerIpcTransport.OPEN_MS;
+            return;
+          }
+          this.consecutiveFailures += 1;
+          if (this.consecutiveFailures >= WorkerIpcTransport.BREAK_AFTER) {
+            this.breakerOpenUntil = Date.now() + WorkerIpcTransport.OPEN_MS;
+            this.consecutiveFailures = 0;
+            this.onError?.(
+              new Error(
+                `worker-ipc: main thread unreachable ${WorkerIpcTransport.BREAK_AFTER} times in a row; breaker open for ${WorkerIpcTransport.OPEN_MS}ms`,
+              ),
+              entry,
+            );
+          }
+        }
       }
     } catch {
       /* postMessage unavailable or failed — drop silently */
@@ -40,6 +86,8 @@ export class WorkerIpcTransport implements Transport {
       if (typeof target.postMessage === 'function') {
         const cmd: LogLevelCommand = { __lograilCmd: true, __lograilCmdType: 'setLevel', level };
         target.postMessage(cmd);
+        this.consecutiveFailures = 0;
+        this.breakerOpenUntil = 0;
       }
     } catch {
       /* postMessage unavailable — drop silently */

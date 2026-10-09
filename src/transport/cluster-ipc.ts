@@ -48,18 +48,21 @@ export class ClusterIpcTransport implements Transport {
         send?: (message: unknown, callback?: (err?: Error) => void) => boolean;
       };
       if (typeof proc.send === 'function') {
-        // If the circuit is open, skip this entry and surface it via the
-        // transport's own `onError` hook so the Logger can report it without
-        // spamming the console.
-        if (this.breakerOpenUntil > 0 && Date.now() < this.breakerOpenUntil) {
-          this.onError?.(
-            new Error('cluster-ipc circuit breaker open; entry dropped until next window'),
-            entry,
-          );
-          return;
-        }
+        // While the breaker is open we still attempt delivery on every write
+        // (so the channel can recover as soon as the peer comes back), but
+        // we suppress the per-entry error reporting that would otherwise
+        // spam the console. A single "breaker open" diagnostic is emitted
+        // when the breaker trips; individual failures inside the open
+        // window are silent.
+        const breakerOpen = this.breakerOpenUntil > 0 && Date.now() < this.breakerOpenUntil;
         proc.send(entry, (err?: Error) => {
           if (err) {
+            if (breakerOpen) {
+              // Still failing while the breaker is open — extend the window
+              // so a permanently-dead peer does not produce unbounded noise.
+              this.breakerOpenUntil = Date.now() + ClusterIpcTransport.OPEN_MS;
+              return;
+            }
             this.consecutiveFailures += 1;
             if (this.consecutiveFailures >= ClusterIpcTransport.BREAK_AFTER) {
               this.breakerOpenUntil = Date.now() + ClusterIpcTransport.OPEN_MS;
