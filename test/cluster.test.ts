@@ -59,6 +59,57 @@ describe('ClusterIpcTransport', () => {
   it('accepts custom name', () => {
     expect(new ClusterIpcTransport({ name: 'my-ipc' }).name).toBe('my-ipc');
   });
+
+  it('opens the circuit breaker after 5 consecutive failures', () => {
+    const send = vi.fn((message: unknown, callback?: (err?: Error) => void) => {
+      callback?.(new Error('primary gone'));
+      return true;
+    });
+    const original = process.send;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process as any).send = send;
+    const errors: unknown[] = [];
+    const transport = new ClusterIpcTransport();
+    transport.onError = (err) => {
+      errors.push(err);
+    };
+
+    const entry = makeEntry();
+    // 5 failures → breaker opens; subsequent writes are dropped without
+    // calling process.send again. Because the mock send invokes the callback
+    // synchronously, the 5th failure triggers the "breaker open" diagnostic,
+    // and writes 6 & 7 hit the "breaker open; entry dropped" path, adding
+    // two more onError calls. Total: 3 onError calls.
+    for (let i = 0; i < 7; i++) {
+      transport.write(entry, 'formatted');
+    }
+    expect(send).toHaveBeenCalledTimes(5); // only the first 5 hit the channel
+    expect(errors).toHaveLength(3); // 1 "breaker open" + 2 "entry dropped"
+    expect(String(errors[0])).toContain('breaker open');
+    expect(String(errors[1])).toContain('entry dropped');
+
+    // A success resets the breaker so subsequent failures are counted again.
+    send.mockImplementation((message: unknown, callback?: (err?: Error) => void) => {
+      callback?.(undefined);
+      return true;
+    });
+    transport.write(entry, 'formatted'); // success — resets state
+    // After reset, the next 5 failures reopen the breaker. Because the mock
+    // send invokes the callback synchronously, the 5th failure in this batch
+    // opens the breaker and writes 6 & 7 are dropped. Total new errors:
+    // 1 "breaker open" + 2 "entry dropped" = 3. Previous total was 3.
+    send.mockImplementation((message: unknown, callback?: (err?: Error) => void) => {
+      callback?.(new Error('primary gone again'));
+      return true;
+    });
+    for (let i = 0; i < 7; i++) {
+      transport.write(entry, 'formatted');
+    }
+    expect(errors).toHaveLength(6);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process as any).send = original;
+  });
 });
 
 describe('registerClusterReceiver', () => {

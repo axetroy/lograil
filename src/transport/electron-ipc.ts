@@ -40,44 +40,50 @@ export interface ElectronIpcTransportOptions {
 /**
  * Renderer-side transport. Forwards each log entry to the Electron main
  * process over IPC, where it is persisted by the main logger (the renderer
- * itself has no filesystem access). Uses structured cloning via the IPC
- * channel — no serialisation cost on the logger side.
+ * itself has no filesystem access). Uses structured cloning via
+ * `ipcRenderer.send()`.
  *
  * A small circuit breaker protects against a dead main process: when the main
  * side is gone, `ipc.send` fails on every entry and the user-visible console
  * noise would be unbounded. The breaker tracks consecutive failures and,
- * after `breakAfter` in a row, stops trying for `openMs` milliseconds.
- * Once the channel recovers, the breaker opens again on the next success.
+ * after {@link ElectronIpcTransport.BREAK_AFTER} in a row, stops trying for
+ * {@link ElectronIpcTransport.OPEN_MS} milliseconds. Once the channel
+ * recovers, the breaker opens again on the next success.
  */
 export class ElectronIpcTransport implements Transport {
   readonly name: string;
+  readonly channel: string;
   /** Optional hook, forwarded to the logger when the breaker opens. */
   onError?: (err: unknown, entry: LogEntry) => void;
-  private readonly channel: string;
-  private readonly sender?: IpcSender;
   private consecutiveFailures = 0;
   private breakerOpenUntil = 0;
   private static readonly BREAK_AFTER = 5;
   private static readonly OPEN_MS = 5_000;
 
+  private injectedIpc?: IpcSender;
+  private resolvedIpc?: IpcSender;
+
   constructor(options: ElectronIpcTransportOptions = {}) {
-    this.name = options.name ?? 'electron-ipc';
     this.channel = options.channel ?? LOGRAIL_CHANNEL;
-    this.sender = options.ipcRenderer;
+    this.name = options.name ?? `ipc:${this.channel}`;
+    this.injectedIpc = options.ipcRenderer;
   }
 
-  /** Resolve the IPC sender, preferring the injected one over `require('electron')`. */
   private getIpc(): IpcSender | undefined {
-    if (this.sender) return this.sender;
-    try {
-      const electron = getElectron();
-      return electron?.ipcRenderer as IpcSender | undefined;
-    } catch {
-      return undefined;
+    if (this.injectedIpc) return this.injectedIpc;
+    if (!this.resolvedIpc) {
+      try {
+        this.resolvedIpc = getElectron().ipcRenderer;
+      } catch {
+        return undefined;
+      }
     }
+    return this.resolvedIpc;
   }
 
   write(entry: LogEntry, _formatted: string): void {
+    const ipc = this.getIpc();
+    if (!ipc) return;
     // If the circuit is open, skip this entry and surface it via the
     // transport's own `onError` hook so the Logger can report it without
     // spamming the console.
@@ -88,8 +94,6 @@ export class ElectronIpcTransport implements Transport {
       );
       return;
     }
-    const ipc = this.getIpc();
-    if (!ipc) return;
     try {
       ipc.send(this.channel, entry);
       this.consecutiveFailures = 0;
@@ -118,71 +122,95 @@ export class ElectronIpcTransport implements Transport {
     const cmd: LogLevelCommand = { __lograilCmd: true, __lograilCmdType: 'setLevel', level };
     try {
       ipc.send(this.channel, cmd);
-    } catch (err) {
-      RAW_CONSOLE_ERROR(`[lograil] ipc transport (${this.name}) level command failed:`, err);
+      this.consecutiveFailures = 0;
+      this.breakerOpenUntil = 0;
+    } catch {
+      this.consecutiveFailures += 1;
+      /* command loss is not fatal */
     }
-  }
-
-  close(): void {
-    /* No-op. IPC channel lifecycle is managed by the Electron app. */
   }
 }
 
+export interface IpcReceiverOptions {
+  channel?: string;
+}
 /**
- * Main-side helper: listen for IPC entries and feed them into the provided
- * `ingest` callback (typically `logger.ingestEntry`). Returns an
- * unregister function.
- *
- * Works for both the main-process `ipcMain` (channel name → handler) and a
- * pre-wired {@link IpcRenderer}-like sender injected by the caller.
+ * Subscriber entry tracked on globalThis so that multiple bundled copies of
+ * this module (e.g. from node_modules hoisting or chunk splitting) share the
+ * same registration set instead of each keeping their own independent one.
+ */
+interface _ElectronSubscriber {
+  ingest: (entry: LogEntry) => void;
+  onLevelCommand?: (level: number) => void;
+}
+interface _ElectronChannelState {
+  subscribers: _ElectronSubscriber[];
+  handler: (event: unknown, payload: unknown) => void;
+}
+const _STATE_ELECTRON = Symbol('lograil:electron-ipc:state');
+function _getElectronState(): Map<string, _ElectronChannelState> {
+  if (typeof globalThis !== 'undefined' && _STATE_ELECTRON in globalThis)
+    return globalThis[_STATE_ELECTRON as unknown as keyof typeof globalThis] as Map<
+      string,
+      _ElectronChannelState
+    >;
+  const m = new Map<string, _ElectronChannelState>();
+  if (typeof globalThis !== 'undefined')
+    (globalThis as Record<symbol, Map<string, _ElectronChannelState>>)[_STATE_ELECTRON] = m;
+  return m;
+}
+/**
+ * Main-side helper: listen on the IPC channel and feed received renderer
+ * entries into the provided `ingest` callback (typically `logger.ingestEntry`).
+ * Level-change commands are forwarded to `onLevelCommand` when provided.
+ * Multiple loggers can safely register on the same channel; each receives its
+ * own copy of every message. The IPC listener is removed only when the last
+ * subscriber unregisters.
  */
 export function registerIpcReceiver(
   ingest: (entry: LogEntry) => void,
-  options: {
-    channel?: string;
-    ipcMain?: { on(channel: string, h: (e: unknown, data: unknown) => void): void };
-    onLevelCommand?: (level: number) => void;
-  } = {},
+  options: IpcReceiverOptions & { onLevelCommand?: (level: number) => void } = {},
 ): () => void {
   const channel = options.channel ?? LOGRAIL_CHANNEL;
   const onLevelCommand = options.onLevelCommand;
-  const ipcMain = options.ipcMain;
-  if (!ipcMain) {
-    // Fall back to `require('electron').ipcMain` when available (main process).
-    try {
-      const electron = getElectron();
-      const main = electron?.ipcMain as
-        { on(channel: string, h: (e: unknown, data: unknown) => void): void } | undefined;
-      if (!main) return () => {};
-      return wrapIpcMain(main, channel, ingest, onLevelCommand);
-    } catch {
-      return () => {};
-    }
+  // `electron` is only present in a main process; resolve it lazily.
+  const ipcMain = getElectron().ipcMain;
+  const stateMap = _getElectronState();
+  let channelState = stateMap.get(channel);
+  if (!channelState) {
+    // First subscriber for this channel — attach a single IPC handler that
+    // fans out to all registered subscribers.
+    const subscribers: _ElectronSubscriber[] = [];
+    const handler = (_event: unknown, payload: unknown): void => {
+      const data = payload as LogEntry | LogLevelCommand;
+      if (isLogLevelCommand(data)) {
+        for (const sub of subscribers) {
+          sub.onLevelCommand?.(normalizeLevel(data.level));
+        }
+        return;
+      }
+      const entry = data as LogEntry;
+      for (const sub of subscribers) {
+        // Copy-on-write: mark renderer-origin without mutating a shared/frozen entry.
+        sub.ingest({
+          ...entry,
+          metadata: { ...entry.metadata, [RENDERER_PROCESS_MARKER]: 'renderer' },
+        });
+      }
+    };
+    ipcMain.on(channel, handler);
+    channelState = { subscribers, handler };
+    stateMap.set(channel, channelState);
   }
-  return wrapIpcMain(ipcMain, channel, ingest, onLevelCommand);
-}
-
-function wrapIpcMain(
-  ipcMain: { on(channel: string, h: (e: unknown, data: unknown) => void): void },
-  channel: string,
-  ingest: (entry: LogEntry) => void,
-  onLevelCommand?: (level: number) => void,
-): () => void {
-  const handler = (_event: unknown, data: unknown): void => {
-    if (isLogLevelCommand(data)) {
-      onLevelCommand?.(normalizeLevel(data.level));
-      return;
-    }
-    if (data && typeof data === 'object' && 'level' in data && 'message' in data) {
-      ingest(data as LogEntry);
-    }
-  };
-  ipcMain.on(channel, handler);
+  channelState.subscribers.push({ ingest, onLevelCommand });
   return () => {
-    /*
-     * `ipcMain.removeListener` requires the exact handler reference; the
-     * transport keeps it on the closure scope so the caller can dispose the
-     * listener without a separate registry.
-     */
+    const idx = channelState.subscribers.findIndex(
+      (s) => s.ingest === ingest && s.onLevelCommand === onLevelCommand,
+    );
+    if (idx !== -1) channelState.subscribers.splice(idx, 1);
+    if (channelState.subscribers.length === 0) {
+      stateMap.delete(channel);
+      ipcMain.removeListener(channel, channelState.handler);
+    }
   };
 }

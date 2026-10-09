@@ -1,6 +1,7 @@
 import type { LogEntry } from '../types.js';
 import type { Transport } from './transport.js';
 import type { LogLevelCommand } from '../types.js';
+import { isLogLevelCommand, normalizeLevel } from '../types.js';
 
 // Captured at module load so error reporting never recurses into itself.
 const RAW_CONSOLE_ERROR: (...args: unknown[]) => void =
@@ -23,8 +24,9 @@ export interface ClusterIpcTransportOptions {
  * A small circuit breaker protects against a dead primary: when the peer is
  * gone, `process.send` fails on every entry and the user-visible console
  * noise would be unbounded. The breaker tracks consecutive failures and,
- * after `breakAfter` in a row, stops trying for `openMs` milliseconds.
- * Once the channel recovers, the breaker opens again on the next success.
+ * after {@link ClusterIpcTransport.BREAK_AFTER} in a row, stops trying for
+ * {@link ClusterIpcTransport.OPEN_MS} milliseconds. Once the channel
+ * recovers, the breaker opens again on the next success.
  */
 export class ClusterIpcTransport implements Transport {
   readonly name: string;
@@ -112,51 +114,104 @@ export class ClusterIpcTransport implements Transport {
 
 // ---- Primary-side receiver ------------------------------------------------
 
+export interface ClusterReceiverOptions {
+  /** Reserved for future use. Currently all cluster messages share one channel. */
+  channel?: string;
+}
+
 /**
  * Subscriber entry tracked on `globalThis` so that multiple bundled copies of
- * this module (e.g. from `node_modules` hoisting) share the same registration
- * set instead of each keeping its own.
+ * this module (e.g. from node_modules hoisting or chunk splitting) share the
+ * same registration set instead of each keeping their own independent one.
  */
 interface _ClusterSubscriber {
   ingest: (entry: LogEntry) => void;
   onLevelCommand?: (level: number) => void;
 }
 
+interface _ClusterProcessState {
+  subscribers: _ClusterSubscriber[];
+  handler: (message: unknown) => void;
+}
+
 const _STATE_CLUSTER = Symbol('lograil:cluster-ipc:state');
-function _getClusterState(): _ClusterSubscriber[] {
-  const global: Record<PropertyKey, unknown> = globalThis as Record<PropertyKey, unknown>;
-  if (_STATE_CLUSTER in global) return global[_STATE_CLUSTER] as _ClusterSubscriber[];
-  const m: _ClusterSubscriber[] = [];
-  global[_STATE_CLUSTER] = m;
+function _getClusterState(): Map<symbol, _ClusterProcessState> {
+  if (typeof globalThis !== 'undefined' && _STATE_CLUSTER in globalThis)
+    return globalThis[_STATE_CLUSTER as unknown as keyof typeof globalThis] as Map<
+      symbol,
+      _ClusterProcessState
+    >;
+  const m = new Map<symbol, _ClusterProcessState>();
+  if (typeof globalThis !== 'undefined')
+    (globalThis as Record<symbol, Map<symbol, _ClusterProcessState>>)[_STATE_CLUSTER] = m;
   return m;
 }
 
 /**
- * Primary-process helper: listen for IPC entries sent by workers and feed
- * them into the provided `ingest` callback (typically `logger.ingestEntry`).
- * Level-change commands are forwarded to `onLevelCommand` when provided.
- * Returns an unregister function.
+ * Primary-side helper: listen on the cluster IPC channel and feed received
+ * worker entries into the provided `ingest` callback (typically
+ * `logger.ingestEntry`). Level-change commands are forwarded to
+ * `onLevelCommand` when provided. Returns an unregister function.
  *
- * Works with the real Node `cluster` module's `worker.send`/`worker.on`, as
- * well as with a `process.on('message')`-style channel when the primary is a
- * plain Node process.
+ * Multiple loggers can safely register on the same process; each receives its
+ * own copy of every message. The 'message' listener is removed only when the
+ * last subscriber unregisters.
  */
 export function registerClusterReceiver(
   ingest: (entry: LogEntry) => void,
-  options: { onLevelCommand?: (level: number) => void } = {},
+  options: ClusterReceiverOptions & { onLevelCommand?: (level: number) => void } = {},
 ): () => void {
   const onLevelCommand = options.onLevelCommand;
-  const sub: _ClusterSubscriber = { ingest, onLevelCommand };
-  const subs = _getClusterState();
-  subs.push(sub);
+  const proc = process as unknown as {
+    on?: (event: string, cb: (...args: unknown[]) => void) => void;
+    removeListener?: (event: string, cb: (...args: unknown[]) => void) => void;
+  };
+  if (!proc.on || !proc.removeListener) return () => {};
+  const stateMap = _getClusterState();
+  let procState = stateMap.get(_STATE_CLUSTER);
+  if (!procState) {
+    // First subscriber for this process — attach a single 'message' handler
+    // that fans out to all registered subscribers.
+    const subscribers: _ClusterSubscriber[] = [];
+    const handler = (message: unknown): void => {
+      if (isLogLevelCommand(message)) {
+        for (const sub of subscribers) {
+          sub.onLevelCommand?.(normalizeLevel(message.level));
+        }
+        return;
+      }
+      if (
+        message &&
+        typeof message === 'object' &&
+        'level' in message &&
+        'message' in message &&
+        'timestamp' in message
+      ) {
+        const entry = message as LogEntry;
+        for (const sub of subscribers) {
+          sub.ingest(entry);
+        }
+      }
+    };
+    proc.on('message', handler);
+    procState = { subscribers, handler };
+    stateMap.set(_STATE_CLUSTER, procState);
+  }
+  procState.subscribers.push({ ingest, onLevelCommand });
   return () => {
-    const idx = subs.findIndex((s) => s === sub);
-    if (idx !== -1) subs.splice(idx, 1);
+    const idx = procState.subscribers.findIndex(
+      (s) => s.ingest === ingest && s.onLevelCommand === onLevelCommand,
+    );
+    if (idx !== -1) procState.subscribers.splice(idx, 1);
+    if (procState.subscribers.length === 0) {
+      proc.removeListener?.('message', procState.handler);
+      stateMap.delete(_STATE_CLUSTER);
+    }
   };
 }
 
 /** Reset internal state for testing. */
 export function _resetClusterReceiverState(): void {
-  const global: Record<PropertyKey, unknown> = globalThis as Record<PropertyKey, unknown>;
-  delete global[_STATE_CLUSTER];
+  const stateMap = _getClusterState();
+  stateMap.delete(_STATE_CLUSTER);
 }
