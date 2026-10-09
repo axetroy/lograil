@@ -467,9 +467,29 @@ export class TruncateRotator implements Rotator {
       await io.closeHandle();
       // Remove any previous backup first: on Windows `rename` refuses to
       // overwrite an existing target, which would otherwise block truncation.
-      await rm(this.backup, { force: true }).catch((err) => {
-        io.onError?.('debug', `TruncateRotator: failed to remove backup ${this.backup}`, err);
-      });
+      // NTFS can also defer deletion of a file whose handle was released
+      // moments earlier, so retry the `rm` a few times with backoff before
+      // giving up. The backup is only needed for the "previous contents"
+      // archive; if it cannot be removed the rotation still proceeds (the
+      // active file is renamed on top, losing the stale backup — an acceptable
+      // degradation over failing the rotation entirely).
+      const removeBackup = async (): Promise<void> => {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            await rm(this.backup, { force: true });
+            return;
+          } catch (err) {
+            if (attempt >= 2) {
+              io.onError?.('debug', `TruncateRotator: failed to remove backup ${this.backup}`, err);
+              return;
+            }
+            // Backoff 50ms, 150ms — enough for NTFS to release the handle
+            // without stalling the hot path for long.
+            await new Promise((r) => setTimeout(r, attempt === 0 ? 50 : 150));
+          }
+        }
+      };
+      await removeBackup();
       io.owned.delete(basename(this.backup));
       try {
         await rename(this.path, this.backup);
@@ -477,7 +497,22 @@ export class TruncateRotator implements Rotator {
         io.owned.add(basename(this.backup));
         return true; // truncated → a new active file was started
       } catch {
-        /* nothing to back up yet */
+        // On Windows the active file's own handle may still be released in
+        // fails, report and continue — the active file is left in place and
+        // will be truncated on the next write cycle.
+        await new Promise((r) => setTimeout(r, 50));
+        try {
+          await rename(this.path, this.backup);
+          io.owned.delete(basename(this.path));
+          io.owned.add(basename(this.backup));
+          return true;
+        } catch (err2) {
+          io.onError?.(
+            'warn',
+            `TruncateRotator: failed to rename ${this.path} → ${this.backup}`,
+            err2,
+          );
+        }
       }
     }
     return false;
