@@ -41,11 +41,14 @@ describe('createOtelTracePlugin', () => {
     expect(out.metadata).toEqual({ a: 1 });
   });
 
-  it('injects traceId/spanId from the active span', async () => {
+  it('injects traceId/spanId from the active span (W3C-valid 32/16 hex)', async () => {
     vi.doMock('@opentelemetry/api', () => ({
       trace: {
         getActiveSpan: () => ({
-          spanContext: () => ({ traceId: 'abc', spanId: 'def' }),
+          spanContext: () => ({
+            traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
+            spanId: '00f067aa0ba902b7',
+          }),
         }),
       },
     }));
@@ -53,8 +56,65 @@ describe('createOtelTracePlugin', () => {
     if (plugin.onInit) await plugin.onInit(undefined as never);
     const entry = { message: 'x', metadata: {} } as never;
     const out = plugin.onEntry?.(entry) as { metadata: Record<string, unknown> };
-    expect(out.metadata.traceId).toBe('abc');
-    expect(out.metadata.spanId).toBe('def');
+    expect(out.metadata.traceId).toBe('4bf92f3577b34da6a3ce929d0e0e4736');
+    expect(out.metadata.spanId).toBe('00f067aa0ba902b7');
+  });
+
+  it('lowercases uppercase traceId/spanId (P2-11)', async () => {
+    vi.doMock('@opentelemetry/api', () => ({
+      trace: {
+        getActiveSpan: () => ({
+          spanContext: () => ({
+            traceId: '4BF92F3577B34DA6A3CE929D0E0E4736',
+            spanId: '00F067AA0BA902B7',
+          }),
+        }),
+      },
+    }));
+    const plugin = await loadPlugin();
+    if (plugin.onInit) await plugin.onInit(undefined as never);
+    const entry = { message: 'x', metadata: {} } as never;
+    const out = plugin.onEntry?.(entry) as { metadata: Record<string, unknown> };
+    expect(out.metadata.traceId).toBe('4bf92f3577b34da6a3ce929d0e0e4736');
+    expect(out.metadata.spanId).toBe('00f067aa0ba902b7');
+  });
+
+  it('skips all-zero traceId/spanId (W3C invalid sentinel, P2-11)', async () => {
+    vi.doMock('@opentelemetry/api', () => ({
+      trace: {
+        getActiveSpan: () => ({
+          spanContext: () => ({
+            traceId: '00000000000000000000000000000000',
+            spanId: '0000000000000000',
+          }),
+        }),
+      },
+    }));
+    const plugin = await loadPlugin();
+    if (plugin.onInit) await plugin.onInit(undefined as never);
+    const entry = { message: 'x', metadata: {} } as never;
+    const out = plugin.onEntry?.(entry) as { metadata: Record<string, unknown> };
+    // Both ids are all-zero → the W3C "no span" sentinel → nothing injected.
+    expect(out.metadata).toEqual({});
+  });
+
+  it('skips malformed-length ids but keeps the other if valid (P2-11)', async () => {
+    vi.doMock('@opentelemetry/api', () => ({
+      trace: {
+        getActiveSpan: () => ({
+          spanContext: () => ({
+            traceId: 'abc', // too short → dropped
+            spanId: '00f067aa0ba902b7', // valid → kept
+          }),
+        }),
+      },
+    }));
+    const plugin = await loadPlugin();
+    if (plugin.onInit) await plugin.onInit(undefined as never);
+    const entry = { message: 'x', metadata: {} } as never;
+    const out = plugin.onEntry?.(entry) as { metadata: Record<string, unknown> };
+    expect(out.metadata.traceId).toBeUndefined();
+    expect(out.metadata.spanId).toBe('00f067aa0ba902b7');
   });
 
   it('does not throw when spanContext() is missing', async () => {

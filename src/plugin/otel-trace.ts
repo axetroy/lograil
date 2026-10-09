@@ -44,10 +44,32 @@ export function createOtelTracePlugin(): Plugin {
       if (typeof span.spanContext !== 'function') return entry;
       const ctx = span.spanContext();
       if (!ctx) return entry;
-      return {
-        ...entry,
-        metadata: { ...entry.metadata, traceId: ctx.traceId, spanId: ctx.spanId },
-      };
+      // W3C Trace Context requires trace-id / span-id to be 32 / 16 char
+      // lowercase hex. Some tracer implementations return uppercase or
+      // mixed-case values, so normalise them. An all-zero id is the
+      // "invalid span" sentinel in W3C; skip it so we don't inject a
+      // meaningless correlation key.
+      const traceId = normalizeHexId(ctx.traceId, 32);
+      const spanId = normalizeHexId(ctx.spanId, 16);
+      if (!traceId && !spanId) return entry;
+      const meta = { ...entry.metadata };
+      if (traceId) meta.traceId = traceId;
+      if (spanId) meta.spanId = spanId;
+      return { ...entry, metadata: meta };
     },
   };
+}
+
+/**
+ * Lowercase a hex trace/span id and validate its length. Returns `undefined`
+ * when the id is all-zero (the W3C "invalid" sentinel) or the wrong length,
+ * so a malformed upstream id does not pollute the entry.
+ */
+function normalizeHexId(raw: string | undefined, expectedLength: number): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const id = raw.toLowerCase();
+  if (id.length !== expectedLength) return undefined;
+  // All-zero is the W3C "invalid span context" sentinel.
+  if (/^0+$/.test(id)) return undefined;
+  return id;
 }
