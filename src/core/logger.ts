@@ -602,12 +602,16 @@ export class Logger implements LoggerMethods {
    */
   private dispatch(entry: LogEntry): void {
     if (this.plugins.hasEntryInterceptors()) {
-      // Create or reset the drain promise eagerly so that `flush()` callers
-      // always have a non-null promise to await, even if they arrive before
-      // the current batch of in-flight interceptions completes.
-      this.dispatchDrain = new Promise<void>((resolve) => {
-        this.dispatchDrainResolve = resolve;
-      });
+      // Create the drain promise only when no batch is in flight. While the
+      // promise exists, new dispatches chain onto it and are settled by the
+      // same `inflight === 0` trigger — so an in-flight `flush()` that has
+      // captured the promise always waits for every interception that started
+      // (or chained) before the final decrement, not just the latest one.
+      if (!this.dispatchDrain) {
+        this.dispatchDrain = new Promise<void>((resolve) => {
+          this.dispatchDrainResolve = resolve;
+        });
+      }
       this.dispatchInflight++;
       this.plugins
         .intercept(entry)
@@ -837,8 +841,14 @@ export class Logger implements LoggerMethods {
 
   async flush(): Promise<void> {
     // Let in-flight interception finish so every scheduled write has been
-    // enqueued onto its transport's own queue.
-    if (this.dispatchInflight > 0) await this.dispatchDrain;
+    // enqueued onto its transport's own queue. A new intercepted dispatch can
+    // chain onto the same drain promise while we are awaiting it (e.g. an
+    // interceptor that logs another entry), so keep draining until the
+    // in-flight count is back to zero instead of awaiting a single snapshot.
+    while (this.dispatchInflight > 0) {
+      if (!this.dispatchDrain) break; // nothing else in flight; stop spinning
+      await this.dispatchDrain;
+    }
     // Aggregate all per-transport async-write queues. `allSettled` means a
     // rejected/errored transport queue never rejects flush; a stalled one is
     // bounded by `writeTimeoutMs` via `guardWrite`.

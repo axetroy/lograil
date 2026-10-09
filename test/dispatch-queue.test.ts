@@ -175,6 +175,68 @@ describe('Dispatch queue - bounded async interception', () => {
     expect(t.entries).toHaveLength(2);
     expect(t.entries.map((e) => e.message)).toEqual(['boom-1', 'boom-2']);
   });
+
+  it('flush() waits for earlier in-flight batches, not only the latest one (P1-9)', async () => {
+    // Regression: `dispatch()` used to replace `dispatchDrain` on every
+    // intercepted dispatch. A `flush()` that captured the drain promise
+    // between batch A and batch B would then miss A's writes entirely.
+    // The fix keeps a single drain chain and loops until inflight is 0.
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'debug' });
+
+    // A gate queue: each interception parks on its own resolver, so we can
+    // interleave them deterministically and keep A pending while B runs.
+    const gates: Array<{ entry: LogEntry; release: () => void }> = [];
+    const gatePlugin: Plugin = {
+      name: 'gate',
+      onEntry(entry: LogEntry): LogEntry | null {
+        let release: () => void = () => {};
+        const p = new Promise<LogEntry | null>((resolve) => {
+          release = () => resolve(entry);
+        });
+        gates.push({ entry, release });
+        return p as unknown as LogEntry;
+      },
+    };
+    await logger.use(gatePlugin);
+
+    // Start interception A, keep it pending.
+    logger.info('A');
+    const flushP = logger.flush();
+
+    // While flush() is awaiting the drain chain, start interception B —
+    // it must chain onto the *same* drain promise, not replace it.
+    await new Promise((r) => setTimeout(r, 5));
+    logger.info('B');
+    expect(gates).toHaveLength(2);
+
+    // Release A (the earlier batch) while B is still pending. Without the
+    // fix, flush() would have resolved on the drain promise B created and
+    // already passed its transport-queue aggregation, so A's write would
+    // land after flush completed — here it lands *before* flush returns,
+    // which is exactly what we want.
+    gates[0].release();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // flush() must still be pending: B has not settled yet, so the drain
+    // loop in flush() has not exited. A's write already reached the
+    // transport (the fixed behavior), but the flush promise must not
+    // resolve until B does as well.
+    let flushed = false;
+    flushP.then(() => {
+      flushed = true;
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(flushed).toBe(false);
+    expect(t.entries).toHaveLength(1);
+    expect(t.entries[0].message).toBe('A');
+
+    // Release B; now flush completes with both entries, in emit order.
+    gates[1].release();
+    await flushP;
+    expect(t.entries).toHaveLength(2);
+    expect(t.entries.map((e) => e.message)).toEqual(['A', 'B']);
+  });
 });
 
 // ---- Backpressure / queue-limit tests ----
