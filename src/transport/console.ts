@@ -6,13 +6,27 @@ import type { Transport } from './transport.js';
 // Snapshot the real console methods at module load so that, even if something
 // later redirects the global `console` (see `Logger.redirectConsole`), this
 // transport keeps writing to the original console and never recurses.
+//
+// Guarded: a minimal edge runtime (or a test harness) may load lograil in an
+// environment where the global `console` does not exist yet. Without the
+// guard the `.bind(console)` calls throw at *import* time, taking down the
+// whole library. Fall back to no-ops so module load never throws.
+function consoleMethod(
+  name: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'log',
+): (...args: unknown[]) => void {
+  if (typeof console !== 'undefined' && typeof console[name] === 'function') {
+    return console[name].bind(console);
+  }
+  return () => {};
+}
+
 const realConsole = {
-  trace: console.trace.bind(console),
-  debug: console.debug.bind(console),
-  info: console.info.bind(console),
-  warn: console.warn.bind(console),
-  error: console.error.bind(console),
-  log: console.log.bind(console),
+  trace: consoleMethod('trace'),
+  debug: consoleMethod('debug'),
+  info: consoleMethod('info'),
+  warn: consoleMethod('warn'),
+  error: consoleMethod('error'),
+  log: consoleMethod('log'),
 };
 
 /** Default method mapping shared across all ConsoleTransport instances. */
