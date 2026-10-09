@@ -6,6 +6,7 @@ import {
   _resetWorkerReceiverState,
 } from '../src/transport/worker-ipc.js';
 import { createNodeRuntime } from '../src/runtime/node.js';
+import { createWebRuntime } from '../src/runtime/web.js';
 import type { LogEntry } from '../src/types.js';
 
 function makeEntry(overrides: Partial<LogEntry> = {}): LogEntry {
@@ -52,7 +53,6 @@ describe('WorkerIpcTransport', () => {
   it('has default name "worker-ipc"', () => {
     expect(new WorkerIpcTransport().name).toBe('worker-ipc');
   });
-
   it('accepts custom name', () => {
     expect(new WorkerIpcTransport({ name: 'my-ipc' }).name).toBe('my-ipc');
   });
@@ -234,5 +234,63 @@ describe('createNodeRuntime - worker_threads behavior', () => {
     } else {
       Object.defineProperty(globalThis, 'parentPort', { value: original, configurable: true });
     }
+  });
+});
+
+describe('isWorkerThread detection (P1-7: multi-runtime worker detection)', () => {
+  // The `isWorkerThread` helper is internal to `src/runtime/web.ts`, so we
+  // verify its behavior through the public `createWebRuntime()` entry point.
+  // Each test injects the minimal globals that a particular runtime exposes
+  // and asserts whether the worker-ipc transport is present.
+  const originals: Array<[PropertyKey, unknown]> = [];
+  function inject(key: PropertyKey, value: unknown): void {
+    originals.push([key, (globalThis as Record<PropertyKey, unknown>)[key]]);
+    Object.defineProperty(globalThis, key, {
+      value,
+      writable: true,
+      configurable: true,
+    });
+  }
+  function restore(): void {
+    for (let i = originals.length - 1; i >= 0; i--) {
+      const [key, orig] = originals[i];
+      if (orig === undefined) delete (globalThis as Record<PropertyKey, unknown>)[key];
+      else
+        Object.defineProperty(globalThis, key, { value: orig, writable: true, configurable: true });
+    }
+    originals.length = 0;
+  }
+
+  function webRuntimeHasWorkerIpc(): boolean {
+    const rt = createWebRuntime();
+    return rt.defaultTransports().some((t: { name: string }) => t.name === 'worker-ipc');
+  }
+
+  afterEach(restore);
+
+  it('detects a Deno worker via DedicatedWorkerGlobalScope', () => {
+    inject('DedicatedWorkerGlobalScope', class {});
+    // In a Deno worker, `self` is the worker global (no `document`).
+    // We inject `self` as a plain object with no `document` so the check
+    // `typeof self !== 'undefined'` passes, and the `document` check
+    // returns `'undefined'`.
+    inject('self', {});
+    expect(webRuntimeHasWorkerIpc()).toBe(true);
+  });
+
+  it('detects a SharedWorker via SharedWorkerGlobalScope', () => {
+    inject('SharedWorkerGlobalScope', class {});
+    inject('self', {});
+    expect(webRuntimeHasWorkerIpc()).toBe(true);
+  });
+
+  it('detects a Node worker via parentPort.postMessage', () => {
+    inject('parentPort', { postMessage: vi.fn() });
+    expect(webRuntimeHasWorkerIpc()).toBe(true);
+  });
+
+  it('does NOT detect a plain main thread', () => {
+    // No worker globals, no parentPort → main thread, no worker-ipc.
+    expect(webRuntimeHasWorkerIpc()).toBe(false);
   });
 });

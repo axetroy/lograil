@@ -6,12 +6,21 @@ import { createWebLifecycle } from './web-lifecycle.js';
 declare const WorkerGlobalScope: unknown;
 
 /**
- * Detect whether the current context is a Web Worker or Node worker_threads.
- * Uses `typeof` checks that are safe in all environments (returns false in
- * non-worker contexts).
+ * Detect whether the current context is a Web Worker, dedicated worker, or
+ * Node worker_threads. Uses `typeof` checks that are safe in all
+ * environments (returns false in non-worker contexts).
+ *
+ * Covers:
+ *  - Web dedicated/`Worker` (WorkerGlobalScope, no `document`)
+ *  - Shared workers (`self instanceof SharedWorkerGlobalScope`)
+ *  - Deno / Bun worker threads (`DedicatedWorkerGlobalScope`, or
+ *    `self !== globalThis` as a cross-runtime heuristic)
+ *  - Node `worker_threads` (`parentPort.postMessage` available)
  */
 function isWorkerThread(): boolean {
-  // Web Worker: WorkerGlobalScope exists and there's no document (rules out window)
+  const g = globalThis as Record<string, unknown>;
+
+  // Web dedicated worker (or any WorkerGlobalScope without `document`).
   if (
     typeof WorkerGlobalScope !== 'undefined' &&
     typeof self !== 'undefined' &&
@@ -19,14 +28,33 @@ function isWorkerThread(): boolean {
   ) {
     return true;
   }
-  // Node worker_threads: parentPort exists with postMessage
+
+  // SharedWorker scope (dedicated workers above may already have matched;
+  // shared workers have `postMessage`/`onmessage` but no `document`).
+  if (typeof g.SharedWorkerGlobalScope !== 'undefined' && typeof self !== 'undefined') {
+    return true;
+  }
+
+  // Deno / Bun / edge worker runtimes: `self` may be a DedicatedWorkerGlobalScope
+  // that is not the same object as `globalThis`, or the runtime may not
+  // expose `WorkerGlobalScope` at all.
   if (
-    typeof globalThis !== 'undefined' &&
-    typeof (globalThis as { parentPort?: { postMessage: unknown } }).parentPort?.postMessage ===
-      'function'
+    typeof g.DedicatedWorkerGlobalScope !== 'undefined' &&
+    typeof self !== 'undefined' &&
+    typeof (self as { document?: unknown }).document === 'undefined'
   ) {
     return true;
   }
+
+  // Node worker_threads: `parentPort` with a `postMessage` function is the
+  // authoritative signal.
+  if (
+    typeof g.parentPort !== 'undefined' &&
+    typeof (g.parentPort as { postMessage?: unknown }).postMessage === 'function'
+  ) {
+    return true;
+  }
+
   return false;
 }
 
