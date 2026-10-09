@@ -61,7 +61,7 @@ describe('ClusterIpcTransport', () => {
   });
 
   it('opens the circuit breaker after 5 consecutive failures and still attempts delivery while open', () => {
-    const send = vi.fn((message: unknown, callback?: (err?: Error) => void) => {
+    const send = vi.fn((_message: unknown, callback?: (err?: Error) => void) => {
       callback?.(new Error('primary gone'));
       return true;
     });
@@ -86,7 +86,7 @@ describe('ClusterIpcTransport', () => {
     expect(String(errors[0])).toContain('breaker open');
 
     // A success closes the breaker and resets the failure count.
-    send.mockImplementation((message: unknown, callback?: (err?: Error) => void) => {
+    send.mockImplementation((_message: unknown, callback?: (err?: Error) => void) => {
       callback?.(undefined);
       return true;
     });
@@ -94,7 +94,7 @@ describe('ClusterIpcTransport', () => {
     expect(errors).toHaveLength(1); // no new errors
 
     // 5 more failures re-open the breaker.
-    send.mockImplementation((message: unknown, callback?: (err?: Error) => void) => {
+    send.mockImplementation((_message: unknown, callback?: (err?: Error) => void) => {
       callback?.(new Error('primary gone again'));
       return true;
     });

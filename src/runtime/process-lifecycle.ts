@@ -29,6 +29,7 @@ export function createProcessLifecycle(): LifecycleHooks {
     onFlushBeforeExit(cb) {
       const proc = getProcess();
       if (!proc) return () => {};
+      const p: Proc = proc;
 
       // Normal event-loop drain: flush pending writes; the process exits on
       // its own once the loop empties. `beforeExit` re-fires while async writes
@@ -36,16 +37,41 @@ export function createProcessLifecycle(): LifecycleHooks {
       const onBeforeExit = (): void => {
         void cb();
       };
-      // A signal must force an exit after flushing — but never hang shutdown on
-      // a stalled transport (the logger's flush timeout bounds it).
+      // A signal must force an exit after flushing. The callback (`cb`) is
+      // bounded by the logger's flush timeout, so the process never hangs on a
+      // stalled transport. We distinguish "flush confirmed" from "flush timed
+      // out" so the exit code reflects whether shutdown completed cleanly.
       const onSignal = (code: number): void => {
-        void Promise.resolve(cb()).finally(() => {
+        let confirmed = false;
+        const p2 = Promise.resolve(cb());
+        p2.then(
+          () => {
+            confirmed = true;
+            exitSafe();
+          },
+          () => {
+            // cb rejected (transport flush failed) — still exit; the logger
+            // has already reported the error.
+            exitSafe();
+          },
+        );
+        // Safety net: if cb() somehow never settles (should not happen given
+        // the logger's flushWithTimeout guard, but we never hang shutdown),
+        // force the exit after a generous window.
+        const safetyNet = setTimeout(() => {
+          if (!confirmed) exitSafe();
+        }, 30_000);
+        if (typeof (safetyNet as { unref?: () => void }).unref === 'function') {
+          (safetyNet as { unref: () => void }).unref();
+        }
+        function exitSafe(): void {
+          clearTimeout(safetyNet);
           try {
-            proc.exit(code);
+            p.exit(code);
           } catch {
             /* ignore */
           }
-        });
+        }
       };
       const onSigInt = (): void => onSignal(130);
       const onSigTerm = (): void => onSignal(143);
@@ -74,17 +100,36 @@ export function createProcessLifecycle(): LifecycleHooks {
     onUncaughtError(cb) {
       const proc = getProcess();
       if (!proc) return () => {};
+      const p: Proc = proc;
 
       // Log the crash at fatal level, flush, then exit(1) — but never hang on a
       // stalled transport (the logger's flush timeout bounds the flush).
       const onErr = (err: unknown): void => {
-        void Promise.resolve(cb(err)).finally(() => {
+        let confirmed = false;
+        const p2 = Promise.resolve(cb(err));
+        p2.then(
+          () => {
+            confirmed = true;
+            exitSafe();
+          },
+          () => {
+            exitSafe();
+          },
+        );
+        const safetyNet = setTimeout(() => {
+          if (!confirmed) exitSafe();
+        }, 30_000);
+        if (typeof (safetyNet as { unref?: () => void }).unref === 'function') {
+          (safetyNet as { unref: () => void }).unref();
+        }
+        function exitSafe(): void {
+          clearTimeout(safetyNet);
           try {
-            proc.exit(1);
+            p.exit(1);
           } catch {
             /* ignore */
           }
-        });
+        }
       };
       proc.on('uncaughtException', onErr);
       proc.on('unhandledRejection', onErr);
