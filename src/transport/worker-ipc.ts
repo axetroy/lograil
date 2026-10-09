@@ -184,10 +184,14 @@ export function registerWorkerReceiver(
       };
     }
     if ('onmessage' in worker) {
-      // Web Worker — dedicated worker onmessage (single handler, no dedup needed)
+      // Web Worker — dedicated worker onmessage (single-slot property).
+      // Save the pre-existing handler so the cleanup can restore it (P2-13):
+      // a page that already set `worker.onmessage` for other IPC would
+      // otherwise silently lose that handler.
+      const prev = worker.onmessage;
       worker.onmessage = handler;
       return () => {
-        if (worker.onmessage === handler) worker.onmessage = null;
+        if (worker.onmessage === handler) worker.onmessage = prev ?? null;
       };
     }
   }

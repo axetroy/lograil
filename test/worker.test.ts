@@ -89,6 +89,48 @@ describe('registerWorkerReceiver', () => {
     expect(ingest).toHaveBeenCalledOnce();
   });
 
+  it('restores a pre-existing worker.onmessage handler on cleanup (P2-13)', () => {
+    // A page that already set `worker.onmessage` for its own IPC must not
+    // have that handler silently clobbered — the unregister callback should
+    // restore it, not null it out.
+    _resetWorkerReceiverState();
+    const ingest = vi.fn();
+    const preExisting = vi.fn();
+    const worker = {
+      onmessage: preExisting as ((e: MessageEvent) => void) | null,
+      postMessage: vi.fn(),
+    };
+
+    const unregister = registerWorkerReceiver(ingest, { worker });
+    // While registered, our handler is in place.
+    expect(worker.onmessage).not.toBe(preExisting);
+
+    // Simulate one lograil message to confirm routing works.
+    const entry = makeEntry();
+    const ev = { data: { __lograilWorker: true, entry } } as unknown as MessageEvent;
+    (worker.onmessage as (e: MessageEvent) => void)(ev);
+    expect(ingest).toHaveBeenCalledOnce();
+
+    // Cleanup must restore the pre-existing handler.
+    unregister();
+    expect(worker.onmessage).toBe(preExisting);
+  });
+
+  it('nulls worker.onmessage when no pre-existing handler was present', () => {
+    _resetWorkerReceiverState();
+    const ingest = vi.fn();
+    const worker = {
+      onmessage: null as ((e: MessageEvent) => void) | null,
+      postMessage: vi.fn(),
+    };
+
+    const unregister = registerWorkerReceiver(ingest, { worker });
+    expect(worker.onmessage).not.toBeNull();
+
+    unregister();
+    expect(worker.onmessage).toBeNull();
+  });
+
   it('routes Node worker level commands to onLevelCommand callback', () => {
     _resetWorkerReceiverState();
     const ingest = vi.fn();
