@@ -327,8 +327,18 @@ export class OtlpTransport implements Transport {
    * empty. Non-transient errors (4xx) fail fast without retry.
    */
   async flush(): Promise<void> {
-    // no-op if already flushing or queue is empty
-    if (this.flushPromise !== null || this.queue.length === 0) return;
+    // If a flush is already in flight, await it rather than returning early:
+    // callers (Logger.flush(), close(), process-exit handlers) need to know
+    // when ALL in-flight HTTP has completed, not just whether *new* flushing
+    // started. The in-flight loop drains the queue, so waiting on it is what
+    // makes the "queue is empty" check meaningful.
+    if (this.flushPromise !== null) {
+      await this.flushPromise;
+      // A new entry may have been queued while we were awaiting; drain it too.
+      if (this.queue.length === 0) return;
+    } else if (this.queue.length === 0) {
+      return;
+    }
     this.flushPromise = (async () => {
       while (this.queue.length > 0) {
         // grab a snapshot of the current queue as the batch to send.

@@ -333,5 +333,81 @@ describe('OtlpTransport', () => {
       await t.flush();
       expect(t.bufferLength).toBe(0);
     });
+
+    it('a second flush() during an in-flight flush waits for it and drains new entries', async () => {
+      // While the first HTTP request is pending, a second flush() must not
+      // no-op; it has to await the in-flight flush and then drain anything that
+      // was queued in the meantime.
+      let resolveFirst: (() => void) | undefined;
+      let resolveSecond: (() => void) | undefined;
+      fetchMock
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = () => resolve({ ok: true, status: 200, statusText: 'OK' });
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveSecond = () => resolve({ ok: true, status: 200, statusText: 'OK' });
+            }),
+        );
+
+      const t = new OtlpTransport({ batchSize: 1 });
+      t.write(makeEntry({ message: 'a' }), 'a');
+      t.write(makeEntry({ message: 'b' }), 'b');
+      // Let the fire-and-forget batch flush reach its first `await fetch`.
+      await new Promise((r) => setTimeout(r, 5));
+      t.write(makeEntry({ message: 'c' }), 'c');
+
+      // Kick off a concurrent flush; it must wait for the in-flight one and
+      // drain whatever new entries remain.
+      const flushB = t.flush();
+      // Resolve the first batch's fetch.
+      resolveFirst?.();
+      // Give the second batch a tick to reach its fetch.
+      await new Promise((r) => setTimeout(r, 5));
+      resolveSecond?.();
+      await flushB;
+
+      // After the flush settles, every entry must have been POSTed exactly
+      // once and the buffer must be empty. We do NOT assert on the exact
+      // number of fetch calls because the internal batching is
+      // implementation-dependent; the observable contract is "no entry lost".
+      const postBodies = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body as string));
+      // OTLP log records carry the message as a `body` field; for string
+      // messages it is `{ stringValue: '...' }`.
+      const allMessages = postBodies.flatMap((body) =>
+        body.resourceLogs[0].scopeLogs[0].logRecords.map(
+          (r: { body?: { stringValue?: string } }) => r.body?.stringValue,
+        ),
+      );
+      expect(allMessages).toEqual(['a', 'b', 'c']);
+      expect(t.bufferLength).toBe(0);
+    });
+
+    it('close() awaits an in-flight flush so shutdown does not drop buffered entries', async () => {
+      let resolveFirst: (() => void) | undefined;
+      fetchMock
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = () => resolve({ ok: true, status: 200, statusText: 'OK' });
+            }),
+        )
+        .mockResolvedValue({ ok: true, status: 200, statusText: 'OK' });
+
+      const t = new OtlpTransport({ batchSize: 1 });
+      t.write(makeEntry({ message: 'last' }), 'last');
+
+      // Kick off the batch flush, then immediately close() — close must wait
+      // for the in-flight flush rather than returning before the HTTP lands.
+      const closePromise = t.close();
+      resolveFirst?.();
+      await closePromise;
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(t.bufferLength).toBe(0);
+    });
   });
 });
