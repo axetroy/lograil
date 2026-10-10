@@ -48,6 +48,13 @@ function isLevelEnabled(configured: LogLevelInput, candidate: LogLevelInput): bo
 function levelNameFromValue(value: number): LogLevelName;
 function compareLevel(a: LogLevelInput, b: LogLevelInput): number; // <0 | 0 | >0
 
+// 自定义级别——在内置级别之外注册一个命名级别（例如 `audit` 定为 45）。
+// 注册后，该名称在 setLevel / getLevel / LOG_LEVEL 环境变量 / 各传输器的
+// level / 级别命令中都成为一等公民。
+function registerLevel(name: string, value: number): number;
+function unregisterLevel(name: string): boolean;  // 内置级别返回 false
+function listCustomLevels(): string[];
+
 function freezeEntry<T extends LogEntry>(entry: T): T & FrozenLogEntry;
 type FrozenLogEntry = Readonly<LogEntry> & {
   readonly context: Readonly<Record<string, unknown>>;
@@ -58,7 +65,8 @@ type FrozenLogEntry = Readonly<LogEntry> & {
 // 当你自行构建条目时使用此函数。参见[不可变性与零拷贝](../guide/immutability.md)。
 ```
 
-相关类型：`LogLevelValue`（= `number`）、`LogLevelInput`（= `LogLevelName | number`），
+相关类型：`LogLevelValue`（= `number`）、`LogLevelInput`（= 内置 `LogLevelName`、
+任意已注册的自定义级别名（`string`）、或数值），
 以及 `LoggerMethods`（即 `Logger` 实现的 `trace`…`fatal` 方法映射）。
 
 - [Logger](/zh/api/logger)

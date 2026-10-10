@@ -105,6 +105,33 @@ log.setLevel('debug'); // also accepts a number, e.g. 20
 log.getLevel(); // 20
 ```
 
+### Custom levels
+
+You can register additional named levels between (or beyond) the built-ins.
+This is useful for domain-specific severities — e.g. an `audit` level for
+security-critical events that sits between `info` and `error`:
+
+```ts
+import { registerLevel } from 'lograil';
+
+// 45 sits between warn (40) and error (50) — tune to where you need it.
+registerLevel('audit', 45);
+log.setLevel('audit');          // now usable everywhere a level name is
+log.error('payment declined');  // still emits (error 50 >= audit 45)
+log.warn('low balance');        // filtered out (warn 40 < audit 45)
+```
+
+- The name must be new (not a built-in and not already registered); a
+  collision throws.
+- The value must be a positive finite number; duplicates of an existing name
+  throw too, so a bad registration fails fast.
+- Use `unregisterLevel(name)` to remove a custom level (built-ins are
+  protected and cannot be removed). `listCustomLevels()` returns the
+  currently-registered names.
+- Custom names work with `setLevel`, `getLevel`, the `LOG_LEVEL` env var,
+  per-transport `level`, and level commands — they are first-class after
+  registration. The registry is process-wide; register once at startup.
+
 ### Per-transport level filtering
 
 Each transport can declare its own `level`, which is applied **after** the

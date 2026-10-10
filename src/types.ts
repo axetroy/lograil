@@ -5,6 +5,8 @@
  * Transport, Runtime and Plugin modules.
  */
 
+import { hasLevel, lookupLevel } from './core/level-registry.js';
+
 export type LogLevelName = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
 export type LogLevelValue = number;
@@ -27,10 +29,8 @@ export const LOG_LEVEL_NAMES = Object.keys(LOG_LEVELS) as LogLevelName[];
 
 /** @internal */
 export function isLogLevelName(value: unknown): value is LogLevelName {
-  return typeof value === 'string' && value in LOG_LEVELS;
-}
-
-/**
+  return typeof value === 'string' && (value in LOG_LEVELS || hasLevel(value));
+} /**
  * A single structured log record produced by the Logger.
  *
  * **Immutability contract.** Once an entry is handed to the transports it is
@@ -88,14 +88,21 @@ export interface LoggerMethods {
   fatal: LogFn;
 }
 
-export type LogLevelInput = LogLevelName | LogLevelValue;
+/**
+ * A level as accepted by the public API: a built-in {@link LogLevelName}, a
+ * user-registered level name (any `string`), or a numeric {@link LogLevelValue}.
+ * `string` is intentionally wide so custom level names (e.g. `'audit'`) type-
+ * check even though they are not part of the built-in union; `normalizeLevel`
+ * validates the name at runtime.
+ */
+export type LogLevelInput = LogLevelName | (string & { __custom?: never }) | LogLevelValue;
 
 /** @internal */
 export function normalizeLevel(input: LogLevelInput): LogLevelValue {
   if (typeof input === 'number') {
     return input;
   }
-  const value = LOG_LEVELS[input];
+  const value = hasLevel(input) ? lookupLevel(input) : undefined;
   if (value === undefined) {
     throw new Error(`Unknown log level: ${String(input)}`);
   }

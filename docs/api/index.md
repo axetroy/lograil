@@ -49,6 +49,13 @@ function isLevelEnabled(configured: LogLevelInput, candidate: LogLevelInput): bo
 function levelNameFromValue(value: number): LogLevelName;
 function compareLevel(a: LogLevelInput, b: LogLevelInput): number; // <0 | 0 | >0
 
+// Custom levels — register a named level (e.g. `audit` at 45) alongside the
+// built-ins. Registered names become first-class in setLevel / getLevel /
+// the LOG_LEVEL env var / per-transport level / level commands.
+function registerLevel(name: string, value: number): number;
+function unregisterLevel(name: string): boolean;  // false for built-ins
+function listCustomLevels(): string[];
+
 function freezeEntry<T extends LogEntry>(entry: T): T & FrozenLogEntry;
 type FrozenLogEntry = Readonly<LogEntry> & {
   readonly context: Readonly<Record<string, unknown>>;
@@ -60,7 +67,8 @@ type FrozenLogEntry = Readonly<LogEntry> & {
 // [Immutability & zero-copy](../guide/immutability.md).
 ```
 
-Related types: `LogLevelValue` (= `number`), `LogLevelInput` (= `LogLevelName | number`),
+Related types: `LogLevelValue` (= `number`), `LogLevelInput` (= a built-in
+`LogLevelName`, any registered custom level name as `string`, or a number),
 and `LoggerMethods` (the `trace`…`fatal` method map that `Logger` implements).
 
 - [Logger](/api/logger)
