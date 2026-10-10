@@ -283,3 +283,52 @@ class LiveTransport implements Transport {
 并捕获订阅者抛出的异常，使 logger 的热路径永不被打断。订阅者拿到的是已冻结、
  `LogEntry`。当 `bufferSize > 0` 时，后加入的订阅者可用 `replay()` 回放
 环形缓冲。详见[传输器指南](/zh/guide/transports#livetransport)。
+
+## OS 原生传输器
+
+三个传输器把记录交给操作系统自身的日志栈。每个都可在任意运行时中导入，
+且在模块加载时绝不抛错；在缺少对应二进制 / 设施时，传输器降级到 `onError`
+路径，并用断路器限制，避免损坏的 sink 刷爆控制台。
+
+```ts
+interface SyslogTransportOptions {
+  name?: string;
+  formatter?: Formatter;
+  facility?: number;      // RFC 5424 设施，默认 3（LOG_DAEMON）
+  protocol?: 'local' | 'udp';  // 'local' = logger 二进制，'udp' = 原始数据报
+  host?: string;          // udp 模式，默认 'localhost'
+  port?: number;          // udp 模式，默认 514
+  tag?: string;           // logger -t tag，默认取传输器名
+  loggerPath?: string;    // 覆盖二进制位置
+}
+class SyslogTransport implements Transport { /* name, formatter, write, close, onError */ }
+
+interface JournaldTransportOptions {
+  name?: string;
+  formatter?: Formatter;
+  fields?: Record<string, string>;  // 固定的 KEY=VALUE 日志字段（IDENTIFIER 默认取名称）
+  priority?: number;                // 固定的 PRIORITY 日志字段
+}
+class JournaldTransport implements Transport { /* name, formatter, write, close, onError */ }
+
+interface WindowsEventLogTransportOptions {
+  name?: string;
+  formatter?: Formatter;
+  log?: string;       // 目标事件日志，默认取传输器名
+  source?: string;    // 提供方 / 来源字符串，默认取传输器名
+  eventId?: number;   // 默认记录 ID，默认 1
+}
+class WindowsEventLogTransport implements Transport { /* name, formatter, write, close, onError */ }
+```
+
+- **`SyslogTransport`** — Unix，经 `logger`（`protocol: 'local'`）或原始 UDP
+  数据报（`protocol: 'udp'`，经 `nc`）。
+- **`JournaldTransport`** — Linux/systemd，经一个常驻的 `systemd-cat`；
+  `fields` 成为固定的日志字段。
+- **`WindowsEventLogTransport`** — Windows，经 `eventcreate.exe`；可通过
+  `entry.metadata.wevtid` 按条目覆盖事件 ID。
+
+三者共用级别 → syslog 优先级映射（`trace`/`debug`→7，`info`→6，`warn`→4，
+`error`→3，`fatal`→2）。平台门控：Unix 传输器需要对应二进制；Windows
+传输器需要 `win32`。在浏览器构建中，三者都降级为不可用的 `onError` 路径。
+详见[传输器指南](/zh/guide/transports#os-原生传输器)。

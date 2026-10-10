@@ -275,6 +275,91 @@ unsubscribe(); // 停止接收
 对于跨进程流式传输（Electron 主进程 → 渲染进程/webview），可配合现有的 IPC 通道使用；
 跨标签页的 Web 流式传输则使用 `BroadcastChannelTransport`。
 
+## OS 原生传输器
+
+lograil 提供三个把日志交给操作系统自身日志基础设施的传输器。三者都**在任意运行时
+（Web / Node / Electron）中可导入**，且在模块加载时绝不抛错；在缺少对应二进制或
+设施的平台，传输器会优雅降级并通过 `onError` 上报失败，同时用断路器限制错误上报
+频率，避免损坏的 sink 刷爆控制台。
+
+- **`SyslogTransport`** — Unix（BSD / Linux），经由 `logger` 工具。
+- **`JournaldTransport`** — Linux / systemd，经由一个常驻的 `systemd-cat`。
+- **`WindowsEventLogTransport`** — Windows，经由 `eventcreate.exe`。
+
+三者共用 `os-native.ts` 里的级别 → 优先级映射（`trace`/`debug`→7，
+`info`→6，`warn`→4，`error`→3，`fatal`→2）。
+
+### SyslogTransport
+
+```ts
+import { SyslogTransport, createJsonFormatter } from 'lograil';
+
+const syslog = new SyslogTransport({
+  name: 'syslog',
+  tag: 'myapp',                 // logger -t tag
+  facility: 3,                  // LOG_DAEMON（默认）
+  protocol: 'local',            // 'local'（logger 二进制）| 'udp'（原始数据报）
+  host: 'localhost',           // udp 模式
+  port: 514,                   // udp 模式
+  formatter: createJsonFormatter(),
+});
+log.addTransport(syslog);
+```
+
+- `protocol: 'local'`（默认）每条记录都调用 `logger -t <tag> -p <facility>.<pri> <msg>`。
+  `logger` 自带于所有 BSD 及大多数 Linux 发行版。
+- `protocol: 'udp'` 用 `nc`（netcat）发送原始的 `<pri>timestamp host tag: msg`
+  UDP 数据报——适用于目标是网络 syslog 服务器、且没有 `logger` 二进制的场景。
+- 非标准安装可用 `loggerPath` 覆盖二进制位置。
+
+### JournaldTransport
+
+```ts
+import { JournaldTransport } from 'lograil';
+
+const journal = new JournaldTransport({
+  name: 'journald',
+  fields: { UNIT: 'myapp.service', APP: 'myapp' },
+  priority: 4,                  // 固定的 PRIORITY 日志字段（可选）
+});
+log.addTransport(journal);
+```
+
+- 启动**一个常驻**的 `systemd-cat` 进程，并把换行分隔的记录持续写入其 stdin
+  （整个生命周期不重复 spawn）。
+- `fields` 成为固定的 `KEY=VALUE` 日志字段；`IDENTIFIER` 默认取传输器名。
+- 若省略 `priority`，则应用默认 `PRIORITY=6` 字段。
+- 在缺少 `systemd-cat` 的宿主上，spawn 会失败，每条写入经 `onError` 上报
+  （连续 10 次失败 / 5 秒窗口触发断路器）。
+
+### WindowsEventLogTransport
+
+```ts
+import { WindowsEventLogTransport } from 'lograil';
+
+const wlog = new WindowsEventLogTransport({
+  name: 'winlog',
+  log: 'Application',          // 目标事件日志
+  source: 'MyApp',            // 提供方 / 来源字符串
+  eventId: 1,                 // 默认记录 ID
+});
+log.addTransport(wlog);
+```
+
+- 使用 `eventcreate.exe /t <type> /l <log> /s <source> /d <data> /id <id>`，
+  内建于 Windows Vista 及之后。`type` 由条目级别推导
+  （`error`/`fatal` → `error`，其余 → `information`）。
+- 按条目覆盖：把 `entry.metadata.wevtid` 设为数字即可为该记录使用自定义事件 ID。
+- 自定义 `source` 值需先在 Windows 事件系统中预注册；写入 `Application` /
+  `System` 日志需要管理员权限。二者未解决前都会经 `onError` 上报。
+- 在非 Windows 平台上，传输器可导入但每条写入都经 `onError` 上报
+  `not available on this platform`（触发断路器）。
+
+> **平台门控。** 每个传输器在写入时检查 `os.platform()`：
+> `SyslogTransport` 与 `JournaldTransport` 需要 Unix / Linux 宿主及对应二进制；
+> `WindowsEventLogTransport` 需要 `win32`。在浏览器构建中，shim 报告
+> `platform === 'browser'`，传输器即降级为不可用路径。
+
 ## 自定义传输器
 
 只需实现 `Transport` 接口即可：

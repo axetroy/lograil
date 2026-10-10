@@ -308,6 +308,98 @@ For cross-process streaming (Electron main → renderer/webview) pair it with th
 existing IPC channel, or use `BroadcastChannelTransport` for cross-tab Web
 streaming.
 
+## OS-native transports
+
+lograil ships three transports that hand a record off to the operating
+system's own logging infrastructure. Each is **importable everywhere** (Web,
+Node, Electron) and never throws at module load; on platforms where the
+underlying binary or facility is missing, the transport degrades gracefully and
+reports failures through `onError`, bounded by a circuit breaker so a broken
+sink cannot spam the console.
+
+- **`SyslogTransport`** — Unix (BSD / Linux) via the `logger` utility.
+- **`JournaldTransport`** — Linux / systemd via a persistent `systemd-cat`.
+- **`WindowsEventLogTransport`** — Windows via `eventcreate.exe`.
+
+All three use a level → priority mapping shared from `os-native.ts`
+(`trace`/`debug`→7, `info`→6, `warn`→4, `error`→3, `fatal`→2).
+
+### SyslogTransport
+
+```ts
+import { SyslogTransport, createJsonFormatter } from 'lograil';
+
+const syslog = new SyslogTransport({
+  name: 'syslog',
+  tag: 'myapp',                 // logger -t tag
+  facility: 3,                  // LOG_DAEMON (default)
+  protocol: 'local',            // 'local' (logger binary) | 'udp' (raw datagram)
+  host: 'localhost',           // udp mode
+  port: 514,                   // udp mode
+  formatter: createJsonFormatter(),
+});
+log.addTransport(syslog);
+```
+
+- `protocol: 'local'` (default) spawns `logger -t <tag> -p <facility>.<pri> <msg>`
+  per record. `logger` ships with every BSD and most Linux distributions.
+- `protocol: 'udp'` sends a raw `<pri>timestamp host tag: msg` datagram over
+  UDP using `nc` (netcat) — useful when the target is a network syslog server
+  and no `logger` binary is available.
+- Override the binary location with `loggerPath` for non-standard installs.
+
+### JournaldTransport
+
+```ts
+import { JournaldTransport } from 'lograil';
+
+const journal = new JournaldTransport({
+  name: 'journald',
+  fields: { UNIT: 'myapp.service', APP: 'myapp' },
+  priority: 4,                  // fixed PRIORITY journal field (optional)
+});
+log.addTransport(journal);
+```
+
+- Spawns **one persistent** `systemd-cat` process and pipes newline-delimited
+  records to its stdin for the lifetime of the transport (no per-record spawn).
+- `fields` become fixed journal `KEY=VALUE` fields; `IDENTIFIER` defaults to
+  the transport name.
+- If `priority` is omitted, a default `PRIORITY=6` field is applied.
+- On hosts without `systemd-cat` the spawn fails and each write is reported via
+  `onError` (circuit-broken after 10 consecutive failures / 5 s window).
+
+### WindowsEventLogTransport
+
+```ts
+import { WindowsEventLogTransport } from 'lograil';
+
+const wlog = new WindowsEventLogTransport({
+  name: 'winlog',
+  log: 'Application',          // target event log
+  source: 'MyApp',            // provider/source string
+  eventId: 1,                 // default record ID
+});
+log.addTransport(wlog);
+```
+
+- Uses `eventcreate.exe /t <type> /l <log> /s <source> /d <data> /id <id>`,
+  built into Windows Vista and later. `type` is derived from the entry level
+  (`error`/`fatal` → `error`, otherwise `information`).
+- Per-entry override: set `entry.metadata.wevtid` to a number to use a custom
+  event ID for that record.
+- Custom `source` values must be pre-registered in the Windows event system;
+  writing to `Application` / `System` logs needs admin rights. Both surface as
+  `onError` until resolved.
+- On non-Windows platforms the transport is importable but every write reports
+  `not available on this platform` via `onError` (circuit-broken).
+
+> **Platform gating.** Each transport checks `os.platform()` at write time:
+> `SyslogTransport` and `JournaldTransport` require a Unix / Linux host with
+> the respective binary; `WindowsEventLogTransport` requires `win32`. In a
+> browser build the shims report `platform === 'browser'` and the transport
+> degrades to the unavailable path.
+
 ## Custom transports
 
 Implement the `Transport` interface — that's all:

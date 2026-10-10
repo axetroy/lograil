@@ -12,6 +12,38 @@ export function tmpdir(): string {
   return '/tmp';
 }
 
+// --- os platform ---
+export function osPlatform(): string {
+  // Browsers have no meaningful "platform"; return a sentinel so OS-native
+  // transports can detect "not a supported platform" and no-op / onError.
+  return 'browser';
+}
+
+// --- child_process (browser stubs — never available) ---
+/**
+ * Browser build: `spawn` / `execFile` are never installed. The OS-native
+ * transports detect their absence via `typeof` at construction time and no-op
+ * (or report via `onError`), so these stubs are only reached if a user
+ * explicitly constructs the transport in a browser — they throw a clear
+ * error instead of hanging.
+ */
+export function spawn(
+  _cmd: string,
+  _args?: string[],
+  _opts?: unknown,
+): { kill(): void; on(_event: string, _cb: (...a: unknown[]) => void): unknown } {
+  throw new Error('child_process.spawn is not available in browser builds');
+}
+
+export function execFile(
+  _cmd: string,
+  _args: string[],
+  _opts: unknown,
+  cb: (err: unknown, stdout: string, stderr: string) => void,
+): void {
+  cb(new Error('child_process.execFile is not available in browser builds'), '', '');
+}
+
 // --- cluster ---
 export function isClusterWorker(): boolean {
   return false;

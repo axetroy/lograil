@@ -324,3 +324,54 @@ entry to all subscribers and catches subscriber errors so the logger's hot path
 never breaks. Subscribers receive the frozen, zero-copy `LogEntry`. With
 `bufferSize > 0`, late subscribers can `replay()` the ring buffer. See
 [Transports guide](/guide/transports#livetransport).
+
+## OS-native transports
+
+Three transports forward a record to the operating system's own logging stack.
+Each is importable in every runtime and never throws at module load; where the
+underlying binary / facility is missing the transport degrades to the
+`onError` path, circuit-broken so a broken sink cannot spam the console.
+
+```ts
+interface SyslogTransportOptions {
+  name?: string;
+  formatter?: Formatter;
+  facility?: number;      // RFC 5424 facility, default 3 (LOG_DAEMON)
+  protocol?: 'local' | 'udp';  // 'local' = logger binary, 'udp' = raw datagram
+  host?: string;          // udp mode, default 'localhost'
+  port?: number;          // udp mode, default 514
+  tag?: string;           // logger -t tag, default the transport name
+  loggerPath?: string;    // override the binary location
+}
+class SyslogTransport implements Transport { /* name, formatter, write, close, onError */ }
+
+interface JournaldTransportOptions {
+  name?: string;
+  formatter?: Formatter;
+  fields?: Record<string, string>;  // fixed KEY=VALUE journal fields (IDENTIFIER defaults to name)
+  priority?: number;                // fixed PRIORITY journal field
+}
+class JournaldTransport implements Transport { /* name, formatter, write, close, onError */ }
+
+interface WindowsEventLogTransportOptions {
+  name?: string;
+  formatter?: Formatter;
+  log?: string;       // target event log, default the transport name
+  source?: string;    // provider/source string, default the transport name
+  eventId?: number;   // default record ID, default 1
+}
+class WindowsEventLogTransport implements Transport { /* name, formatter, write, close, onError */ }
+```
+
+- **`SyslogTransport`** — Unix via `logger` (`protocol: 'local'`) or a raw UDP
+  datagram (`protocol: 'udp'`, via `nc`).
+- **`JournaldTransport`** — Linux/systemd via one persistent `systemd-cat`
+  process; `fields` become fixed journal fields.
+- **`WindowsEventLogTransport`** — Windows via `eventcreate.exe`; per-entry
+  event-ID override via `entry.metadata.wevtid`.
+
+All three share the level → syslog-priority mapping (`trace`/`debug`→7,
+`info`→6, `warn`→4, `error`→3, `fatal`→2). Platform gating: the Unix
+transports require the respective binary; the Windows transport requires
+`win32`. In a browser build every one degrades to the unavailable `onError`
+path. See [Transports guide](/guide/transports#os-native-transports).

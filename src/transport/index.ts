@@ -6,3 +6,7 @@ export * from './file.js';
 export * from './otlp.js';
 export * from './live.js';
 export * from './worker-ipc.js';
+export * from './os-native.js';
+export * from './syslog.js';
+export * from './journald.js';
+export * from './windows-event-log.js';

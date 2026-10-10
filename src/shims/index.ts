@@ -23,3 +23,11 @@ import cluster from 'node:cluster';
 export function isClusterWorker(): boolean {
   return cluster.isWorker === true;
 }
+
+// --- child_process (for OS-native transports) ---
+export { spawn, execFile } from 'node:child_process';
+
+// --- os platform (for OS-native transports' availability detection) ---
+export function osPlatform(): string {
+  return process.platform;
+}
