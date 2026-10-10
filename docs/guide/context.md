@@ -18,7 +18,13 @@ log.info('handled request');
 // → { context: { userId: 'u-123', requestId: '...' }, ... }
 ```
 
-Child loggers get their **own isolated** context seeded from the parent. There are two ways to create a child:
+Child loggers get their **own isolated** context seeded from the parent. The
+seed is a **snapshot taken at child-creation time** — it is not a live reference
+to the parent's store. Concretely, `parent.setContext()` / `parent.mergeContext()`
+called **after** a child is created do **not** reach that child; only children
+created *later* inherit the new value. If you need the child to see a key that
+changes later, set it on the parent **before** calling `child()`/`scope()`, or
+pass it explicitly in the child options. There are two ways to create a child:
 
 - **`scope(name, context?)`** — creates a child with a **new scope** (joined with `:`). The scope is visible in the log entry and usable by filters.
 - **`child(options)`** — creates a child that **keeps the parent's scope** but can merge additional context or override the level. Use this when you need per-request context without changing the scope name.

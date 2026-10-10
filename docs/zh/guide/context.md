@@ -18,7 +18,13 @@ log.info('handled request');
 // → { context: { userId: 'u-123', requestId: '...' }, ... }
 ```
 
-子 logger 会获得一份**独立的**上下文，从父级继承初始值。有两种创建子 logger 的方式：
+子 logger 会获得一份**独立的**上下文，从父级继承初始值。这个初始值是在**创建子
+logger 那一刻的快照**，而不是对父级 store 的活引用。也就是说：在子 logger
+**创建之后**再调用 `parent.setContext()` / `parent.mergeContext()`，**不会**
+传播到已存在的子 logger；只有**之后**创建的新子 logger 才会继承到新值。若希望
+某个后续会变化的 key 出现在子 logger 里，请在调用 `child()` / `scope()`
+**之前**先在父级设置好，或直接在子 logger 的选项里显式传入。有两种创建子
+logger 的方式：
 
 - **`scope(name, context?)`** — 创建一个具有**新 scope**（用 `:` 连接）的子 logger。scope 会显示在日志条目中，也可用于过滤器。
 - **`child(options)`** — 创建一个**保留父级 scope** 的子 logger，但可以合并额外的上下文或覆盖级别。当你需要 per-request 上下文但不想改变 scope 名称时使用。

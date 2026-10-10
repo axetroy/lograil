@@ -34,6 +34,27 @@ describe('Logger.child', () => {
     expect(sink[0].context).toMatchObject({ app: 'api', requestId: 'r1' });
   });
 
+  it('child context is a creation-time snapshot, not a live reference', () => {
+    const sink: LogEntry[] = [];
+    const log = makeLogger();
+    log.addTransport(capturingTransport('cap', sink));
+    log.mergeContext({ app: 'api' });
+    const child = log.child();
+    // After child creation, a parent context change must NOT reach the child.
+    log.setContext('app', 'v2');
+    log.info('parent');
+    child.info('child');
+    const parentEntry = sink.find((e) => e.message === 'parent')!;
+    const childEntry = sink.find((e) => e.message === 'child')!;
+    expect(parentEntry.context.app).toBe('v2');
+    expect(childEntry.context.app).toBe('api'); // frozen at creation
+    // A child created later DOES see the new parent value.
+    const later = log.child();
+    later.info('later');
+    const laterEntry = sink.find((e) => e.message === 'later')!;
+    expect(laterEntry.context.app).toBe('v2');
+  });
+
   it('does not let the child mutate the parent context', () => {
     const sink: LogEntry[] = [];
     const log = makeLogger();
