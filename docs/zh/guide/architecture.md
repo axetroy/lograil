@@ -68,6 +68,23 @@ await logger.destroy(); // 先 flush，再释放插件、关闭传输器
 2. **管道过滤器**：任意谓词（`createLevelFilter`、`createScopeFilter`、`createSampler`、`combineFilters`、自定义）在管道内运行。
 3. **按传输器级别**：每个传输器可声明自己的 `level`；低于它的条目仅被该传输器跳过，从而让一个 logger 分流（例如 `error` 及以上发往远端，其余写入文件）。
 
+## 控制日志量与采样
+
+当某个级别日志量大（如高负载下的 `debug`/`info`）时，用内置采样器控制日志量。它用逻辑 AND 结合两种正交策略，并且只对你列出的级别名生效——其余级别原样通过：
+
+- **概率采样**（`rate`，0..1）：按概率 `rate` 保留每条条目。
+- **限速**（`maxPerSecond` + `burst`）：令牌桶限制吞吐量，允许不超过 `burst` 条的短突发。
+
+由于采样器是管道里的*过滤器*，被采样的条目不会到达处理器、格式化器或传输器——它也是高负载下削减成本最廉价的方式。参见[示例：控制日志量](./examples.md)。
+
+```ts
+import { createSampler } from 'lograil';
+
+logger.getPipeline().addFilter(
+  createSampler({ levels: ['debug', 'info'], maxPerSecond: 100, burst: 200 }),
+);
+```
+
 ## 为何如此分层
 
 - **关注点分离**：格式化与目标解耦——同一条目可以用不同格式同时进入控制台和文件。

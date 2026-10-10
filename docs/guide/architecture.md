@@ -99,6 +99,29 @@ There are three independent gates:
    below it are skipped by that transport only, so one logger can fan out (e.g.
    `error`+ to a remote sink while writing everything to a file).
 
+## Volume control & sampling
+
+When a log level is hot (e.g. `debug`/`info` under load), use the built-in
+sampler to cap volume. It combines two orthogonal strategies with a logical AND
+and only applies to the level names you list — every other level passes through
+untouched:
+
+- **probabilistic** (`rate`, 0..1): keep each entry with probability `rate`.
+- **rate limiting** (`maxPerSecond` + `burst`): a token bucket caps throughput,
+  tolerating short bursts of up to `burst` entries.
+
+Because the sampler is a pipeline *filter*, sampled entries never reach
+processors, formatters or transports — it is also the cheapest way to cut cost
+under load. See [examples: controlling volume](./examples.md).
+
+```ts
+import { createSampler } from 'lograil';
+
+logger.getPipeline().addFilter(
+  createSampler({ levels: ['debug', 'info'], maxPerSecond: 100, burst: 200 }),
+);
+```
+
 ## Why it's structured this way
 
 - **Separation**: formatting and destination are decoupled — one entry can go to
