@@ -10,3 +10,4 @@ export * from './os-native.js';
 export * from './syslog.js';
 export * from './journald.js';
 export * from './windows-event-log.js';
+export * from './broadcast.js';
