@@ -179,6 +179,40 @@ const log = createLogger({ runtime: createElectronMainRuntime() });
 // 或直接使用默认主进程运行时（已自动挂载接收器）
 ```
 
+### WorkerIpcTransport
+
+Worker 侧传输器：通过 `self.postMessage()` 把每条条目转发到主线程 / 父线程。
+在非 Worker 环境导入是安全的——`self.postMessage` 不可用时 `write` 为空操作。
+主线程 / 父线程侧用 `registerWorkerReceiver` 解码条目，并把级别命令转发给
+`onLevelCommand`。
+
+```ts
+import { WorkerIpcTransport, registerWorkerReceiver } from 'lograil';
+
+// worker.ts — createWebRuntime() 在 Worker 中会自动挂载
+logger.info('hello from worker'); // → console + 转发到主线程
+
+// main.ts — 自动接收 worker 日志
+const off = registerWorkerReceiver((entry) => logger.ingestEntry(entry));
+```
+
+### ClusterIpcTransport
+
+Cluster worker 侧传输器：通过 `process.send()` 把每条条目转发到主进程。
+在非 cluster worker 环境导入是安全的——`process.send` 不可用时 `write` 为
+空操作。主进程侧用 `registerClusterReceiver` 解码条目，并把级别命令转发给
+`onLevelCommand`。
+
+```ts
+import { ClusterIpcTransport, registerClusterReceiver } from 'lograil';
+
+// worker.ts — createNodeRuntime() 在 cluster worker 中会自动挂载
+logger.info('hello from worker'); // → console + 转发到主进程
+
+// primary.ts — 接收 worker 日志
+const off = registerClusterReceiver((entry) => logger.ingestEntry(entry));
+```
+
 ### OtlpTransport
 
 通过 OTLP HTTP/JSON 把日志转发到 OpenTelemetry Collector（或任意 OTLP 接收端）。
@@ -274,6 +308,43 @@ unsubscribe(); // 停止接收
 
 对于跨进程流式传输（Electron 主进程 → 渲染进程/webview），可配合现有的 IPC 通道使用；
 跨标签页的 Web 流式传输则使用 `BroadcastChannelTransport`。
+
+### BroadcastChannelTransport
+
+跨标签页 / 跨窗口的 Web 流式传输。每个添加了该传输器的标签页会把每条条目
+广播到一个共享的 `BroadcastChannel`；同一来源、相同频道名的其他标签页会
+收到它。可在任意运行时导入——在没有 `BroadcastChannel` 的平台（Node、
+Electron 主进程、旧浏览器）上 `write` 为空操作，订阅者永不被调用。
+
+```ts
+import {
+  ConsoleTransport,
+  BroadcastChannelTransport,
+  registerBroadcastChannelReceiver,
+} from 'lograil';
+
+// 同一来源、同一频道的每个标签页：
+const log = createLogger({
+  transports: [new ConsoleTransport(), new BroadcastChannelTransport({ name: 'my-app' })],
+});
+log.info('from tab A'); // 在标签页 B 同样可见
+
+// 在标签页 B（接收侧）——把外部标签页的条目送回本地 logger，
+// 使其享受同样的文件/控制台处理：
+const off = registerBroadcastChannelReceiver(
+  (entry) => log.ingestEntry(entry),
+  { name: 'my-app' },
+);
+```
+
+- 频道名（`name`）是协调键：所有参与者必须使用相同的名称与来源。
+  传输器名（`transportName`）只是用于诊断 / 移除的 `Transport.name`。
+- `write()` 广播的是**已冻结的条目**（标签页内零拷贝）；其他标签页通过
+  频道的结构化克隆拿到一个新的条目。
+- 不想经过 logger 直接渲染时，可用
+  `transport.subscribe((entry) => render(entry))` 内联订阅——返回取消订阅函数。
+- **按标签页防循环。** 标签页 A 广播的条目会被投递到标签页 B，但不会回显
+  到标签页 A（`BroadcastChannel` 只投递给该频道的*其他*实例）。
 
 ## OS 原生传输器
 

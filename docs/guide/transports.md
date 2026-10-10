@@ -200,6 +200,42 @@ const log = createLogger({ runtime: createElectronMainRuntime() });
 // or simply: logger (default main runtime already attaches the receiver)
 ```
 
+### WorkerIpcTransport
+
+Worker-side transport that forwards each entry to the main / parent thread via
+`self.postMessage()`. Safe to import in non-Worker environments — `write` is a
+no-op when `self.postMessage` is unavailable. On the main / parent side, decode
+entries with `registerWorkerReceiver`, which also forwards level commands to
+`onLevelCommand`.
+
+```ts
+import { WorkerIpcTransport, registerWorkerReceiver } from 'lograil';
+
+// worker.ts — auto-attached by createWebRuntime() when in a Worker
+logger.info('hello from worker'); // → console + forwarded to main thread
+
+// main.ts — receives worker logs automatically
+const off = registerWorkerReceiver((entry) => logger.ingestEntry(entry));
+```
+
+### ClusterIpcTransport
+
+Cluster-worker-side transport that forwards each entry to the primary process
+via `process.send()`. Safe to import outside a cluster worker — `write` is a
+no-op when `process.send` is unavailable. On the primary side, decode entries
+with `registerClusterReceiver`, which also forwards level commands to
+`onLevelCommand`.
+
+```ts
+import { ClusterIpcTransport, registerClusterReceiver } from 'lograil';
+
+// worker.ts — auto-attached by createNodeRuntime() in cluster workers
+logger.info('hello from worker'); // → console + forwarded to primary
+
+// primary.ts — receives worker logs
+const off = registerClusterReceiver((entry) => logger.ingestEntry(entry));
+```
+
 ### OtlpTransport
 
 Forwards entries to an OpenTelemetry Collector (or any OTLP HTTP/JSON receiver)
@@ -307,6 +343,48 @@ Key behaviors:
 For cross-process streaming (Electron main → renderer/webview) pair it with the
 existing IPC channel, or use `BroadcastChannelTransport` for cross-tab Web
 streaming.
+
+### BroadcastChannelTransport
+
+Cross-tab / cross-window Web streaming. Each tab that adds the transport
+posts every entry to a shared `BroadcastChannel`; every other tab with the
+same channel name and origin receives it. Safe to import in every runtime —
+on platforms without `BroadcastChannel` (Node, Electron main, older
+browsers) `write` is a no-op and subscribers are never invoked.
+
+```ts
+import {
+  ConsoleTransport,
+  BroadcastChannelTransport,
+  registerBroadcastChannelReceiver,
+} from 'lograil';
+
+// Every tab in the same origin, logging to this channel:
+const log = createLogger({
+  transports: [new ConsoleTransport(), new BroadcastChannelTransport({ name: 'my-app' })],
+});
+log.info('from tab A'); // also visible in tab B
+
+// In tab B (the receiving side) — feed foreign entries back into the local
+// logger so they get the same file/console treatment:
+const off = registerBroadcastChannelReceiver(
+  (entry) => log.ingestEntry(entry),
+  { name: 'my-app' },
+);
+```
+
+- The channel name (`name`) is the coordination key: all participants must
+  use the same name and same origin. The transport name
+  (`transportName`) is just the `Transport.name` used for diagnostics /
+  removal.
+- `write()` posts the **frozen entry** (zero-copy within a tab). The other
+  tabs deserialise a fresh entry via the channel's structured clone.
+- Subscribe inline instead of going through the logger with
+  `transport.subscribe((entry) => render(entry))` — returns an unsubscribe
+  function.
+- **Per-tab loop protection.** An entry posted by tab A is delivered to tab
+  B, but not echoed back into tab A (the stub and the real `BroadcastChannel`
+  both only deliver to *other* instances of the channel).
 
 ## OS-native transports
 

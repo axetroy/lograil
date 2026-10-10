@@ -191,6 +191,61 @@ class ElectronIpcTransport implements Transport;
 主进程侧用 `registerIpcReceiver` 接收并处理（同时标记为渲染进程来源）。
 参见[不可变性](../guide/immutability.md)。
 
+## WorkerIpcTransport
+
+```ts
+interface WorkerIpcTransportOptions {
+  name?: string;
+}
+class WorkerIpcTransport implements Transport {
+  readonly name: string;
+  onError?: (err: unknown, entry: LogEntry) => void;
+  write(entry: LogEntry, _formatted: string): void;
+  /** 向主线程 / 父线程转发一条跨进程级别命令。 */
+  sendLevelCommand(level: number): void;
+  close(): void; // 空操作；Worker 生命周期由 Worker 实例自身管理
+}
+function registerWorkerReceiver(
+  ingest: (entry: LogEntry) => void,
+  options?: WorkerReceiverOptions & { onLevelCommand?: (level: number) => void },
+): () => void;
+```
+
+Worker 侧传输器：通过 `self.postMessage()` 把每条条目转发到主线程 / 父线程。
+在非 Worker 环境导入是安全的——`self.postMessage` 不可用时 `write` 为空操作。
+主线程侧用 `registerWorkerReceiver` 解码条目，并把级别命令转发给
+`onLevelCommand`。传入显式 `worker` 实例且该实例使用单槽位 `onmessage`
+属性时，原有的处理函数会被保存并由返回的取消注册函数恢复，避免被静默覆盖。
+断路器（连续 10 次失败 → 5 秒窗口）会在主线程死亡时抑制逐条报错，同时每次
+写入仍尝试投递，因此通道恢复后自动继续工作。
+
+## ClusterIpcTransport
+
+```ts
+interface ClusterIpcTransportOptions {
+  channel?: string; // IPC 通道名，默认 'lograil:cluster:log'
+  name?: string;
+}
+class ClusterIpcTransport implements Transport {
+  readonly name: string;
+  onError?: (err: unknown, entry: LogEntry) => void;
+  write(entry: LogEntry, _formatted: string): void;
+  /** 向主进程转发一条跨进程级别命令。 */
+  sendLevelCommand(level: number): void;
+  close(): void; // 空操作；cluster 模块管理 worker 生命周期
+}
+function registerClusterReceiver(
+  ingest: (entry: LogEntry) => void,
+  options?: ClusterReceiverOptions & { onLevelCommand?: (level: number) => void },
+): () => void;
+```
+
+Cluster worker 侧传输器：通过 `process.send()` 把每条条目转发到主进程。
+在非 cluster worker 环境导入是安全的——`process.send` 不可用时 `write` 为
+空操作。主进程侧用 `registerClusterReceiver` 解码条目，并把级别命令转发给
+`onLevelCommand`。断路器（连续 5 次失败 → 5 秒窗口）会在主进程死亡时抑制
+逐条报错。
+
 ## OtlpTransport
 
 ```ts
@@ -283,6 +338,35 @@ class LiveTransport implements Transport {
 并捕获订阅者抛出的异常，使 logger 的热路径永不被打断。订阅者拿到的是已冻结、
  `LogEntry`。当 `bufferSize > 0` 时，后加入的订阅者可用 `replay()` 回放
 环形缓冲。详见[传输器指南](/zh/guide/transports#livetransport)。
+
+## BroadcastChannelTransport
+
+```ts
+interface BroadcastChannelTransportOptions {
+  name?: string;           // BroadcastChannel 名称，默认 'lograil'
+  transportName?: string;  // Transport.name，默认 'broadcast-channel'
+  formatter?: Formatter;
+}
+class BroadcastChannelTransport implements Transport {
+  readonly name: string;
+  readonly formatter: Formatter;
+  onError?: (err: unknown, entry: LogEntry) => void;
+  /** 订阅本频道从其他标签页收到的条目。 */
+  subscribe(cb: (entry: LogEntry) => void): () => void;
+  write(entry: LogEntry, formatted: string): void;
+  close(): void;
+}
+function registerBroadcastChannelReceiver(
+  ingest: (entry: LogEntry) => void,
+  options?: { name?: string; transportName?: string },
+): () => void;
+```
+
+跨标签页 / 跨窗口的 Web 流式传输。每个 `addTransport` 了它的标签页会把每条
+条目广播到一个共享的 `BroadcastChannel`；同一来源、相同频道名的其他标签页
+通过 `subscribe`（或 `registerBroadcastChannelReceiver`）收到它。可在任意
+运行时导入——在没有 `BroadcastChannel` 的平台（Node、Electron 主进程、旧
+浏览器）上 `write` 为空操作，订阅者永不被调用。
 
 ## OS 原生传输器
 

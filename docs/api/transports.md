@@ -221,6 +221,64 @@ Renderer-side: forwards each entry to the main process over IPC via
 Safe to import outside Electron. Decode on the main side with
 `registerIpcReceiver` (which also tags entries as renderer-origin).
 
+## WorkerIpcTransport
+
+```ts
+interface WorkerIpcTransportOptions {
+  name?: string;
+}
+class WorkerIpcTransport implements Transport {
+  readonly name: string;
+  onError?: (err: unknown, entry: LogEntry) => void;
+  write(entry: LogEntry, _formatted: string): void;
+  /** Forward a cross-process level command to the main/parent thread. */
+  sendLevelCommand(level: number): void;
+  close(): void; // no-op; the Worker owns its lifecycle
+}
+function registerWorkerReceiver(
+  ingest: (entry: LogEntry) => void,
+  options?: WorkerReceiverOptions & { onLevelCommand?: (level: number) => void },
+): () => void;
+```
+
+Worker-side transport that forwards each entry to the main / parent thread via
+`self.postMessage()`. Safe to import in non-Worker environments — `write` is a
+no-op when `self.postMessage` is unavailable. The main side decodes entries
+with `registerWorkerReceiver`, which also forwards level commands to
+`onLevelCommand`. When an explicit `worker` instance is passed and it exposes a
+single-slot `onmessage` property, the pre-existing handler is saved and restored
+by the returned unregister function. A circuit breaker (10 consecutive failures
+→ 5 s window) suppresses per-entry noise if the main thread dies, while still
+attempting delivery on every write so the channel recovers automatically.
+
+## ClusterIpcTransport
+
+```ts
+interface ClusterIpcTransportOptions {
+  channel?: string; // IPC channel name, default 'lograil:cluster:log'
+  name?: string;
+}
+class ClusterIpcTransport implements Transport {
+  readonly name: string;
+  onError?: (err: unknown, entry: LogEntry) => void;
+  write(entry: LogEntry, _formatted: string): void;
+  /** Forward a cross-process level command to the primary process. */
+  sendLevelCommand(level: number): void;
+  close(): void; // no-op; the cluster module owns the worker lifecycle
+}
+function registerClusterReceiver(
+  ingest: (entry: LogEntry) => void,
+  options?: ClusterReceiverOptions & { onLevelCommand?: (level: number) => void },
+): () => void;
+```
+
+Cluster-worker-side transport that forwards each entry to the primary process
+via `process.send()`. Safe to import outside a cluster worker — `write` is a
+no-op when `process.send` is unavailable. The primary side decodes entries with
+`registerClusterReceiver`, which also forwards level commands to
+`onLevelCommand`. A circuit breaker (5 consecutive failures → 5 s window)
+suppresses per-entry noise if the primary dies.
+
 ## OtlpTransport
 
 ```ts
@@ -306,8 +364,6 @@ interface LiveTransportOptions {
   formatter?: Formatter; // used by onFormatted; raw entries otherwise
   bufferSize?: number; // ring-buffer size for replay(); 0 disables (default)
 }
-
-class LiveTransport implements Transport {
   readonly name: string;
   readonly formatter?: Formatter;
   get subscriberCount(): number;
@@ -324,6 +380,36 @@ entry to all subscribers and catches subscriber errors so the logger's hot path
 never breaks. Subscribers receive the frozen, zero-copy `LogEntry`. With
 `bufferSize > 0`, late subscribers can `replay()` the ring buffer. See
 [Transports guide](/guide/transports#livetransport).
+
+## BroadcastChannelTransport
+
+```ts
+interface BroadcastChannelTransportOptions {
+  name?: string;           // the BroadcastChannel name, default 'lograil'
+  transportName?: string;  // Transport.name, default 'broadcast-channel'
+  formatter?: Formatter;
+}
+class BroadcastChannelTransport implements Transport {
+  readonly name: string;
+  readonly formatter: Formatter;
+  onError?: (err: unknown, entry: LogEntry) => void;
+  /** Subscribe to entries this channel receives from other tabs. */
+  subscribe(cb: (entry: LogEntry) => void): () => void;
+  write(entry: LogEntry, formatted: string): void;
+  close(): void;
+}
+function registerBroadcastChannelReceiver(
+  ingest: (entry: LogEntry) => void,
+  options?: { name?: string; transportName?: string },
+): () => void;
+```
+
+Cross-tab / cross-window Web streaming transport. Each tab that `addTransport`
+'s it posts every entry to a shared `BroadcastChannel`; every other tab with
+the same channel name and origin receives it via `subscribe` (or via
+`registerBroadcastChannelReceiver`). Importable in every runtime — on platforms
+without `BroadcastChannel` (Node, Electron main, older browsers) `write` is a
+no-op and subscribers are never invoked.
 
 ## OS-native transports
 
