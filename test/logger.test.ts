@@ -8,6 +8,7 @@ class MemoryTransport implements Transport {
   entries: LogEntry[] = [];
   lines: string[] = [];
   formatter = createLineFormatter();
+  sendLevelCommand?: (level: number) => void;
 
   write(entry: LogEntry, formatted: string): void {
     this.entries.push(entry);
@@ -194,5 +195,44 @@ describe('Logger', () => {
     // Simulate a peer sending a level command.
     runtime.onLevelCommand!(20);
     expect(cb).toHaveBeenCalledWith(20);
+  });
+
+  it('destroy() restores the console replaced by redirectConsole() (P0)', async () => {
+    const t = new MemoryTransport();
+    const logger = new Logger({ transports: [t], level: 'debug' });
+    // Call redirectConsole but deliberately drop the returned restore function.
+    logger.redirectConsole();
+    // `console.log` now routes through the logger.
+    console.log('captured-by-logger');
+    // Destroy without ever calling the (lost) restore function.
+    await logger.destroy();
+    // The console must have been restored automatically: the transport should
+    // have seen exactly one entry (the `console.log` above), and further
+    // console.log calls must not be captured.
+    console.log('after-destroy');
+    await logger.flush();
+    expect(t.entries).toHaveLength(1);
+    expect(t.entries[0].message).toBe('captured-by-logger');
+  });
+
+  it('setLevel() broadcasts to transports with sendLevelCommand (P0-b)', async () => {
+    const t = new MemoryTransport();
+    const calls: number[] = [];
+    t.sendLevelCommand = (level) => calls.push(level);
+    const logger = new Logger({ transports: [t], level: 'info' });
+    logger.setLevel('debug');
+    expect(calls).toEqual([20]);
+    logger.setLevel('warn');
+    expect(calls).toEqual([20, 40]);
+  });
+
+  it('setLevel() on a child logger does not broadcast (P0-b)', async () => {
+    const t = new MemoryTransport();
+    const calls: number[] = [];
+    t.sendLevelCommand = (level) => calls.push(level);
+    const logger = new Logger({ transports: [t], level: 'info' });
+    const child = logger.child();
+    child.setLevel('debug');
+    expect(calls).toEqual([]);
   });
 });

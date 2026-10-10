@@ -33,6 +33,14 @@ export interface Transport {
   /** Optional teardown. */
   close?(): void | Promise<void>;
   /**
+   * Optional cross-process level broadcast. When the owning logger's level is
+   * changed locally (via `setLevel`), the logger calls this on every
+   * transport that implements it so peers (workers, renderers, cluster
+   * processes) receive the new level. Omit on transports that do not bridge
+   * to a peer.
+   */
+  sendLevelCommand?(level: number): void;
+  /**
    * Maximum pending async-write queue depth for this transport. When the
    * queue exceeds this length, the newest entry is dropped immediately and
    * `onOverflow` is called (if provided). A value of `0` disables the limit

@@ -64,11 +64,13 @@ export interface RuntimeAdapter {
   /** Transports enabled by default for this runtime. */
   defaultTransports(): Transport[];
   /**
-   * For Electron main process: register a receiver that forwards entries sent
-   * by renderer processes (via IPC) into the host logger. Returns an
+   * For the main / parent process: register a receiver that forwards entries
+   * sent by peer processes (renderer via IPC, worker via `postMessage`,
+   * cluster worker via `process.send()`) into the host logger. `onLevelCommand`
+   * is invoked when a peer sends a cross-process level command. Returns an
    * unregister function. Undefined when not applicable.
    */
-  attachReceiver?: (ingest: IngestFn) => () => void;
+  attachReceiver?: (ingest: IngestFn, onLevelCommand?: (level: number) => void) => () => void;
   /**
    * Cross-process level-setting callback. When set on the runtime, any
    * `setLevel` call from a child process will invoke this with the new level.

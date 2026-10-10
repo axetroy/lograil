@@ -302,6 +302,8 @@ export class Logger implements LoggerMethods {
   private processHandlersAttached = false;
   private errorHandlersAttached = false;
   private removeProcessHandlers?: () => void;
+  /** Restores the global `console` methods when `redirectConsole` was called. */
+  private restoreConsole?: () => void;
   private onLoggerError?: LoggerErrorHandler;
   private writeTimeoutMs!: number;
   private flushTimeoutMs!: number;
@@ -355,14 +357,17 @@ export class Logger implements LoggerMethods {
         : readEnvVar(options.scopeFilterEnvVar ?? 'LOGRAIL_DEBUG'));
     this.scopeFilter = compileNamespaceFilter(nsInput);
 
-    // On the Electron main process, receive renderer logs over IPC.
+    // On the Electron main process / Node primary / Web main thread, receive
+    // peer logs over IPC. Level commands sent by peers update `peerLevel`.
     if (this.runtime.attachReceiver) {
-      this.detachReceiver = this.runtime.attachReceiver((entry: LogEntry) =>
-        this.ingestEntry(entry),
-      );
-      this.runtime.onLevelCommand = (level) => {
+      const onPeerLevelCommand = (level: number): void => {
         this.peerLevel = level;
       };
+      this.detachReceiver = this.runtime.attachReceiver(
+        (entry: LogEntry) => this.ingestEntry(entry),
+        onPeerLevelCommand,
+      );
+      this.runtime.onLevelCommand = onPeerLevelCommand;
     }
 
     if (options.autoFlushOnExit) this.attachExitHandlers();
@@ -431,6 +436,12 @@ export class Logger implements LoggerMethods {
     } else {
       this.level = v;
       this.hasExplicitLocalLevel = true;
+      // Broadcast the new level to peers (workers, renderers, cluster
+      // processes) so cross-process loggers stay in sync. Only the root
+      // logger does this — children delegate to the parent.
+      for (const t of this.transports) {
+        t.sendLevelCommand?.(v);
+      }
     }
   }
 
@@ -1065,11 +1076,14 @@ export class Logger implements LoggerMethods {
         }
       };
     }
-    return () => {
+    const restore = (): void => {
       for (const key of Object.keys(originals) as (keyof Console)[]) {
         (console as unknown as Record<string, unknown>)[key] = originals[key];
       }
+      if (this.restoreConsole === restore) this.restoreConsole = undefined;
     };
+    this.restoreConsole = restore;
+    return restore;
   }
 
   async destroy(): Promise<void> {
@@ -1083,6 +1097,10 @@ export class Logger implements LoggerMethods {
       return;
     }
     this.removeProcessHandlers?.();
+    // Restore the global `console` if `redirectConsole` was called but its
+    // returned restore function was never invoked — otherwise the replacement
+    // would outlive the logger.
+    this.restoreConsole?.();
     // Flush pending writes before tearing down transports, so buffered logs
     // are not lost. Bounded by the exit-flush timeout so a stalled sink can
     // never hang teardown.

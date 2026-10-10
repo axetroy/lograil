@@ -89,7 +89,7 @@ export function createWebRuntime(): RuntimeAdapter {
     pid: () => undefined,
     hasFileSystem: () => false,
     defaultTransports: () => [new ConsoleTransport()],
-    attachReceiver: (ingest) => registerWorkerReceiver(ingest),
+    attachReceiver: (ingest, onLevelCommand) => registerWorkerReceiver(ingest, { onLevelCommand }),
     lifecycle: createWebLifecycle(),
   };
 }

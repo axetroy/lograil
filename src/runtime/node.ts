@@ -143,7 +143,7 @@ export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdap
     pid: () => pid,
     hasFileSystem: () => !options.disableFile,
     defaultTransports: () => transports,
-    attachReceiver: (ingest) => registerClusterReceiver(ingest),
+    attachReceiver: (ingest, onLevelCommand) => registerClusterReceiver(ingest, { onLevelCommand }),
     lifecycle: createProcessLifecycle(),
   };
 }

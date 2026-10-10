@@ -242,6 +242,7 @@ logger.watchUncaughtErrors();
 
 // Bridge console.* (console.log/info/warn/error/debug/trace) into the logger.
 const restore = logger.redirectConsole(); // returns a function that restores console
+ // (if you drop `restore`, `destroy()` restores the console automatically)
 ```
 
 - `attachExitHandlers()` flushes before the host exits. On Node / Electron it
@@ -255,5 +256,14 @@ const restore = logger.redirectConsole(); // returns a function that restores co
   when a `ConsoleTransport` is attached. Note: `console.*` arguments are
   passed as-is to the logger, so structured objects (e.g. `console.log({ key })`)
   become the log message string rather than structured data — use the logger
-  API directly (`logger.info({ key })`) for structured logging.
+  API directly (`logger.info({ key })`) for structured logging. The returned
+  `restore` function is idempotent; if you never call it, `destroy()` restores
+  the native `console` for you, so a dropped reference cannot leak the
+  replacement past the logger's lifetime.
+- `setLevel()` on a **root** logger also broadcasts the new level to every peer
+  process that is connected via an IPC transport (`ElectronIpcTransport`,
+  `WorkerIpcTransport`, `ClusterIpcTransport`) — each of those transports
+  implements `sendLevelCommand`, so the main / parent process and every worker /
+  renderer / cluster peer stay in sync without manual wiring. `setLevel()` on a
+  child logger only sets a local override and does not broadcast.
 - `destroy()` also removes any process handlers registered above.
