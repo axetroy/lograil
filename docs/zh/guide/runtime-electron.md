@@ -211,19 +211,25 @@ renderer ──ElectronIpcTransport──▶ IPC ──▶ main: registerIpcRece
 
 ## 跨进程级别同步
 
-Logger **自动通过 IPC 通道广播级别变更**。任意进程调用 `setLevel()` 时，
-所有对等方（主进程 ↔ 渲染进程）都会收到命令并更新自己的级别——无需额外接线。
+**渲染进程 → 主进程**方向是自动的：渲染进程调用 `setLevel()` 时，命令会经
+IPC 通道回传到主进程并应用到主 logger 的级别上，无需额外接线。**主进程 → 渲染
+进程**方向是手动的：主进程调用 `setLevel()` 不会广播（每个渲染进程拥有自己的
+本地 console sink 与级别），需要时用 `logger.broadcastLevelToPeers()` 把主进程
+的当前级别推送到所有已连接的渲染进程。
 
 ```ts
-// main.ts
+// main.ts —— 自动方向（渲染 → 主）
 import { logger } from 'lograil';
-logger.setLevel('debug'); // 所有渲染进程也切换到 debug
+// 渲染进程的 setLevel() 会自动应用到此处。
+
+// main.ts —— 手动方向（主 → 渲染）
+logger.broadcastLevelToPeers(); // 把本进程级别推送到所有渲染进程
 ```
 
 ```ts
-// renderer.ts
+// renderer.ts —— 自动方向（渲染 → 主）
 import { logger } from 'lograil';
-logger.setLevel('trace'); // 主进程也会收到此命令
+logger.setLevel('trace'); // 主进程自动收到此命令
 ```
 
 收到对等方级别命令时，`getLevel()` 返回对等方的级别——跨进程查询保持一致。

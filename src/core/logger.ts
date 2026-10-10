@@ -436,12 +436,27 @@ export class Logger implements LoggerMethods {
     } else {
       this.level = v;
       this.hasExplicitLocalLevel = true;
-      // Broadcast the new level to peers (workers, renderers, cluster
-      // processes) so cross-process loggers stay in sync. Only the root
-      // logger does this — children delegate to the parent.
-      for (const t of this.transports) {
-        t.sendLevelCommand?.(v);
-      }
+    }
+  }
+
+  /**
+   * Push this logger's current level to every connected peer process (worker,
+   * renderer, cluster worker). This is the **manual** main → peer direction:
+   * calling `setLevel()` on the root logger does **not** automatically broadcast
+   * to peers (a peer usually owns its own local sink and should keep its own
+   * level), so use this method when you genuinely want to command the peers,
+   * e.g. to mute an entire system down to `fatal` on an ops signal.
+   *
+   * The reverse direction (peer → main) *is* automatic: when a peer calls
+   * `setLevel()`, the command is forwarded to the main logger via the IPC
+   * transport and applied to the main logger's `peerLevel`. See
+   * {@link RuntimeAdapter.attachReceiver}.
+   */
+  broadcastLevelToPeers(): void {
+    if (this.parent) return; // only the root logger owns the IPC transports
+    const v = this.getLevel();
+    for (const t of this.transports) {
+      t.sendLevelCommand?.(v);
     }
   }
 

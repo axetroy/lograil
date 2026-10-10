@@ -208,5 +208,5 @@ const restore = logger.redirectConsole(); // 返回一个用于还原 console �
 - `attachExitHandlers()` 在宿主退出前 flush。在 Node / Electron 上注册 `beforeExit`、`SIGINT`、`SIGTERM` 监听器（退出码 `130`/`143`）；在 Electron **主进程**上还会在 `app` 的 `before-quit` / `will-quit` 时 flush，使正常的窗口关闭不会丢弃缓冲中的日志。在浏览器中为空操作，且幂等。
 - `watchUncaughtErrors()` 会将错误以 `fatal` 级别记录，随后以退出码 `1` 退出。
 - `redirectConsole()` 把被捕获的 `console` 方法转交给 logger，并抑制原生输出。即使挂载了 `ConsoleTransport`，console 桥接也不会递归。**注意：** `console.*` 的参数会原样传给 logger，因此结构化对象（如 `console.log({ key })`）会变成日志消息字符串而非结构化数据——结构化日志请直接使用 logger API（`logger.info({ key })`）。返回的 `restore` 函数幂等；如果你从未调用它，`destroy()` 会自动恢复原生 `console`，因此丢失引用也不会让替换版 console 存活超出 logger 的生命周期。
-- 在**根** logger 上调用 `setLevel()` 还会通过 IPC 传输器（`ElectronIpcTransport`、`WorkerIpcTransport`、`ClusterIpcTransport`，均实现了 `sendLevelCommand`）把新级别广播给所有已连接的 peer 进程，主/父进程与各 worker / 渲染进程 / cluster 对等进程因此保持同步，无需手动接线。在**子** logger 上调用 `setLevel()` 只设置本地覆盖，不会广播。
+- `setLevel()` 只改变**本进程**的级别。**peer → 主**方向是自动的：当 worker / 渲染进程 / cluster 对等进程调用 `setLevel()` 时，命令会经 IPC 传输器回传到主 logger 的级别上。**主 → peer** 方向则是**手动**的——主 logger 的 `setLevel()` 不会广播，因为对等进程通常拥有自己的本地 sink（例如 `ConsoleTransport`），应保持自己的级别。若确实需要命令所有对等进程（例如运维信号时把全系统静音到 `fatal`），调用 `logger.broadcastLevelToPeers()`；它会把当前级别推送到所有实现了 `sendLevelCommand` 的传输器（`ElectronIpcTransport`、`WorkerIpcTransport`、`ClusterIpcTransport`）。
 - 上述进程处理器同样会在 `destroy()` 时被移除。

@@ -251,20 +251,27 @@ renderer ──ElectronIpcTransport──▶ IPC ──▶ main: registerIpcRece
 
 ## Cross-process level sync
 
-The logger **automatically broadcasts level changes** across the IPC channel.
-When any process calls `setLevel()`, every peer (main ↔ renderer) receives the
-command and updates its own level — no extra wiring required.
+The **renderer → main** direction is automatic: when a renderer calls
+`setLevel()`, the command is forwarded to the main process over the IPC channel
+and applied to the main logger's level — no extra wiring required. The
+**main → renderer** direction is manual: `setLevel()` on the main process does
+not broadcast (each renderer owns its own local console sink and level), but
+`logger.broadcastLevelToPeers()` will push the main process's current level to
+every connected renderer.
 
 ```ts
-// main.ts
+// main.ts — auto direction (renderer → main)
 import { logger } from 'lograil';
-logger.setLevel('debug'); // all renderer processes switch to debug too
+// a renderer's setLevel() is applied here automatically.
+
+// main.ts — manual direction (main → renderer)
+logger.broadcastLevelToPeers(); // push this process's level to every renderer
 ```
 
 ```ts
-// renderer.ts
+// renderer.ts — auto direction (renderer → main)
 import { logger } from 'lograil';
-logger.setLevel('trace'); // main process also receives this
+logger.setLevel('trace'); // main process automatically receives this
 ```
 
 When a peer sends a level command, `getLevel()` on the receiving side returns

@@ -215,24 +215,32 @@ describe('Logger', () => {
     expect(t.entries[0].message).toBe('captured-by-logger');
   });
 
-  it('setLevel() broadcasts to transports with sendLevelCommand (P0-b)', async () => {
+  it('setLevel() does NOT auto-broadcast; broadcastLevelToPeers() does (P0-b)', async () => {
     const t = new MemoryTransport();
     const calls: number[] = [];
     t.sendLevelCommand = (level) => calls.push(level);
     const logger = new Logger({ transports: [t], level: 'info' });
+    // Local setLevel must not touch peers — a peer keeps its own level.
     logger.setLevel('debug');
+    expect(calls).toEqual([]);
+    // Explicit broadcast pushes the current level to every sendLevelCommand
+    // transport.
+    logger.broadcastLevelToPeers();
     expect(calls).toEqual([20]);
     logger.setLevel('warn');
+    logger.broadcastLevelToPeers();
     expect(calls).toEqual([20, 40]);
   });
 
-  it('setLevel() on a child logger does not broadcast (P0-b)', async () => {
+  it('broadcastLevelToPeers() is a no-op on a child logger (P0-b)', async () => {
     const t = new MemoryTransport();
     const calls: number[] = [];
     t.sendLevelCommand = (level) => calls.push(level);
     const logger = new Logger({ transports: [t], level: 'info' });
     const child = logger.child();
-    child.setLevel('debug');
+    child.setLevel('debug'); // local override, no broadcast
+    expect(calls).toEqual([]);
+    child.broadcastLevelToPeers(); // children never own the IPC transports
     expect(calls).toEqual([]);
   });
 });

@@ -159,10 +159,14 @@ attaches it automatically on the primary side.
 
 ### Cross-process level sync
 
-Calling `setLevel()` on the primary process automatically broadcasts the new
-level to all cluster workers via the same IPC channel. Workers that call
-`setLevel()` also send the command back to the primary. No manual wiring is
-required.
+The **worker → primary** direction is automatic: when a cluster worker calls
+`setLevel()`, the command is sent back to the primary over the same IPC channel
+the log entries use, and applied to the primary logger's level. The
+**primary → worker** direction is manual: `setLevel()` on the primary does not
+broadcast (each worker owns its own local sink and level), but
+`logger.broadcastLevelToPeers()` will push the primary's current level to every
+connected worker. No manual wiring is required for the worker → primary
+direction.
 
 ## Worker threads support
 
@@ -203,7 +207,9 @@ logger.info('hello from worker_threads'); // → console + forwarded to parent
 
 ### Cross-process level sync
 
-Like the Cluster mode, Worker threads also receive automatic level broadcasts.
-Calling `setLevel()` on the parent thread propagates to every worker, and vice
-versa — the level command travels over the same `postMessage` channel used for
-log entries.
+As with the Cluster mode, the **worker → parent** direction is automatic: a
+worker's `setLevel()` is forwarded to the parent over the same `postMessage`
+channel used for log entries. The **parent → worker** direction is manual —
+`setLevel()` on the parent does not broadcast; use
+`logger.broadcastLevelToPeers()` to push the parent's level to every connected
+worker.

@@ -260,10 +260,15 @@ const restore = logger.redirectConsole(); // returns a function that restores co
   `restore` function is idempotent; if you never call it, `destroy()` restores
   the native `console` for you, so a dropped reference cannot leak the
   replacement past the logger's lifetime.
-- `setLevel()` on a **root** logger also broadcasts the new level to every peer
-  process that is connected via an IPC transport (`ElectronIpcTransport`,
-  `WorkerIpcTransport`, `ClusterIpcTransport`) — each of those transports
-  implements `sendLevelCommand`, so the main / parent process and every worker /
-  renderer / cluster peer stay in sync without manual wiring. `setLevel()` on a
-  child logger only sets a local override and does not broadcast.
+- `setLevel()` only changes this process's level. The **peer → main** direction
+  is automatic: when a worker / renderer / cluster peer calls `setLevel()`, the
+  command travels back over the IPC transport and is applied to the main
+  logger's level. The **main → peer** direction is *manual* — `setLevel()` on
+  the main logger does **not** broadcast, because a peer usually owns its own
+  local sink (e.g. a `ConsoleTransport`) and should keep its own level. When
+  you genuinely want to command every peer (e.g. mute the whole system to
+  `fatal` on an ops signal), call `logger.broadcastLevelToPeers()` instead; it
+  pushes the current level to every transport that implements
+  `sendLevelCommand` (`ElectronIpcTransport`, `WorkerIpcTransport`,
+  `ClusterIpcTransport`).
 - `destroy()` also removes any process handlers registered above.

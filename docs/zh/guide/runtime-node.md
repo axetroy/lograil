@@ -151,9 +151,11 @@ if (cluster.isPrimary) {
 
 ### 跨进程级别同步
 
-在主进程调用 `setLevel()` 会自动通过同一套 IPC 通道将新级别广播给所有
-Cluster 工作进程。工作进程调用 `setLevel()` 时也会将命令发送回主进程，
-无需手动接线。
+**worker → 主进程**方向是自动的：Cluster 工作进程调用 `setLevel()` 时，命令
+会经同一套 IPC 通道回传到主进程并应用到主 logger 的级别上。**主进程 → worker**
+方向是手动的：主进程调用 `setLevel()` 不会广播（每个 worker 拥有自己的本地
+sink 与级别），需要时用 `logger.broadcastLevelToPeers()` 把主进程的当前级别
+推送到所有已连接的工作进程。worker → 主进程方向无需手动接线。
 
 ## Worker threads 支持
 
@@ -191,6 +193,7 @@ logger.info('hello from worker_threads'); // → 控制台 + 转发到父线程
 
 ### 跨进程级别同步
 
-与 Cluster 模式一样，Worker 线程也会自动接收级别广播。在父线程调用
-`setLevel()` 会传播到所有 Worker，反之亦然——级别命令通过用于日志条目的
-同一套 `postMessage` 通道传输。
+与 Cluster 模式一致，**worker → 父线程**方向是自动的：Worker 线程的
+`setLevel()` 会经用于日志条目的同一套 `postMessage` 通道转发到父线程。**父
+线程 → worker** 方向是手动的：父线程调用 `setLevel()` 不会广播；需要用
+`logger.broadcastLevelToPeers()` 把父线程的级别推送到所有已连接的 Worker。
