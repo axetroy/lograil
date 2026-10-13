@@ -3,6 +3,8 @@
   "compilerOptions": {
     "noEmit": true,
     "rootDir": ".",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node"],
     "paths": {
       "@opentelemetry/api": ["./node_modules/@opentelemetry/api/build/src/index.d.ts"]
