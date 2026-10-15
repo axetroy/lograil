@@ -263,6 +263,35 @@ function slowAsyncTransport(delayMs: number, limit?: number) {
 }
 
 describe('Transport queue backpressure', () => {
+  it('starts async writes sequentially and preserves invocation order', async () => {
+    const started: string[] = [];
+    const releases: Array<() => void> = [];
+    const t: Transport = {
+      name: 'serial-async',
+      write(entry): Promise<void> {
+        started.push(entry.message);
+        return new Promise<void>((resolve) => releases.push(resolve));
+      },
+    };
+    const logger = new Logger({ transports: [t], level: 'debug' });
+
+    logger.info('first');
+    logger.info('second');
+    logger.info('third');
+    expect(started).toEqual(['first']);
+
+    releases[0]();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toEqual(['first', 'second']);
+
+    releases[1]();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toEqual(['first', 'second', 'third']);
+
+    releases[2]();
+    await logger.flush();
+  });
+
   it('drops newest entry when transport queue limit is exceeded (global maxQueueDepth)', async () => {
     const dropped: string[] = [];
     const t = slowAsyncTransport(50, 3); // each write takes 50ms

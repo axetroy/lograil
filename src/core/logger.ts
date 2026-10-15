@@ -814,42 +814,60 @@ export class Logger implements LoggerMethods {
           );
           continue;
         }
-        const result = transport.write(frozen, String(formatted));
-        if (result && typeof (result as Promise<void>).then === 'function') {
-          const guarded = this.guardWrite(result as Promise<void>);
-          // Chain onto THIS transport's own queue, not a shared one, so a stalled
-          // write here cannot block other transports (or the front dispatch queue).
-          const next = existing?.promise ?? Promise.resolve();
-          const chain = next.then(() => guarded);
-          // In-flight count: 1 if this is the first write on the queue, else
-          // existing.depth + 1 for a write chained onto a queue that already
-          // has pending writes. A final settle handler (registered below)
-          // resets depth to 0 so the overflow cap re-opens.
-          const nextDepth = existing ? existing.depth + 1 : 1;
-          const nextEntry: TransportQueueEntry = {
-            promise: chain.catch((err) => this.reportTransportError(err, frozen, onErr)),
-            depth: nextDepth,
-          };
-          this.transportQueues.set(transport, nextEntry);
-          // Reset depth when the queued write settles so the overflow cap
-          // re-opens. Chained writes after this point see the up-to-date
-          // depth (>=1 while this write is in flight, 0 once it settles).
-          chain
-            .then(() => {
-              const cur = this.transportQueues.get(transport);
-              if (cur === nextEntry) this.transportQueues.set(transport, { ...cur, depth: 0 });
-            })
-            .catch(() => {
-              // already handled above; still clear depth so a stalled write
-              // does not wedge the queue.
-              const cur = this.transportQueues.get(transport);
-              if (cur === nextEntry) this.transportQueues.set(transport, { ...cur, depth: 0 });
-            });
-        }
+        this.writeTransport(transport, frozen, String(formatted), onErr, existing);
       } catch (err) {
         this.reportTransportError(err, frozen, onErr);
       }
     }
+  }
+
+  private writeTransport(
+    transport: Transport,
+    entry: LogEntry,
+    formatted: string,
+    onError: Transport['onError'],
+    existing?: TransportQueueEntry,
+  ): void {
+    const write = (): Promise<void> | undefined => {
+      try {
+        const result = transport.write(entry, formatted);
+        if (result && typeof (result as Promise<void>).then === 'function') {
+          return this.guardWrite(Promise.resolve(result)).catch((err) => {
+            this.reportTransportError(err, entry, onError);
+          });
+        }
+      } catch (err) {
+        this.reportTransportError(err, entry, onError);
+      }
+      return undefined;
+    };
+
+    if (existing) {
+      const chain = existing.promise.then(() => write());
+      existing.depth += 1;
+      existing.promise = chain.then(() => undefined);
+      const queue = existing;
+      const settle = (): void => {
+        const current = this.transportQueues.get(transport);
+        if (current !== queue) return;
+        current.depth -= 1;
+        if (current.depth === 0) this.transportQueues.delete(transport);
+      };
+      void chain.then(settle, settle);
+      return;
+    }
+
+    const result = write();
+    if (!result) return;
+
+    const queue: TransportQueueEntry = { promise: result, depth: 1 };
+    this.transportQueues.set(transport, queue);
+    const settle = (): void => {
+      if (this.transportQueues.get(transport) === queue) {
+        this.transportQueues.delete(transport);
+      }
+    };
+    void result.then(settle, settle);
   }
 
   /** Await a transport's async `write`, but never let it stall the queue. */
