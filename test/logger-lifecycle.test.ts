@@ -128,6 +128,43 @@ describe('Logger - global onError handler', () => {
 });
 
 describe('Logger - ingestEntry filtering', () => {
+  it('runs ingested entries through the pipeline and redacts plugin changes before writing', async () => {
+    const { transport, entries } = memory();
+    const log = new Logger({ transports: [transport], runtime: makeRuntime(), level: 'debug' });
+    let filterCalls = 0;
+    log.getPipeline().addFilter(() => {
+      filterCalls++;
+      return true;
+    });
+    await log.use({
+      name: 'add-secret',
+      onEntry(entry) {
+        return {
+          ...entry,
+          context: { password: 'plugin-secret' },
+          args: [{ token: 'plugin-token' }],
+        };
+      },
+    });
+
+    log.ingestEntry({
+      level: LOG_LEVELS.info,
+      levelName: 'info',
+      message: 'received',
+      args: [{ password: 'ingested-secret' }],
+      timestamp: 1,
+      time: '',
+      context: { token: 'ingested-token' },
+      metadata: {},
+    });
+    await log.flush();
+
+    expect(filterCalls).toBe(1);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].context.password).toBe('[REDACTED]');
+    expect((entries[0].args[0] as Record<string, unknown>).token).toBe('[REDACTED]');
+  });
+
   it('drops ingested entries below the logger level', () => {
     const { transport, entries } = memory();
     const log = new Logger({ transports: [transport], runtime: makeRuntime(), level: 'warn' });

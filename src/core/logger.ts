@@ -278,6 +278,7 @@ function getNodeProcess(): NodeProcess | undefined {
 export class Logger implements LoggerMethods {
   private runtime!: RuntimeAdapter;
   private pipeline!: Pipeline;
+  private finalRedactProcessor?: Processor;
   private plugins!: PluginManager;
   private transports!: Transport[];
   private context!: ContextStore;
@@ -337,7 +338,8 @@ export class Logger implements LoggerMethods {
       this.pipeline.setFormatter(createLineFormatter());
     }
     if (options.secure !== false) {
-      this.pipeline.addProcessor(createRedactProcessor());
+      this.finalRedactProcessor = createRedactProcessor();
+      this.pipeline.addProcessor(this.finalRedactProcessor);
     }
     this.plugins = options.plugins ?? new PluginManager(this.buildPluginContext());
     this.transports = options.transports ?? this.runtime.defaultTransports();
@@ -394,6 +396,7 @@ export class Logger implements LoggerMethods {
     this.pipeline = parent.pipeline;
     this.plugins = parent.plugins;
     this.transports = parent.transports;
+    this.finalRedactProcessor = parent.finalRedactProcessor;
     this.scopeFilter = parent.scopeFilter;
     this.context = opts.context ?? createContextStore();
     this.scopeName = opts.scope;
@@ -414,7 +417,9 @@ export class Logger implements LoggerMethods {
     if (this.destroyed) return;
     if (entry.level < this.getLevel()) return;
     if (!matchesNamespace(entry.scope, this.scopeFilter)) return;
-    this.dispatch(entry);
+    const processed = this.pipeline.process(entry);
+    if (!processed) return;
+    this.dispatch(processed);
   }
 
   // ---- Level ----
@@ -773,6 +778,14 @@ export class Logger implements LoggerMethods {
   }
 
   private writeToTransports(entry: LogEntry): void {
+    if (this.finalRedactProcessor) {
+      try {
+        entry = this.finalRedactProcessor(entry);
+      } catch (err) {
+        this.reportError('process', err, entry);
+        return;
+      }
+    }
     // Freeze at the single fan-out choke point so every transport, formatter and
     // plugin reads an immutable entry and can safely share it by reference
     // (zero-copy within the process). Idempotent.
