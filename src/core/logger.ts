@@ -14,6 +14,7 @@ import type { ContextStore } from '../context/index.js';
 import { createContextStore, asyncContext, isEmptyRecord, EMPTY_RECORD } from '../context/index.js';
 import { freezeEntry } from './entry.js';
 import { formatMessage, hasPrintfSpecifier } from './printf.js';
+import { TransportWriteQueue } from './transport-write-queue.js';
 
 // Captured at module load — before `redirectConsole` can replace `console.*` —
 // so the logger's own error reporting never recurses into itself.
@@ -68,12 +69,6 @@ export interface LoggerErrorInfo {
  * it cannot recurse into the logger).
  */
 export type LoggerErrorHandler = (error: unknown, info: LoggerErrorInfo) => void;
-
-/** Per-transport queue entry: chains writes sequentially while tracking depth. */
-interface TransportQueueEntry {
-  promise: Promise<void>;
-  depth: number;
-}
 
 // ---- Namespace (scope) filtering ----
 
@@ -297,7 +292,7 @@ export class Logger implements LoggerMethods {
   private dispatchDrainResolve: (() => void) | undefined = undefined;
   /** Independent async-write queue per transport. Each entry tracks its depth
    * so overflow can be detected without traversing the promise chain. */
-  private transportQueues = new Map<Transport, TransportQueueEntry>();
+  private transportQueues = new Map<Transport, TransportWriteQueue>();
   private destroyed = false;
   private detachReceiver?: () => void;
   private processHandlersAttached = false;
@@ -499,15 +494,16 @@ export class Logger implements LoggerMethods {
     if (existing.length > 0) {
       this.transports = this.transports.filter((t) => t.name !== transport.name);
       for (const old of existing) {
-        const entry = this.transportQueues.get(old);
-        const prev = entry?.promise ?? Promise.resolve();
-        const teardown = prev
-          .then(async () => {
+        const queue = this.getTransportQueue(old);
+        void queue
+          .append(async () => {
             if (old.flush) await this.guardFlush(old.flush.bind(old));
             if (old.close) await Promise.resolve(old.close());
           })
-          .catch((err) => this.reportError('transport', err, undefined, old.name));
-        this.transportQueues.set(old, { promise: teardown, depth: entry?.depth ?? 0 });
+          .catch((err) => this.reportError('transport', err, undefined, old.name))
+          .finally(() => {
+            if (this.transportQueues.get(old) === queue) this.transportQueues.delete(old);
+          });
       }
     }
     this.transports.push(transport);
@@ -518,19 +514,28 @@ export class Logger implements LoggerMethods {
     const removed = this.transports.filter((t) => t.name === name);
     this.transports = this.transports.filter((t) => t.name !== name);
     for (const transport of removed) {
-      const existing = this.transportQueues.get(transport);
-      const prev = existing?.promise ?? Promise.resolve();
-      const teardown = prev
-        .then(async () => {
+      const queue = this.getTransportQueue(transport);
+      void queue
+        .append(async () => {
           if (transport.flush) await this.guardFlush(transport.flush.bind(transport));
           if (transport.close) await Promise.resolve(transport.close());
         })
         .catch((err) => this.reportError('transport', err, undefined, transport.name))
         .finally(() => {
-          this.transportQueues.delete(transport);
+          if (this.transportQueues.get(transport) === queue) this.transportQueues.delete(transport);
         });
-      this.transportQueues.set(transport, { promise: teardown, depth: existing?.depth ?? 0 });
     }
+  }
+
+  private getTransportQueue(transport: Transport): TransportWriteQueue {
+    let queue = this.transportQueues.get(transport);
+    if (!queue) {
+      queue = new TransportWriteQueue(this.writeTimeoutMs, (err, entry, handler) =>
+        this.reportTransportError(err, entry, handler),
+      );
+      this.transportQueues.set(transport, queue);
+    }
+    return queue;
   }
 
   /** Unregister a plugin by name at runtime. */
@@ -807,80 +812,13 @@ export class Logger implements LoggerMethods {
         // dropped entry never triggers its side effects (file writes, HTTP
         // requests, IPC sends). The depth check runs first; only if the queue
         // is not full do we call `write()`.
-        const existing = this.transportQueues.get(transport);
-        const entryDepth = existing?.depth ?? 0;
         // Per-transport limit takes precedence over the global one when both set.
         const limit = transport.queueLimit ?? this.maxQueueDepth;
-        // `depth` is the in-flight count of queued writes for this transport:
-        // 1 on accept, +1 for each subsequent write chained onto the same
-        // queue, 0 once the chain settles. The overflow check compares the
-        // prospective depth (entryDepth + 1) against the limit, so a limit
-        // of N admits up to N in-flight writes and drops the (N+1)th.
-        if (limit > 0 && entryDepth + 1 > limit) {
-          // Drop the newest entry to protect against memory growth.
-          if (transport.onOverflow) transport.onOverflow(frozen, entryDepth + 1);
-          this.reportError(
-            'transport',
-            new Error(`queue full (depth ${entryDepth + 1} > ${limit})`),
-            frozen,
-            transport.name,
-          );
-          continue;
-        }
-        this.writeTransport(transport, frozen, String(formatted), onErr, existing);
+        this.getTransportQueue(transport).write(transport, frozen, String(formatted), limit);
       } catch (err) {
         this.reportTransportError(err, frozen, onErr);
       }
     }
-  }
-
-  private writeTransport(
-    transport: Transport,
-    entry: LogEntry,
-    formatted: string,
-    onError: Transport['onError'],
-    existing?: TransportQueueEntry,
-  ): void {
-    const write = (): Promise<void> | undefined => {
-      try {
-        const result = transport.write(entry, formatted);
-        if (result && typeof (result as Promise<void>).then === 'function') {
-          return this.guardWrite(Promise.resolve(result)).catch((err) => {
-            this.reportTransportError(err, entry, onError);
-          });
-        }
-      } catch (err) {
-        this.reportTransportError(err, entry, onError);
-      }
-      return undefined;
-    };
-
-    if (existing) {
-      const chain = existing.promise.then(() => write());
-      existing.depth += 1;
-      existing.promise = chain.then(() => undefined);
-      const queue = existing;
-      const settle = (): void => {
-        const current = this.transportQueues.get(transport);
-        if (current !== queue) return;
-        current.depth -= 1;
-        if (current.depth === 0) this.transportQueues.delete(transport);
-      };
-      void chain.then(settle, settle);
-      return;
-    }
-
-    const result = write();
-    if (!result) return;
-
-    const queue: TransportQueueEntry = { promise: result, depth: 1 };
-    this.transportQueues.set(transport, queue);
-    const settle = (): void => {
-      if (this.transportQueues.get(transport) === queue) {
-        this.transportQueues.delete(transport);
-      }
-    };
-    void result.then(settle, settle);
   }
 
   /** Await a transport's async `write`, but never let it stall the queue. */
@@ -931,7 +869,7 @@ export class Logger implements LoggerMethods {
     // Aggregate all per-transport async-write queues. `allSettled` means a
     // rejected/errored transport queue never rejects flush; a stalled one is
     // bounded by `writeTimeoutMs` via `guardWrite`.
-    await Promise.allSettled(Array.from(this.transportQueues.values()).map((e) => e.promise));
+    await Promise.allSettled(Array.from(this.transportQueues.values()).map((queue) => queue.drain()));
     // Flush each transport's internal buffers with the same timeout guard so
     // a stalled flush can never hang shutdown or caller code.
     await Promise.allSettled(
