@@ -4,6 +4,7 @@ import type { RuntimeAdapter } from '../runtime/index.js';
 import { detectRuntime } from '../runtime/index.js';
 import type { PipelineOptions } from '../pipeline/pipeline.js';
 import { Pipeline } from '../pipeline/pipeline.js';
+import type { Processor } from '../pipeline/processor.js';
 import type { Formatter } from '../pipeline/formatter.js';
 import { createLineFormatter } from '../pipeline/formatter.js';
 import { createRedactProcessor } from '../pipeline/processor.js';

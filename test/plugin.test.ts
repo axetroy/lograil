@@ -236,4 +236,67 @@ describe('PluginManager - lifecycle hooks', () => {
     expect(manager.has('broken')).toBe(false);
     expect(manager.hasEntryInterceptors()).toBe(false);
   });
+
+  it('continues destroying plugins when an onDestroy hook fails', async () => {
+    const manager = host();
+    const destroyed: string[] = [];
+    const errors: string[] = [];
+    manager.onError = (name) => errors.push(name);
+    await manager.register({
+      name: 'broken-destroy',
+      onDestroy: () => {
+        throw new Error('destroy failed');
+      },
+    });
+    await manager.register({
+      name: 'healthy-destroy',
+      onDestroy: () => void destroyed.push('healthy'),
+    });
+
+    await manager.destroy();
+
+    expect(destroyed).toEqual(['healthy']);
+    expect(errors).toEqual(['broken-destroy']);
+    expect(manager.has('broken-destroy')).toBe(false);
+    expect(manager.has('healthy-destroy')).toBe(false);
+  });
+
+  it('reports rejected unregister hooks without an unhandled rejection', async () => {
+    const manager = host();
+    const errors: Array<{ name: string; entry?: LogEntry }> = [];
+    manager.onError = (name, _err, entry) => errors.push({ name, entry });
+    await manager.register({
+      name: 'async-destroy',
+      onDestroy: async () => {
+        throw new Error('async destroy failed');
+      },
+    });
+
+    manager.unregister('async-destroy');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(errors).toEqual([{ name: 'async-destroy', entry: undefined }]);
+    expect(manager.has('async-destroy')).toBe(false);
+  });
+
+  it('isolates onTransport errors and continues notifying plugins', async () => {
+    const manager = host();
+    const notified: string[] = [];
+    const errors: string[] = [];
+    manager.onError = (name) => errors.push(name);
+    await manager.register({
+      name: 'bad-transport-hook',
+      onTransport: () => {
+        throw new Error('transport hook failed');
+      },
+    });
+    await manager.register({
+      name: 'good-transport-hook',
+      onTransport: (transport) => notified.push(transport.name),
+    });
+
+    expect(() => manager.notifyTransport({ name: 'new' } as Transport)).not.toThrow();
+    expect(errors).toEqual(['bad-transport-hook']);
+    expect(notified).toEqual(['new']);
+  });
 });
