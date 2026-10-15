@@ -176,6 +176,7 @@ describe('Logger.child', () => {
     } as unknown as RuntimeAdapter;
     const log = new Logger({ runtime });
     const child = log.scope('svc');
+    log.initialize();
     expect(attachCount).toBe(1); // parent only, not re-attached for the child
     expect((child as unknown as { isChild: boolean }).isChild).toBe(true);
   });

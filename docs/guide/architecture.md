@@ -42,8 +42,9 @@ testable. A log call flows through them in a predictable order.
              optional ambient async context).
 ```
 
-- **Logger** turns a call into a `LogEntry`. The first argument may be a
-  `string`, an `Error`, or any value (objects are kept structured). The entry
+- **Logger** sends local calls and externally received entries through the same
+  `LogEntry` processing flow. The first argument may be a `string`, an `Error`,
+  or any value (objects are kept structured). The entry
   carries `context` (persistent, inherited request-scoped data) and
   `metadata` (per-entry, usually injected by processors — see
   [Context & Metadata](./context) for the distinction).
@@ -53,11 +54,14 @@ testable. A log call flows through them in a predictable order.
   as `createRedactProcessor` and `createSerializeProcessor` plug in here.
 - **Plugins** run after the pipeline via an async `intercept` hook per entry.
   They can drop an entry (return `null`) or rewrite it, and they receive a
-  `PluginContext` to reconfigure the logger at runtime.
+  `PluginContext` to reconfigure the logger at runtime. By default, redaction
+  also runs after plugins so a plugin cannot reintroduce sensitive fields just
+  before a write.
 - **Transports** are the sinks (`console`, `rotating file`, `IPC`, `OTLP`, or
-  your own). A transport's `write` may be async; when it is, the logger awaits
-  it during `flush()` / `destroy()`. Each transport may also declare its own
-  `level` to filter independently.
+  your own). A transport's `write` may be async; async writes start sequentially
+  in log order per transport, while independent transports do not block one
+  another. `flush()` / `destroy()` wait for the queues. Each transport may also
+  declare its own `level` to filter independently.
 - **Runtime Adapter** abstracts the environment (Web / Node / Electron), so the
   same logger code runs everywhere.
 - **Context** is merged into every entry's `context` field; scoped loggers get an

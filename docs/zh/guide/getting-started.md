@@ -40,11 +40,11 @@ logger.error(new Error('boom'));
 
 ::: warning 单例约束
 
-导出的 `logger` 是一个**模块级单例**，在首次导入时同步创建——它会执行 `detectRuntime()`、初始化默认传输器（Node / Electron 主进程会创建一个 `FileTransport`）、并注册进程生命周期钩子（`beforeExit`、`SIGINT`、`SIGTERM`）。
+导出的 `logger` 是一个**模块级单例**。导入时会探测运行时，但默认传输器与进程间消息接收器会在首次使用 logger 时才创建。如果某个进程需要在输出本地日志前先接收 worker 或 Electron 渲染进程的日志，请在启动时调用 `logger.initialize()`。
 
-- 同一进程内的所有代码共享这一个 logger、同一个异步上下文（`AsyncLocalStorage` 实例）以及同一组 `process.*` 监听器。异步上下文是**全局的**——任何代码调用 `runWithContext` 都会影响进程内的所有 logger，不只是调用者所在的 logger。如果你创建了多个独立 logger 并希望每个有隔离的异步上下文，目前每个 logger 需要自己的 `AsyncLocalStorage` store（暂不提供 per-logger API）——建议改用单个 logger 配合 `scope` 来隔离。
+- 同一进程内的所有代码共享这一个 logger、同一个异步上下文（`AsyncLocalStorage` 实例）以及同一组运行时资源。异步上下文是**全局的**——任何代码调用 `runWithContext` 都会影响进程内的所有 logger，不只是调用者所在的 logger。如果你创建了多个独立 logger 并希望每个有隔离的异步上下文，目前每个 logger 需要自己的 `AsyncLocalStorage` store（暂不提供 per-logger API）——建议改用单个 logger 配合 `scope` 来隔离。
 - 如果你需要独立的 logger（例如测试 harness、每个 worker 一个），请使用 `createLogger(options)`。
-- 生命周期钩子不会自动解除。如果你的测试 import 了本模块，建议在 `afterAll` 钩子中调用 `await logger.destroy()`，以保证后续测试的干净环境。
+- 只有通过 `autoFlushOnExit` 或 `attachExitHandlers()` 显式启用时，才会注册生命周期钩子。调用 `await logger.destroy()` 可解除已启用的钩子并关闭资源。
 :::
 
 请参阅各运行时专属指南了解详情：

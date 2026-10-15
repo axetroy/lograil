@@ -46,13 +46,13 @@ about two weeks of daily files, and 200 MB total. Tune or lift these caps via
 
 ::: warning Single process-wide instance
 
-The exported `logger` is a **module-level singleton** created synchronously on
-first import — it runs `detectRuntime()`, wires up the default transports
-(including a `FileTransport` on Node / Electron main), and registers process
-lifecycle hooks (`beforeExit`, `SIGINT`, `SIGTERM`).
+The exported `logger` is a **module-level singleton**. Importing it detects the
+runtime, but default transports and peer-message receivers are created lazily
+when the logger is first used. If a process must receive worker or renderer logs
+before it emits local logs, call `logger.initialize()` during startup.
 
 - All code in the same process shares this one logger, the same ambient
-  context (`AsyncLocalStorage` instance), and the same `process.*` listeners.
+  context (`AsyncLocalStorage` instance), and the same runtime resources.
   The ambient context is **global** — a `runWithContext` call from any code
   affects every logger in the process, not just the one that called it. If you
   create multiple independent loggers and need isolated ambient contexts per
@@ -60,9 +60,9 @@ lifecycle hooks (`beforeExit`, `SIGINT`, `SIGTERM`).
   is no per-logger API for this — use a single logger with `scope` instead).
 - If you need independent loggers (e.g. per-test harness, per-worker), use
   `createLogger(options)` instead.
-- Lifecycle hooks are not detached automatically. Call
-  `await logger.destroy()` in an `afterAll` hook if your test imports this
-  module and you want a clean slate for sibling tests.
+- Lifecycle hooks are only registered when explicitly enabled with
+  `autoFlushOnExit` or `attachExitHandlers()`. Call `await logger.destroy()` to
+  detach enabled hooks and close resources.
 :::
 
 See the runtime-specific guides for details:

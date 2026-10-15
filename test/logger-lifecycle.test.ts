@@ -9,6 +9,7 @@ import { EMPTY_RECORD } from '../src/context/context.js';
 import type { LogEntry } from '../src/types.js';
 import { LOG_LEVELS } from '../src/types.js';
 import type { RuntimeAdapter } from '../src/runtime/adapter.js';
+import { createProcessLifecycle } from '../src/runtime/process-lifecycle.js';
 import type { Transport } from '../src/transport/transport.js';
 
 function memory() {
@@ -26,11 +27,70 @@ function makeRuntime(): RuntimeAdapter {
     now: () => 1_000,
     pid: () => 7,
     hasFileSystem: () => false,
+    getEnv: (name) => {
+      const value = process.env[name];
+      return value && value.length > 0 ? value : undefined;
+    },
     defaultTransports: () => [],
+    lifecycle: createProcessLifecycle(),
   };
 }
 
 describe('Logger - exit-flush timeout config', () => {
+  it('defers runtime resources until initialized and initializes them once', () => {
+    const { transport } = memory();
+    const defaultTransports = vi.fn(() => [transport]);
+    const attachReceiver = vi.fn(() => () => {});
+    const runtime = {
+      ...makeRuntime(),
+      defaultTransports,
+      attachReceiver,
+    };
+    const log = new Logger({ runtime, level: 'debug' });
+
+    expect(defaultTransports).not.toHaveBeenCalled();
+    expect(attachReceiver).not.toHaveBeenCalled();
+
+    log.initialize();
+    log.initialize();
+    expect(defaultTransports).toHaveBeenCalledTimes(1);
+    expect(attachReceiver).toHaveBeenCalledTimes(1);
+  });
+
+  it('initializes lazy runtime resources on first emitted entry', () => {
+    const { transport, entries } = memory();
+    const defaultTransports = vi.fn(() => [transport]);
+    const attachReceiver = vi.fn(() => () => {});
+    const runtime = { ...makeRuntime(), defaultTransports, attachReceiver };
+    const log = new Logger({ runtime, level: 'debug' });
+
+    log.info('first');
+
+    expect(defaultTransports).toHaveBeenCalledTimes(1);
+    expect(attachReceiver).toHaveBeenCalledTimes(1);
+    expect(entries.map((entry) => entry.message)).toEqual(['first']);
+  });
+
+  it('does not bind host lifecycle events outside the runtime adapter', () => {
+    const on = vi.spyOn(process, 'on');
+    const log = new Logger({
+      transports: [],
+      runtime: {
+        name: 'node',
+        now: () => 0,
+        pid: () => 1,
+        hasFileSystem: () => false,
+        defaultTransports: () => [],
+      },
+      level: 'debug',
+    });
+
+    log.attachExitHandlers();
+    log.watchUncaughtErrors();
+
+    expect(on).not.toHaveBeenCalled();
+  });
+
   it('getExitFlushTimeout returns the default and setExitFlushTimeout overrides it', () => {
     const log = new Logger({ transports: [], runtime: makeRuntime(), flushTimeoutMs: 123 });
     expect(log.getExitFlushTimeout()).toBe(123);
@@ -89,7 +149,7 @@ describe('Logger - destroy (root with process handlers)', () => {
       flushTimeoutMs: 50,
     });
     expect(
-      typeof (log as unknown as { removeProcessHandlers?: () => void }).removeProcessHandlers,
+      typeof (log as unknown as { removeLifecycleHandlers?: () => void }).removeLifecycleHandlers,
     ).toBe('function');
     await log.destroy();
     expect(removeListener).toHaveBeenCalled();

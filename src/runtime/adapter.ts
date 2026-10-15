@@ -61,6 +61,8 @@ export interface RuntimeAdapter {
   pid(): number | undefined;
   /** Whether persistent local file storage is available. */
   hasFileSystem(): boolean;
+  /** Read a host environment variable when the runtime exposes one. */
+  getEnv?(name: string): string | undefined;
   /** Transports enabled by default for this runtime. */
   defaultTransports(): Transport[];
   /**

@@ -23,6 +23,7 @@ export class TransportWriteQueue {
     entry: LogEntry,
     formatted: string,
     limit: number,
+    onError?: Transport['onError'],
   ): void {
     if (limit > 0 && this.pending + 1 > limit) {
       transport.onOverflow?.(entry, this.pending + 1);
@@ -31,18 +32,18 @@ export class TransportWriteQueue {
     }
 
     if (this.pending > 0) {
-      void this.append(() => this.performWrite(transport, entry, formatted));
+      void this.append(() => this.performWrite(transport, entry, formatted, onError));
       return;
     }
 
-    const result = this.invokeWrite(transport, entry, formatted);
+    const result = this.invokeWrite(transport, entry, formatted, onError);
     if (!result) return;
 
     void this.append(async () => {
       try {
         await this.guardWrite(result);
       } catch (err) {
-        this.reportError(err, entry, transport.onError);
+        this.reportError(err, entry, onError);
       }
     });
   }
@@ -65,13 +66,18 @@ export class TransportWriteQueue {
     return this.tail;
   }
 
-  private async performWrite(transport: Transport, entry: LogEntry, formatted: string): Promise<void> {
-    const result = this.invokeWrite(transport, entry, formatted);
+  private async performWrite(
+    transport: Transport,
+    entry: LogEntry,
+    formatted: string,
+    onError?: Transport['onError'],
+  ): Promise<void> {
+    const result = this.invokeWrite(transport, entry, formatted, onError);
     if (!result) return;
     try {
       await this.guardWrite(result);
     } catch (err) {
-      this.reportError(err, entry, transport.onError);
+      this.reportError(err, entry, onError);
     }
   }
 
@@ -79,6 +85,7 @@ export class TransportWriteQueue {
     transport: Transport,
     entry: LogEntry,
     formatted: string,
+    onError?: Transport['onError'],
   ): Promise<void> | undefined {
     try {
       const result = transport.write(entry, formatted);
@@ -86,7 +93,7 @@ export class TransportWriteQueue {
         return Promise.resolve(result);
       }
     } catch (err) {
-      this.reportError(err, entry, transport.onError);
+      this.reportError(err, entry, onError);
     }
     return undefined;
   }

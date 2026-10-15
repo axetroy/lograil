@@ -58,6 +58,7 @@ describe('Logger', () => {
       attachReceiver: () => () => {},
     } as unknown as Logger['runtime'];
     const logger = new Logger({ transports: [t], level: 'info', runtime });
+    logger.initialize();
     expect(logger.getLevel()).toBe(30); // info
     // Simulate a peer setting the level to debug (20) via onLevelCommand.
     runtime.onLevelCommand!(20);
@@ -85,6 +86,7 @@ describe('Logger', () => {
       attachReceiver: () => () => {},
     } as unknown as Logger['runtime'];
     const logger = new Logger({ transports: [t], level: 'info', runtime });
+    logger.initialize();
     // Simulate a peer setting the level to debug (20) via onLevelCommand.
     runtime.onLevelCommand!(20);
     expect(logger.getLevel()).toBe(20);

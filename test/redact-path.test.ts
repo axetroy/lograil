@@ -59,6 +59,20 @@ describe('Processor - redact (paths)', () => {
     expect(redact(e)).toBe(e);
   });
 
+  it('redacts cyclic objects without breaking their cycles', () => {
+    const redact = createRedactProcessor(['password']);
+    const original: Record<string, unknown> = { password: 'secret' };
+    original.self = original;
+
+    const out = redact(entry({}, [original]));
+    const redacted = out.args[0] as Record<string, unknown>;
+
+    expect(redacted).not.toBe(original);
+    expect(redacted.password).toBe('[REDACTED]');
+    expect(redacted.self).toBe(redacted);
+    expect(original.password).toBe('secret');
+  });
+
   it('redacts array elements by path', () => {
     const redact = createRedactProcessor(['list.0.token']);
     const out = redact(entry({ list: [{ token: 'secret', id: 1 }, { token: 'keep' }] }));
