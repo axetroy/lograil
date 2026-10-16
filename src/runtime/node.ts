@@ -91,6 +91,10 @@ function createClusterWorkerLifecycle() {
  */
 export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdapter {
   const pid = typeof process !== 'undefined' ? process.pid : undefined;
+  const getEnv = (name: string): string | undefined => {
+    const value = typeof process !== 'undefined' ? process.env?.[name] : undefined;
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+  };
   const worker = isClusterWorker();
 
   // ── Cluster worker: no file, send to primary via IPC ──
@@ -100,6 +104,7 @@ export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdap
       now: () => Date.now(),
       pid: () => pid,
       hasFileSystem: () => false,
+      getEnv,
       defaultTransports: (): Transport[] => [new ConsoleTransport(), new ClusterIpcTransport()],
       lifecycle: createClusterWorkerLifecycle(),
     };
@@ -112,37 +117,38 @@ export function createNodeRuntime(options: NodeRuntimeOptions = {}): RuntimeAdap
       now: () => Date.now(),
       pid: () => pid,
       hasFileSystem: () => false,
+      getEnv,
       defaultTransports: (): Transport[] => [new ConsoleTransport(), new WorkerIpcTransport()],
       lifecycle: createClusterWorkerLifecycle(), // reuse: flush on disconnect/exit
     };
   }
 
   // ── Primary or non-cluster: console + file (default) ──
-  const transports: Transport[] = [new ConsoleTransport()];
-  if (!options.disableFile) {
-    const appName = options.appName ?? inferAppName();
-    // Gracefully skip file transport when appName cannot be determined (e.g. REPL,
-    // serverless hosts, embedded runtimes). This avoids crashing at import time.
-    if (appName) {
-      transports.push(
-        new FileTransport({
-          mode: 'rotate-time',
-          unit: 'day',
-          appName,
-          dir: tmpdir(),
-          ...DEFAULT_FILE_CAPS,
-          ...options.fileTransportOptions,
-        }),
-      );
-    }
-  }
-
   return {
     name: 'node',
     now: () => Date.now(),
     pid: () => pid,
     hasFileSystem: () => !options.disableFile,
-    defaultTransports: () => transports,
+    getEnv,
+    defaultTransports: (): Transport[] => {
+      const transports: Transport[] = [new ConsoleTransport()];
+      if (!options.disableFile) {
+        const appName = options.appName ?? inferAppName();
+        if (appName) {
+          transports.push(
+            new FileTransport({
+              mode: 'rotate-time',
+              unit: 'day',
+              appName,
+              dir: tmpdir(),
+              ...DEFAULT_FILE_CAPS,
+              ...options.fileTransportOptions,
+            }),
+          );
+        }
+      }
+      return transports;
+    },
     attachReceiver: (ingest, onLevelCommand) => registerClusterReceiver(ingest, { onLevelCommand }),
     lifecycle: createProcessLifecycle(),
   };

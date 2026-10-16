@@ -42,22 +42,20 @@ export function createLogger(options?: LoggerOptions & { runtime?: RuntimeAdapte
  *
  * **Constraints — read before using in tests or long-lived processes:**
  *
- * - **Created synchronously at first import.** The constructor runs
- *   `detectRuntime()`, creates the default transports (including a
- *   `FileTransport` on Node / Electron main), and registers process lifecycle
- *   hooks (`beforeExit`, `SIGINT`, `SIGTERM`). There is no lazy init — any
- *   module that imports this one triggers those side effects immediately.
+ * - **Runtime resources are lazy.** Importing this module detects the runtime
+ *   and reads configured environment overrides, but default transports and
+ *   peer-message receivers are initialized on the first logger operation.
+ *   Call `logger.initialize()` when this process must receive peer logs before
+ *   it emits a local entry.
  * - **Single process-wide instance.** Because it is a module-level constant,
  *   all code in the same process shares the same logger, the same
- *   `AsyncLocalStorage`-backed ambient context, and the same set of
- *   `process.*` listeners. If you run multiple independent loggers in one
+ *   `AsyncLocalStorage`-backed ambient context, and the same runtime resources.
+ *   If you run multiple independent loggers in one
  *   process (e.g. a test harness), use `createLogger()` for each and only
  *   import this singleton when you want exactly one globally-shared logger.
- * - **Not automatically cleaned up.** Lifecycle hooks stay registered until
- *   you call {@link Logger.destroy} (which detaches them and flushes pending
- *   writes). In tests, call `await logger.destroy()` in an `afterAll` hook if
- *   the test imports this module and you want to keep the process clean for
- *   sibling tests.
+ * - **Not automatically cleaned up.** Explicitly enabled lifecycle hooks stay
+ *   registered until you call {@link Logger.destroy} (which detaches them and
+ *   flushes pending writes).
  */
 export const logger = createLogger();
 

@@ -55,27 +55,35 @@ function redactNode(
   path: (string | number)[],
   matchers: Matcher[],
   replacement: unknown,
+  seen: WeakMap<object, unknown>,
 ): unknown {
+  if (node !== null && typeof node === 'object' && seen.has(node)) {
+    return seen.get(node);
+  }
   if (Array.isArray(node)) {
     let changed = false;
     const out: unknown[] = new Array(node.length);
+    seen.set(node, out);
     for (let i = 0; i < node.length; i++) {
       path.push(i);
       if (matchers.some((m) => m(path))) {
         out[i] = replacement;
         changed = true;
       } else {
-        const r = redactNode(node[i], path, matchers, replacement);
+        const r = redactNode(node[i], path, matchers, replacement, seen);
         out[i] = r;
         if (r !== node[i]) changed = true;
       }
       path.pop();
     }
-    return changed ? out : node;
+    const result = changed ? out : node;
+    seen.set(node, result);
+    return result;
   }
   if (node instanceof Map) {
     let changed = false;
     const out = new Map<unknown, unknown>();
+    seen.set(node, out);
     node.forEach((value, key) => {
       const k = key as string;
       path.push(k);
@@ -83,17 +91,20 @@ function redactNode(
         out.set(key, replacement);
         changed = true;
       } else {
-        const r = redactNode(value, path, matchers, replacement);
+        const r = redactNode(value, path, matchers, replacement, seen);
         out.set(key, r);
         if (r !== value) changed = true;
       }
       path.pop();
     });
-    return changed ? out : node;
+    const result = changed ? out : node;
+    seen.set(node, result);
+    return result;
   }
   if (node instanceof Set) {
     let changed = false;
     const out = new Set<unknown>();
+    seen.set(node, out);
     node.forEach((value, index) => {
       const k = String(index);
       path.push(k);
@@ -101,13 +112,15 @@ function redactNode(
         out.add(replacement);
         changed = true;
       } else {
-        const r = redactNode(value, path, matchers, replacement);
+        const r = redactNode(value, path, matchers, replacement, seen);
         out.add(r);
         if (r !== value) changed = true;
       }
       path.pop();
     });
-    return changed ? out : node;
+    const result = changed ? out : node;
+    seen.set(node, result);
+    return result;
   }
   if (node !== null && typeof node === 'object') {
     let changed = false;
@@ -116,6 +129,7 @@ function redactNode(
     // prototype-chain pollution (the default `{}` target would write to
     // `Object.prototype` when a key is `__proto__`).
     const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+    seen.set(node, out);
     for (const k of Object.keys(node as Record<string, unknown>)) {
       path.push(k);
       const v = (node as Record<string, unknown>)[k];
@@ -130,7 +144,7 @@ function redactNode(
         });
         changed = true;
       } else {
-        const r = redactNode(v, path, matchers, replacement);
+        const r = redactNode(v, path, matchers, replacement, seen);
         if (k === '__proto__') {
           Object.defineProperty(out, k, {
             value: r,
@@ -145,7 +159,9 @@ function redactNode(
       }
       path.pop();
     }
-    return changed ? out : node;
+    const result = changed ? out : node;
+    seen.set(node, result);
+    return result;
   }
   return node;
 }
@@ -241,14 +257,17 @@ export function createRedactProcessor(
   if (keys.length === 0) return identityProcessor;
   const matchers = keys.map(compileMatcher);
   return (entry) => {
-    const context = redactNode(entry.context, [], matchers, replacement) as Record<string, unknown>;
-    const metadata = redactNode(entry.metadata, [], matchers, replacement) as Record<
+    const context = redactNode(entry.context, [], matchers, replacement, new WeakMap()) as Record<
+      string,
+      unknown
+    >;
+    const metadata = redactNode(entry.metadata, [], matchers, replacement, new WeakMap()) as Record<
       string,
       unknown
     >;
     let argsChanged = false;
     const args = entry.args.map((a) => {
-      const r = redactNode(a, [], matchers, replacement);
+      const r = redactNode(a, [], matchers, replacement, new WeakMap());
       if (r !== a) argsChanged = true;
       return r;
     });

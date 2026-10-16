@@ -39,6 +39,10 @@ export function createElectronRendererRuntime(
     now: () => Date.now(),
     pid: () => undefined,
     hasFileSystem: () => false,
+    getEnv: (name) => {
+      const value = typeof process !== 'undefined' ? process.env?.[name] : undefined;
+      return typeof value === 'string' && value.length > 0 ? value : undefined;
+    },
     defaultTransports: () => {
       const transports: Transport[] = [new ConsoleTransport()];
       if (forwardToMain) {

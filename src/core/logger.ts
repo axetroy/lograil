@@ -4,6 +4,7 @@ import type { RuntimeAdapter } from '../runtime/index.js';
 import { detectRuntime } from '../runtime/index.js';
 import type { PipelineOptions } from '../pipeline/pipeline.js';
 import { Pipeline } from '../pipeline/pipeline.js';
+import type { Processor } from '../pipeline/processor.js';
 import type { Formatter } from '../pipeline/formatter.js';
 import { createLineFormatter } from '../pipeline/formatter.js';
 import { createRedactProcessor } from '../pipeline/processor.js';
@@ -14,6 +15,7 @@ import type { ContextStore } from '../context/index.js';
 import { createContextStore, asyncContext, isEmptyRecord, EMPTY_RECORD } from '../context/index.js';
 import { freezeEntry } from './entry.js';
 import { formatMessage, hasPrintfSpecifier } from './printf.js';
+import { TransportWriteQueue } from './transport-write-queue.js';
 
 // Captured at module load — before `redirectConsole` can replace `console.*` —
 // so the logger's own error reporting never recurses into itself.
@@ -68,12 +70,6 @@ export interface LoggerErrorInfo {
  * it cannot recurse into the logger).
  */
 export type LoggerErrorHandler = (error: unknown, info: LoggerErrorInfo) => void;
-
-/** Per-transport queue entry: chains writes sequentially while tracking depth. */
-interface TransportQueueEntry {
-  promise: Promise<void>;
-  depth: number;
-}
 
 // ---- Namespace (scope) filtering ----
 
@@ -148,13 +144,6 @@ function matchesNamespace(scope: string | undefined, filter: NamespaceFilter | u
   return filter.includes.some((inc) => inc.re.test(s));
 }
 
-/** Read an environment variable, returning `undefined` when unavailable/empty. */
-function readEnvVar(name: string): string | undefined {
-  if (typeof process === 'undefined' || !process.env) return undefined;
-  const v = process.env[name];
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-
 export interface LoggerOptions {
   /** Minimum level to emit. Default `info`. */
   level?: LogLevelInput;
@@ -207,14 +196,14 @@ export interface LoggerOptions {
   /** Shared plugin manager. Internal: used by {@link scope}. */
   plugins?: PluginManager;
   /**
-   * Register `beforeExit` / `SIGINT` / `SIGTERM` handlers that flush the logger
-   * before the process exits (`SIGINT`/`SIGTERM` then terminate the process).
-   * Only effective in Node; ignored elsewhere. See {@link attachExitHandlers}.
+   * Register the runtime's host-shutdown hook that flushes the logger before
+   * exit. See {@link attachExitHandlers}.
    */
   autoFlushOnExit?: boolean;
   /**
    * Environment variable (name) whose value, if set to a valid level name,
-   * overrides `level`. Defaults to `"LOG_LEVEL"`. Set to `null` to disable.
+   *   overrides `level`. Defaults to `"LOG_LEVEL"` when supported by the runtime.
+   *   Set to `null` to disable.
    */
   levelEnvVar?: string | null;
   /**
@@ -224,9 +213,9 @@ export interface LoggerOptions {
    */
   scopeFilter?: string | string[];
   /**
-   * Environment variable whose value supplies the scope filter when
-   * `scopeFilter` is not set. Defaults to `"LOGRAIL_DEBUG"`. Set to `null`
-   * to disable.
+   * Runtime environment variable whose value supplies the scope filter when
+   * `scopeFilter` is not set. Defaults to `"LOGRAIL_DEBUG"` when supported.
+   * Set to `null` to disable.
    */
   scopeFilterEnvVar?: string | null;
 }
@@ -251,21 +240,6 @@ function isChildOptions(o: LoggerOptions | ChildOptions): o is ChildOptions {
   return (o as ChildOptions).__child === true;
 }
 
-/** Minimal structural view of the Node `process` used for lifecycle hooks. */
-type NodeProcess = {
-  on(event: string, cb: (...args: unknown[]) => void): void;
-  once(event: string, cb: (...args: unknown[]) => void): void;
-  removeListener(event: string, cb: (...args: unknown[]) => void): void;
-  exit(code: number): void;
-};
-
-function getNodeProcess(): NodeProcess | undefined {
-  if (typeof process === 'undefined' || typeof (process as { on?: unknown }).on !== 'function') {
-    return undefined;
-  }
-  return process as unknown as NodeProcess;
-}
-
 /**
  * Unified logging facade. Produces {@link LogEntry} records, runs them through
  * the {@link Pipeline} (filter + processors), lets {@link Plugin}s intercept,
@@ -278,8 +252,11 @@ function getNodeProcess(): NodeProcess | undefined {
 export class Logger implements LoggerMethods {
   private runtime!: RuntimeAdapter;
   private pipeline!: Pipeline;
+  private finalRedactProcessor?: Processor;
   private plugins!: PluginManager;
   private transports!: Transport[];
+  private defaultTransportsPending = false;
+  private runtimeInitialized = false;
   private context!: ContextStore;
   private level!: number;
   private scopeName?: string;
@@ -296,19 +273,18 @@ export class Logger implements LoggerMethods {
   private dispatchDrainResolve: (() => void) | undefined = undefined;
   /** Independent async-write queue per transport. Each entry tracks its depth
    * so overflow can be detected without traversing the promise chain. */
-  private transportQueues = new Map<Transport, TransportQueueEntry>();
+  private transportQueues = new Map<Transport, TransportWriteQueue>();
   private destroyed = false;
   private detachReceiver?: () => void;
-  private processHandlersAttached = false;
+  private lifecycleHandlersAttached = false;
   private errorHandlersAttached = false;
-  private removeProcessHandlers?: () => void;
+  private removeLifecycleHandlers?: () => void;
   /** Restores the global `console` methods when `redirectConsole` was called. */
   private restoreConsole?: () => void;
   private onLoggerError?: LoggerErrorHandler;
   private writeTimeoutMs!: number;
   private flushTimeoutMs!: number;
   private maxQueueDepth = 0;
-  private _exiting = false;
   private scopeFilter?: NamespaceFilter;
   /** True for loggers created via `scope`/`child` (share the parent's plumbing). */
   private isChild = false;
@@ -337,13 +313,17 @@ export class Logger implements LoggerMethods {
       this.pipeline.setFormatter(createLineFormatter());
     }
     if (options.secure !== false) {
-      this.pipeline.addProcessor(createRedactProcessor());
+      this.finalRedactProcessor = createRedactProcessor();
+      this.pipeline.addProcessor(this.finalRedactProcessor);
     }
     this.plugins = options.plugins ?? new PluginManager(this.buildPluginContext());
-    this.transports = options.transports ?? this.runtime.defaultTransports();
+    this.transports = options.transports ?? [];
+    this.defaultTransportsPending = options.transports === undefined;
     this.context = options.context ?? createContextStore();
     const envLevelName =
-      options.levelEnvVar === null ? undefined : readEnvVar(options.levelEnvVar ?? 'LOG_LEVEL');
+      options.levelEnvVar === null
+        ? undefined
+        : this.runtime.getEnv?.(options.levelEnvVar ?? 'LOG_LEVEL');
     const levelInput: LogLevelInput =
       envLevelName && isLogLevelName(envLevelName) ? envLevelName : (options.level ?? 'info');
     this.level = normalizeLevel(levelInput);
@@ -354,23 +334,8 @@ export class Logger implements LoggerMethods {
       options.scopeFilter ??
       (options.scopeFilterEnvVar === null
         ? undefined
-        : readEnvVar(options.scopeFilterEnvVar ?? 'LOGRAIL_DEBUG'));
+        : this.runtime.getEnv?.(options.scopeFilterEnvVar ?? 'LOGRAIL_DEBUG'));
     this.scopeFilter = compileNamespaceFilter(nsInput);
-
-    // On the Electron main process / Node primary / Web main thread, receive
-    // peer logs over IPC. Level commands sent by peers update `peerLevel`.
-    if (this.runtime.attachReceiver) {
-      const onPeerLevelCommand = (level: number): void => {
-        this.peerLevel = level;
-      };
-      this.detachReceiver = this.runtime.attachReceiver(
-        (entry: LogEntry) => this.ingestEntry(entry),
-        onPeerLevelCommand,
-      );
-      this.runtime.onLevelCommand = onPeerLevelCommand;
-    }
-
-    if (options.autoFlushOnExit) this.attachExitHandlers();
 
     this.onLoggerError = options.onError;
     this.writeTimeoutMs = options.writeTimeoutMs ?? 5000;
@@ -379,6 +344,7 @@ export class Logger implements LoggerMethods {
     // Wire the pipeline/plugin error sinks into the unified handler.
     this.pipeline.onError = (err, info) => this.reportError(info.phase, err, info.entry);
     this.plugins.onError = (name, err, entry) => this.reportError('plugin', err, entry, name);
+    if (options.autoFlushOnExit) this.attachExitHandlers();
   }
 
   /**
@@ -394,6 +360,7 @@ export class Logger implements LoggerMethods {
     this.pipeline = parent.pipeline;
     this.plugins = parent.plugins;
     this.transports = parent.transports;
+    this.finalRedactProcessor = parent.finalRedactProcessor;
     this.scopeFilter = parent.scopeFilter;
     this.context = opts.context ?? createContextStore();
     this.scopeName = opts.scope;
@@ -406,6 +373,44 @@ export class Logger implements LoggerMethods {
   }
 
   /**
+   * Initialize runtime-owned resources. This is called automatically by the
+   * first logger operation that needs transports or peer-message reception.
+   * Call it explicitly when a process must receive peer logs before emitting
+   * any local entries.
+   */
+  initialize(): this {
+    if (this.destroyed) return this;
+    if (this.parent) {
+      this.parent.initialize();
+      this.transports = this.parent.transports;
+      return this;
+    }
+    if (this.runtimeInitialized) return this;
+
+    this.runtimeInitialized = true;
+    try {
+      if (this.defaultTransportsPending) {
+        this.transports = this.runtime.defaultTransports();
+        this.defaultTransportsPending = false;
+      }
+      if (this.runtime.attachReceiver) {
+        const onPeerLevelCommand = (level: number): void => {
+          this.peerLevel = level;
+        };
+        this.detachReceiver = this.runtime.attachReceiver(
+          (entry: LogEntry) => this.ingestEntry(entry),
+          onPeerLevelCommand,
+        );
+        this.runtime.onLevelCommand = onPeerLevelCommand;
+      }
+    } catch (err) {
+      this.runtimeInitialized = false;
+      throw err;
+    }
+    return this;
+  }
+
+  /**
    * Feed an externally produced {@link LogEntry} (e.g. received from a renderer
    * process over IPC) into the pipeline/transports. Subject to the configured
    * level and plugins, then written via the active transports.
@@ -414,7 +419,10 @@ export class Logger implements LoggerMethods {
     if (this.destroyed) return;
     if (entry.level < this.getLevel()) return;
     if (!matchesNamespace(entry.scope, this.scopeFilter)) return;
-    this.dispatch(entry);
+    this.initialize();
+    const processed = this.pipeline.process(entry);
+    if (!processed) return;
+    this.dispatch(processed);
   }
 
   // ---- Level ----
@@ -454,6 +462,7 @@ export class Logger implements LoggerMethods {
    */
   broadcastLevelToPeers(): void {
     if (this.parent) return; // only the root logger owns the IPC transports
+    this.initialize();
     const v = this.getLevel();
     for (const t of this.transports) {
       t.sendLevelCommand?.(v);
@@ -490,19 +499,21 @@ export class Logger implements LoggerMethods {
    * existing in-flight queue so queued writes drain first.
    */
   addTransport(transport: Transport): void {
+    this.initialize();
     const existing = this.transports.filter((t) => t.name === transport.name);
     if (existing.length > 0) {
       this.transports = this.transports.filter((t) => t.name !== transport.name);
       for (const old of existing) {
-        const entry = this.transportQueues.get(old);
-        const prev = entry?.promise ?? Promise.resolve();
-        const teardown = prev
-          .then(async () => {
+        const queue = this.getTransportQueue(old);
+        void queue
+          .append(async () => {
             if (old.flush) await this.guardFlush(old.flush.bind(old));
             if (old.close) await Promise.resolve(old.close());
           })
-          .catch((err) => this.reportError('transport', err, undefined, old.name));
-        this.transportQueues.set(old, { promise: teardown, depth: entry?.depth ?? 0 });
+          .catch((err) => this.reportError('transport', err, undefined, old.name))
+          .finally(() => {
+            if (this.transportQueues.get(old) === queue) this.transportQueues.delete(old);
+          });
       }
     }
     this.transports.push(transport);
@@ -510,22 +521,32 @@ export class Logger implements LoggerMethods {
   }
 
   removeTransport(name: string): void {
+    this.initialize();
     const removed = this.transports.filter((t) => t.name === name);
     this.transports = this.transports.filter((t) => t.name !== name);
     for (const transport of removed) {
-      const existing = this.transportQueues.get(transport);
-      const prev = existing?.promise ?? Promise.resolve();
-      const teardown = prev
-        .then(async () => {
+      const queue = this.getTransportQueue(transport);
+      void queue
+        .append(async () => {
           if (transport.flush) await this.guardFlush(transport.flush.bind(transport));
           if (transport.close) await Promise.resolve(transport.close());
         })
         .catch((err) => this.reportError('transport', err, undefined, transport.name))
         .finally(() => {
-          this.transportQueues.delete(transport);
+          if (this.transportQueues.get(transport) === queue) this.transportQueues.delete(transport);
         });
-      this.transportQueues.set(transport, { promise: teardown, depth: existing?.depth ?? 0 });
     }
+  }
+
+  private getTransportQueue(transport: Transport): TransportWriteQueue {
+    let queue = this.transportQueues.get(transport);
+    if (!queue) {
+      queue = new TransportWriteQueue(this.writeTimeoutMs, (err, entry, handler) =>
+        this.reportTransportError(err, entry, handler),
+      );
+      this.transportQueues.set(transport, queue);
+    }
+    return queue;
   }
 
   /** Unregister a plugin by name at runtime. */
@@ -556,6 +577,7 @@ export class Logger implements LoggerMethods {
   }
 
   getTransports(): readonly Transport[] {
+    this.initialize();
     return this.transports;
   }
 
@@ -635,6 +657,7 @@ export class Logger implements LoggerMethods {
     if (levelValue < this.getLevel()) return;
     if (!matchesNamespace(this.scopeName, this.scopeFilter)) return;
 
+    this.initialize();
     const entry = this.buildEntry(levelName, levelValue, message, args);
     const processed = this.pipeline.process(entry);
     if (!processed) return;
@@ -773,6 +796,14 @@ export class Logger implements LoggerMethods {
   }
 
   private writeToTransports(entry: LogEntry): void {
+    if (this.finalRedactProcessor) {
+      try {
+        entry = this.finalRedactProcessor(entry);
+      } catch (err) {
+        this.reportError('process', err, entry);
+        return;
+      }
+    }
     // Freeze at the single fan-out choke point so every transport, formatter and
     // plugin reads an immutable entry and can safely share it by reference
     // (zero-copy within the process). Idempotent.
@@ -794,58 +825,9 @@ export class Logger implements LoggerMethods {
         // dropped entry never triggers its side effects (file writes, HTTP
         // requests, IPC sends). The depth check runs first; only if the queue
         // is not full do we call `write()`.
-        const existing = this.transportQueues.get(transport);
-        const entryDepth = existing?.depth ?? 0;
         // Per-transport limit takes precedence over the global one when both set.
         const limit = transport.queueLimit ?? this.maxQueueDepth;
-        // `depth` is the in-flight count of queued writes for this transport:
-        // 1 on accept, +1 for each subsequent write chained onto the same
-        // queue, 0 once the chain settles. The overflow check compares the
-        // prospective depth (entryDepth + 1) against the limit, so a limit
-        // of N admits up to N in-flight writes and drops the (N+1)th.
-        if (limit > 0 && entryDepth + 1 > limit) {
-          // Drop the newest entry to protect against memory growth.
-          if (transport.onOverflow) transport.onOverflow(frozen, entryDepth + 1);
-          this.reportError(
-            'transport',
-            new Error(`queue full (depth ${entryDepth + 1} > ${limit})`),
-            frozen,
-            transport.name,
-          );
-          continue;
-        }
-        const result = transport.write(frozen, String(formatted));
-        if (result && typeof (result as Promise<void>).then === 'function') {
-          const guarded = this.guardWrite(result as Promise<void>);
-          // Chain onto THIS transport's own queue, not a shared one, so a stalled
-          // write here cannot block other transports (or the front dispatch queue).
-          const next = existing?.promise ?? Promise.resolve();
-          const chain = next.then(() => guarded);
-          // In-flight count: 1 if this is the first write on the queue, else
-          // existing.depth + 1 for a write chained onto a queue that already
-          // has pending writes. A final settle handler (registered below)
-          // resets depth to 0 so the overflow cap re-opens.
-          const nextDepth = existing ? existing.depth + 1 : 1;
-          const nextEntry: TransportQueueEntry = {
-            promise: chain.catch((err) => this.reportTransportError(err, frozen, onErr)),
-            depth: nextDepth,
-          };
-          this.transportQueues.set(transport, nextEntry);
-          // Reset depth when the queued write settles so the overflow cap
-          // re-opens. Chained writes after this point see the up-to-date
-          // depth (>=1 while this write is in flight, 0 once it settles).
-          chain
-            .then(() => {
-              const cur = this.transportQueues.get(transport);
-              if (cur === nextEntry) this.transportQueues.set(transport, { ...cur, depth: 0 });
-            })
-            .catch(() => {
-              // already handled above; still clear depth so a stalled write
-              // does not wedge the queue.
-              const cur = this.transportQueues.get(transport);
-              if (cur === nextEntry) this.transportQueues.set(transport, { ...cur, depth: 0 });
-            });
-        }
+        this.getTransportQueue(transport).write(transport, frozen, String(formatted), limit, onErr);
       } catch (err) {
         this.reportTransportError(err, frozen, onErr);
       }
@@ -888,6 +870,7 @@ export class Logger implements LoggerMethods {
   // ---- Lifecycle ----
 
   async flush(): Promise<void> {
+    this.initialize();
     // Let in-flight interception finish so every scheduled write has been
     // enqueued onto its transport's own queue. A new intercepted dispatch can
     // chain onto the same drain promise while we are awaiting it (e.g. an
@@ -900,7 +883,9 @@ export class Logger implements LoggerMethods {
     // Aggregate all per-transport async-write queues. `allSettled` means a
     // rejected/errored transport queue never rejects flush; a stalled one is
     // bounded by `writeTimeoutMs` via `guardWrite`.
-    await Promise.allSettled(Array.from(this.transportQueues.values()).map((e) => e.promise));
+    await Promise.allSettled(
+      Array.from(this.transportQueues.values()).map((queue) => queue.drain()),
+    );
     // Flush each transport's internal buffers with the same timeout guard so
     // a stalled flush can never hang shutdown or caller code.
     await Promise.allSettled(
@@ -939,123 +924,47 @@ export class Logger implements LoggerMethods {
     return this.flushTimeoutMs;
   }
 
-  // ---- Process integration ----
+  // ---- Runtime lifecycle integration ----
 
   /**
-   * Register `beforeExit` / `SIGINT` / `SIGTERM` handlers that flush the logger
-   * before the process leaves. On `SIGINT` / `SIGTERM` the process exits (130 /
-   * 143) after the flush completes. No-op outside Node. Idempotent.
+   * Ask the runtime adapter to flush before host shutdown. The adapter owns
+   * event registration and host-specific exit behavior. Idempotent.
    */
   attachExitHandlers(): void {
-    if (this.processHandlersAttached) return;
-    // Prefer runtime-provided lifecycle hooks so the logger stays
-    // runtime-agnostic and the runtime owns process/window event wiring and
-    // exit semantics. Falls back to a direct `process` binding below for
-    // adapters that don't supply lifecycle hooks (e.g. custom test runtimes).
+    if (this.lifecycleHandlersAttached) return;
     const lc = this.runtime.lifecycle;
-    if (lc) {
-      const ms = this.flushTimeoutMs;
-      const detach = lc.onFlushBeforeExit(() => {
-        void this.flushWithTimeout(ms);
-      });
-      const prev = this.removeProcessHandlers;
-      this.removeProcessHandlers = () => {
-        prev?.();
-        detach();
-      };
-      this.processHandlersAttached = true;
-      return;
-    }
-    const proc = getNodeProcess();
-    if (!proc) return;
+    if (!lc) return;
     const ms = this.flushTimeoutMs;
-    // On normal exit the event loop is about to empty: flush pending writes.
-    // `beforeExit` re-fires as long as async writes keep the loop alive, so the
-    // queue keeps draining until empty (bounded by `ms` if a sink stalls).
-    const onBeforeExit = (): void => {
+    const detach = lc.onFlushBeforeExit(() => {
       void this.flushWithTimeout(ms);
-    };
-    // On a signal, flush what we can, then terminate — but never hang shutdown
-    // on a stalled transport (the timeout guarantees we still exit).
-    const onSignal = (code: number): void => {
-      if (this._exiting) return;
-      this._exiting = true;
-      void this.flushWithTimeout(ms).finally(() => {
-        try {
-          proc.exit(code);
-        } catch {
-          /* ignore */
-        }
-      });
-    };
-    const onSigInt = (): void => onSignal(130);
-    const onSigTerm = (): void => onSignal(143);
-    proc.on('beforeExit', onBeforeExit);
-    proc.on('SIGINT', onSigInt);
-    proc.on('SIGTERM', onSigTerm);
-    // Windows does not emit `SIGTERM`. Register `SIGBREAK` (Ctrl+Break) as a
-    // best-effort fallback so `autoFlushOnExit` has a signal hook on that
-    // platform. In practice taskkill / OS shutdown kills without emitting any
-    // Node signal, so no handler can cover that path — the `beforeExit` hook
-    // is the only portable shutdown flush mechanism.
-    if (process.platform === 'win32') {
-      proc.on('SIGBREAK', onSigInt);
-    }
-    this.processHandlersAttached = true;
-    const prev = this.removeProcessHandlers;
-    this.removeProcessHandlers = () => {
+    });
+    this.lifecycleHandlersAttached = true;
+    const prev = this.removeLifecycleHandlers;
+    this.removeLifecycleHandlers = () => {
       prev?.();
-      proc.removeListener('beforeExit', onBeforeExit);
-      proc.removeListener('SIGINT', onSigInt);
-      proc.removeListener('SIGTERM', onSigTerm);
+      detach();
     };
   }
 
   /**
    * Forward `uncaughtException` and `unhandledRejection` to the logger (at
    * `fatal` level) and exit afterwards, so crashes are recorded before the
-   * process dies. No-op outside Node. Idempotent.
+   * process dies. Idempotent.
    */
   watchUncaughtErrors(): void {
     if (this.errorHandlersAttached) return;
-    // Delegate to the runtime's lifecycle hooks when present (see
-    // `attachExitHandlers` for the rationale). The hooks own the `process`
-    // events and the post-flush `exit(1)`; we only provide the fatal log +
-    // bounded flush. Runtimes without an `onUncaughtError` hook (e.g. web)
-    // fall back to the direct `process` binding below, which is a no-op there.
     const lc = this.runtime.lifecycle;
-    if (lc?.onUncaughtError) {
-      const ms = this.flushTimeoutMs;
-      const detach = lc.onUncaughtError((err: unknown) => {
-        this.fatal(err);
-        return this.flushWithTimeout(ms);
-      });
-      const prev = this.removeProcessHandlers;
-      this.removeProcessHandlers = () => {
-        prev?.();
-        detach();
-      };
-      this.errorHandlersAttached = true;
-      return;
-    }
-    const proc = getNodeProcess();
-    if (!proc) return;
-    const onUncaught = (err: unknown): void => {
+    if (!lc?.onUncaughtError) return;
+    const ms = this.flushTimeoutMs;
+    const detach = lc.onUncaughtError((err: unknown) => {
       this.fatal(err);
-      void this.flushWithTimeout(this.flushTimeoutMs).finally(() => proc.exit(1));
-    };
-    const onRejection = (reason: unknown): void => {
-      this.fatal(reason);
-      void this.flushWithTimeout(this.flushTimeoutMs).finally(() => proc.exit(1));
-    };
-    proc.on('uncaughtException', onUncaught);
-    proc.on('unhandledRejection', onRejection);
+      return this.flushWithTimeout(ms);
+    });
     this.errorHandlersAttached = true;
-    const prev = this.removeProcessHandlers;
-    this.removeProcessHandlers = () => {
+    const prev = this.removeLifecycleHandlers;
+    this.removeLifecycleHandlers = () => {
       prev?.();
-      proc.removeListener('uncaughtException', onUncaught);
-      proc.removeListener('unhandledRejection', onRejection);
+      detach();
     };
   }
 
@@ -1111,7 +1020,7 @@ export class Logger implements LoggerMethods {
       this.transportQueues.clear();
       return;
     }
-    this.removeProcessHandlers?.();
+    this.removeLifecycleHandlers?.();
     // Restore the global `console` if `redirectConsole` was called but its
     // returned restore function was never invoked — otherwise the replacement
     // would outlive the logger.

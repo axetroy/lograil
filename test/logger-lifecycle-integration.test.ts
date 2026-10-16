@@ -86,9 +86,9 @@ describe('Logger consumes adapter.lifecycle', () => {
     log.destroy();
   });
 
-  it('falls back to direct process binding when the adapter has no lifecycle', () => {
-    // A minimal adapter without `lifecycle` must still let the logger register
-    // process handlers (backward compatibility for custom runtimes).
+  it('does not bind process handlers when the adapter has no lifecycle', () => {
+    // Host lifecycle events belong to the runtime adapter; Logger does not
+    // reach into process when a custom runtime omits lifecycle hooks.
     const runtime = {
       name: 'node' as const,
       now: () => 0,
@@ -97,7 +97,7 @@ describe('Logger consumes adapter.lifecycle', () => {
       defaultTransports: () => [],
     };
     const log = new Logger({ runtime, transports: [], autoFlushOnExit: true });
-    expect(process.on).toHaveBeenCalledWith('beforeExit', expect.any(Function));
+    expect(process.on).not.toHaveBeenCalled();
     log.destroy();
   });
 });

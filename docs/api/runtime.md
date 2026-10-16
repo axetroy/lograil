@@ -13,6 +13,7 @@ interface RuntimeAdapter {
   now(): number;
   pid(): number | undefined;
   hasFileSystem(): boolean;
+  getEnv?(name: string): string | undefined;
   defaultTransports(): Transport[];
   attachReceiver?: (ingest: IngestFn) => () => void;
   /**
@@ -27,6 +28,11 @@ interface RuntimeAdapter {
   lifecycle?: LifecycleHooks;
 }
 ```
+
+`getEnv` supplies optional environment-based logger configuration such as
+`LOG_LEVEL`. Custom runtimes that omit it do not read host environment
+variables. The Logger calls `defaultTransports()` and `attachReceiver()` lazily
+when initialized or first used.
 
 ## Lifecycle hooks
 

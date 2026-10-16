@@ -12,6 +12,7 @@ interface RuntimeAdapter {
   now(): number;
   pid(): number | undefined;
   hasFileSystem(): boolean;
+  getEnv?(name: string): string | undefined;
   defaultTransports(): Transport[];
   attachReceiver?: (ingest: IngestFn) => () => void;
   /**
@@ -24,6 +25,8 @@ interface RuntimeAdapter {
   lifecycle?: LifecycleHooks;
 }
 ```
+
+`getEnv` 用于提供 `LOG_LEVEL` 等可选环境配置。自定义运行时若未实现它，Logger 不会读取宿主环境变量。Logger 会在初始化或首次使用时才调用 `defaultTransports()` 与 `attachReceiver()`。
 
 ## 生命周期钩子
 

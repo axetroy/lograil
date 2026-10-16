@@ -9,6 +9,7 @@ import type { Plugin, PluginContext } from './plugin.js';
 export class PluginManager {
   private plugins = new Map<string, Plugin>();
   private host: PluginContext;
+  private destroyed = false;
   /** Count of plugins with an `onEntry` hook; gates the async intercept path. */
   private entryInterceptors = 0;
   /**
@@ -16,13 +17,16 @@ export class PluginManager {
    * the entry silently or crash logging; the error is reported and the entry
    * proceeds unchanged.
    */
-  onError?: (pluginName: string, err: unknown, entry: LogEntry) => void;
+  onError?: (pluginName: string, err: unknown, entry?: LogEntry) => void;
 
   constructor(host: PluginContext) {
     this.host = host;
   }
 
   async register(plugin: Plugin): Promise<void> {
+    if (this.destroyed) {
+      throw new Error('Plugin manager has been destroyed');
+    }
     if (this.plugins.has(plugin.name)) {
       throw new Error(`Plugin already registered: ${plugin.name}`);
     }
@@ -33,6 +37,7 @@ export class PluginManager {
     } catch (err) {
       if (plugin.onEntry) this.entryInterceptors--;
       this.plugins.delete(plugin.name);
+      await this.destroyPlugin(plugin);
       throw err;
     }
   }
@@ -43,7 +48,7 @@ export class PluginManager {
     if (!plugin) return;
     if (plugin.onEntry) this.entryInterceptors--;
     this.plugins.delete(name);
-    void plugin.onDestroy?.();
+    void this.destroyPlugin(plugin);
   }
 
   has(name: string): boolean {
@@ -61,7 +66,11 @@ export class PluginManager {
    */
   notifyTransport(transport: Transport): void {
     for (const plugin of this.plugins.values()) {
-      plugin.onTransport?.(transport);
+      try {
+        plugin.onTransport?.(transport);
+      } catch (err) {
+        this.reportError(plugin.name, err);
+      }
     }
   }
 
@@ -87,7 +96,7 @@ export class PluginManager {
           // `null` / `undefined` is an explicit drop signal from the plugin.
           current = result === null || result === undefined ? null : result;
         } catch (err) {
-          this.onError?.(plugin.name, err, entry);
+          this.reportError(plugin.name, err, entry);
           // Keep the last good value; a faulty plugin must not drop or
           // mutate the entry that reaches the transports.
         }
@@ -97,9 +106,29 @@ export class PluginManager {
   }
 
   async destroy(): Promise<void> {
-    for (const plugin of this.plugins.values()) {
-      await plugin.onDestroy?.();
-    }
+    if (this.destroyed) return;
+    this.destroyed = true;
+    const plugins = Array.from(this.plugins.values());
     this.plugins.clear();
+    this.entryInterceptors = 0;
+    for (const plugin of plugins) {
+      await this.destroyPlugin(plugin);
+    }
+  }
+
+  private async destroyPlugin(plugin: Plugin): Promise<void> {
+    try {
+      await plugin.onDestroy?.();
+    } catch (err) {
+      this.reportError(plugin.name, err);
+    }
+  }
+
+  private reportError(pluginName: string, err: unknown, entry?: LogEntry): void {
+    try {
+      this.onError?.(pluginName, err, entry);
+    } catch {
+      // Error reporting must not prevent another plugin hook from running.
+    }
   }
 }

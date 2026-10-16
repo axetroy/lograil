@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Logger } from '../src/core/logger.js';
 import type { LogEntry } from '../src/types.js';
 import type { RuntimeAdapter } from '../src/runtime/adapter.js';
+import { createProcessLifecycle } from '../src/runtime/process-lifecycle.js';
 import type { Transport } from '../src/transport/transport.js';
 
 function captureLogger() {
@@ -13,6 +14,7 @@ function captureLogger() {
     pid: () => 1,
     hasFileSystem: () => false,
     defaultTransports: () => [],
+    lifecycle: createProcessLifecycle(),
   } as unknown as RuntimeAdapter;
   const log = new Logger({ transports: [transport], level: 'debug', runtime });
   return { log, entries };
@@ -94,9 +96,23 @@ describe('attachExitHandlers', () => {
       pid: () => 1,
       hasFileSystem: () => false,
       defaultTransports: () => [],
+      lifecycle: createProcessLifecycle(),
     } as unknown as RuntimeAdapter;
-    const log = new Logger({ transports: [], level: 'debug', runtime, autoFlushOnExit: true });
+    const log = new Logger({
+      transports: [],
+      level: 'debug',
+      runtime,
+      autoFlushOnExit: true,
+      flushTimeoutMs: 123,
+    });
     expect(on).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+    const flush = vi.spyOn(
+      log as unknown as { flushWithTimeout: () => Promise<void> },
+      'flushWithTimeout',
+    );
+    const beforeExit = on.mock.calls.find((call) => call[0] === 'beforeExit')![1] as () => void;
+    beforeExit();
+    expect(flush).toHaveBeenCalledWith(123);
     log.destroy();
   });
 
@@ -110,6 +126,7 @@ describe('attachExitHandlers', () => {
       pid: () => 1,
       hasFileSystem: () => false,
       defaultTransports: () => [],
+      lifecycle: createProcessLifecycle(),
     } as unknown as RuntimeAdapter;
     const log = new Logger({ transports: [transport], level: 'debug', runtime });
     log.attachExitHandlers();
@@ -132,6 +149,7 @@ describe('attachExitHandlers', () => {
       pid: () => 1,
       hasFileSystem: () => false,
       defaultTransports: () => [],
+      lifecycle: createProcessLifecycle(),
     } as unknown as RuntimeAdapter;
     const log = new Logger({ transports: [], level: 'debug', runtime });
     log.attachExitHandlers();
@@ -152,6 +170,7 @@ describe('attachExitHandlers', () => {
       pid: () => 1,
       hasFileSystem: () => false,
       defaultTransports: () => [],
+      lifecycle: createProcessLifecycle(),
     } as unknown as RuntimeAdapter;
     const stalled: Transport = {
       name: 'stalled',

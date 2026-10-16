@@ -41,10 +41,10 @@
               环境异步上下文）。
 ```
 
-- **Logger**：把调用转换为 `LogEntry`。第一个参数可以是 `string`、`Error` 或任意值（对象会被保留为结构化数据）。条目携带 `context`（持久化、可继承的请求级数据）和 `metadata`（单条条目级，通常由处理器注入——详见 [上下文与元数据](./context) 了解区别）。
+- **Logger**：把调用或外部接收的条目转换为统一的 `LogEntry` 处理流程。第一个参数可以是 `string`、`Error` 或任意值（对象会被保留为结构化数据）。条目携带 `context`（持久化、可继承的请求级数据）和 `metadata`（单条条目级，通常由处理器注入——详见 [上下文与元数据](./context) 了解区别）。
 - **Pipeline**：先运行 `Filter`（返回 `false` 即丢弃），再依次运行 `Processor`（增强/脱敏/序列化……），最后由 `Formatter` 生成线上形态。内置处理器 `createRedactProcessor`、`createSerializeProcessor` 即插于此。
-- **Plugins**：在管道之后通过每条条目的异步 `intercept` 钩子运行。可丢弃条目（返回 `null`）或改写，并通过 `PluginContext` 在运行时重新配置 logger。
-- **Transports**：最终落点（控制台、`rotating file`、IPC、`OTLP` 或自定义）。`write` 可以是异步的；若是异步，logger 会在 `flush()` / `destroy()` 时等待其完成。每个传输器还可声明自己的 `level` 做独立过滤。
+- **Plugins**：在管道之后通过每条条目的异步 `intercept` 钩子运行。可丢弃条目（返回 `null`）或改写，并通过 `PluginContext` 在运行时重新配置 logger。默认脱敏也会在插件之后再次执行，避免插件重新引入敏感字段后直接写出。
+- **Transports**：最终落点（控制台、`rotating file`、IPC、`OTLP` 或自定义）。`write` 可以是异步的；同一个传输器的异步写入按日志顺序串行启动，彼此独立的传输器互不阻塞。`flush()` / `destroy()` 会等待队列完成。每个传输器还可声明自己的 `level` 做独立过滤。
 - **Runtime Adapter**：抽象环境差异（Web / Node / Electron），因此同一套 logger 代码处处可用。
 - **Context**：合并进每条日志的 `context` 字段；作用域 logger 会获得隔离的子上下文。此外还有**环境（异步）上下文**——基于 `AsyncLocalStorage` 的请求级字段，在 `await` 之间自动继承，会被叠加在 logger 上下文之上（浏览器中为无操作）。
 

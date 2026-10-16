@@ -8,6 +8,11 @@ function createLogger(options?: LoggerOptions & { runtime?: RuntimeAdapter }): L
 const logger: Logger;
 ```
 
+Default transports and peer-message receivers are initialized lazily. A logger
+initializes itself on its first output or ingress operation. Call
+`logger.initialize()` during startup when this process must receive peer logs
+before it emits local entries.
+
 ## Emitting
 
 All methods share the `LogFn` signature `(message: unknown, ...args: unknown[]) => void`.
@@ -223,8 +228,8 @@ avoid losing buffered logs.
 
 ## Process integration
 
-lograil hooks the host lifecycle so logs are never lost on shutdown and crashes
-are captured automatically. The wiring is **runtime-agnostic**: the Logger
+When enabled, lograil hooks the host lifecycle so logs can be flushed on
+shutdown and crashes captured. The wiring is **runtime-agnostic**: the Logger
 delegates flush / crash behaviour to the active `RuntimeAdapter`'s `lifecycle`
 hooks, so each runtime listens on its own native events:
 
@@ -249,7 +254,8 @@ const restore = logger.redirectConsole(); // returns a function that restores co
   registers `beforeExit`, `SIGINT` and `SIGTERM` (exit codes `130`/`143`); on an
   Electron **main** process it additionally flushes on `app` `before-quit` /
   `will-quit`, so a normal window close does not drop buffered logs. It is a
-  no-op in the browser and is idempotent.
+  delegates to the runtime adapter, is a no-op when no lifecycle is provided,
+  and is idempotent.
 - `watchUncaughtErrors()` logs the error at `fatal` and then exits with code `1`.
 - `redirectConsole()` routes the captured `console` methods through the logger
   and suppresses the native output. The console bridge is recursion-safe even
