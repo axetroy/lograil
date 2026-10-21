@@ -43,6 +43,7 @@ function themeConfig(locale: 'en' | 'zh') {
             { text: locale === 'zh' ? '术语表' : 'Glossary', link: `${p}/guide/glossary` },
             { text: locale === 'zh' ? '基准测试' : 'Benchmarks', link: `${p}/guide/benchmarks` },
             { text: locale === 'zh' ? '迁移指南' : 'Migrating', link: `${p}/guide/migrating` },
+            { text: locale === 'zh' ? '发布流程' : 'Releasing', link: `${p}/guide/releasing` },
             {
               text: locale === 'zh' ? '故障排查' : 'Troubleshooting',
               link: `${p}/guide/troubleshooting`,
