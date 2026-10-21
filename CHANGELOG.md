@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). This file is generated from git history by `scripts/gen-changelog.mjs` (run via `yarn changelog`) and refreshed automatically on each release.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Upcoming releases are recorded and versioned with [Changesets](https://changesets.dev/).
 
 ## [v0.1.6] - 2026-10-16
 

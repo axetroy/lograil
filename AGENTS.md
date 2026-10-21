@@ -68,10 +68,8 @@ Write docs for a normal reader, not for insiders.
 
 ## Releasing
 
-- A version tag (`v*`) pushed to GitHub triggers `.github/workflows/release.yml`, which runs in order:
-  1. **verify** (lint + test + build) across OS/Node matrix — must pass before anything ships.
-  2. **publish** — builds, asserts `package.json` `version` matches the tag (minus the `v` prefix), then `npm publish --access public` using the `NPM_TOKEN` repo secret.
-  3. **deploy-docs** — builds and pushes both latest (Pages root) and versioned (`/<repo>/<tag>/`) docs to the `docs` branch.
-- You must add an `NPM_TOKEN` secret (npm automation token) to the repo settings for publish to succeed.
-- Latest docs also redeploy on every push to `main` via `.github/workflows/docs.yml`.
+- Add a Changeset with `yarn changeset` for each change that should be released.
+- On pushes to `main`, `.github/workflows/release.yml` verifies the project, opens or updates a **Version Packages** pull request when Changesets are pending, and publishes after that PR is merged.
+- npm publishing uses OIDC trusted publishing. Configure the npm trusted publisher for `axetroy/lograil`, workflow `.github/workflows/release.yml`, environment `npm`; do not use an `NPM_TOKEN` secret.
+- GitHub Actions must be allowed to create pull requests. Latest docs also redeploy on pushes to `main` via `.github/workflows/docs.yml`.
 - Do not commit to `dist/` (it is build output and gitignored via `files` in package.json).

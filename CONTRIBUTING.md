@@ -25,7 +25,7 @@ Useful scripts:
 | `yarn format:check` | Verify formatting without writing |
 | `yarn build` | Emit ESM + CJS builds into `dist/` |
 | `yarn docs:dev` | VitePress dev server |
-| `yarn changelog` | Regenerate `CHANGELOG.md` from git |
+| `yarn changeset` | Record a release note and version bump |
 
 Before opening a PR, make sure `yarn lint`, `yarn typecheck`, `yarn typecheck:test`
 and `yarn test` all pass locally.
@@ -66,15 +66,18 @@ fix(transport): guard OTLP flush against empty batch
 docs: document immutable entry contract
 ```
 
-`feat` / `fix` commits feed the auto-generated `CHANGELOG.md`.
+Add a Changeset for each change that should be included in a release.
 
 ## Releasing
 
-Releases are driven by pushing a version tag `v*`:
+Releases use Changesets and npm trusted publishing:
 
-1. `.github/workflows/release.yml` verifies (lint + test + build), publishes to
-   npm, and deploys versioned + latest docs.
-2. The package version in `package.json` must match the tag (minus the `v`).
-3. `CHANGELOG.md` is regenerated from git history during the release.
+1. Run `yarn changeset` in your branch and commit the generated Changeset.
+2. After the change reaches `main`, GitHub Actions opens or updates a
+   **Version Packages** pull request.
+3. Merging that pull request publishes to npm and deploys the latest docs.
 
-You do not need to publish manually; tag and let CI handle it.
+The npm package must trust the GitHub Actions publisher configured in
+`.github/workflows/release.yml` with the `npm` environment. GitHub Actions must
+also be allowed to create pull requests. No npm token is needed; see the
+[releasing guide](docs/guide/releasing.md) for setup details.
