@@ -80,7 +80,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "bench": "vitest bench",
-    "release": "yarn build && yarn changeset publish",
+    "release": "yarn changeset publish",
     "test:watch": "vitest",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
