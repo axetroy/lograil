@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
-import { createLogger } from '../../../src/index.js';
-import type { RuntimeAdapter } from '../../../src/runtime/adapter.js';
+import { onMounted, ref } from 'vue';
 import type { Formatter } from '../../../src/pipeline/formatter.js';
 import { createJsonFormatter, createLineFormatter } from '../../../src/pipeline/formatter.js';
-import type { Transport } from '../../../src/transport/transport.js';
+import type { LogEntry, LogLevelName } from '../../../src/types.js';
 
 const props = withDefaults(defineProps<{ locale?: 'en' | 'zh' }>(), { locale: 'en' });
 const isZh = props.locale === 'zh';
@@ -15,54 +13,50 @@ const format = ref<'text' | 'json'>('text');
 const lines = ref<string[]>([]);
 const textFormatter = createLineFormatter();
 const jsonFormatter = createJsonFormatter();
-
-const runtime: RuntimeAdapter = {
-  name: 'web',
-  now: () => Date.now(),
-  pid: () => undefined,
-  hasFileSystem: () => false,
-  defaultTransports: () => [],
+const levelValues: Record<LogLevelName, number> = {
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40,
+  error: 50,
+  fatal: 60,
 };
 
-const transport: Transport = {
-  name: 'playground',
-  get formatter(): Formatter<string> {
-    return format.value === 'json' ? jsonFormatter : textFormatter;
-  },
-  write(_entry, formatted) {
-    lines.value.push(formatted);
-  },
-};
-
-const logger = createLogger({
-  runtime,
-  transports: [transport],
-  level: 'trace',
-  scopeFilterEnvVar: null,
-  levelEnvVar: null,
-});
+function writeEntry(
+  levelName: LogLevelName,
+  text: string,
+  args: unknown[] = [],
+  error?: Error,
+): void {
+  const timestamp = Date.now();
+  const entry: LogEntry = {
+    level: levelValues[levelName],
+    levelName,
+    message: text,
+    args,
+    timestamp,
+    time: new Date(timestamp).toISOString(),
+    scope: scope.value.trim() || 'NAPI',
+    context: { source: 'playground' },
+    metadata: {},
+    error,
+  };
+  const formatter: Formatter<string> = format.value === 'json' ? jsonFormatter : textFormatter;
+  lines.value.push(formatter(entry));
+}
 
 function writeLog(): void {
-  const scopedLogger = logger.scope(scope.value.trim() || 'NAPI');
-  scopedLogger[level.value](message.value || (isZh ? '请输入日志内容' : 'Enter a log message'), {
-    source: 'playground',
-  });
-  void logger.flush();
+  writeEntry(level.value, message.value || (isZh ? '请输入日志内容' : 'Enter a log message'));
 }
 
 function writeExamples(): void {
-  const scopedLogger = logger.scope(scope.value.trim() || 'NAPI');
-  scopedLogger.info('openDrive("")');
-  scopedLogger.info('setFileBatchTransfer(1)');
-  scopedLogger.warn('Retrying connection', { attempt: 2 });
-  scopedLogger.error('Connection failed', new Error('device unavailable'));
-  void logger.flush();
+  writeEntry('info', 'openDrive("")');
+  writeEntry('info', 'setFileBatchTransfer(1)');
+  writeEntry('warn', 'Retrying connection', [{ attempt: 2 }]);
+  writeEntry('error', 'Connection failed', [], new Error('device unavailable'));
 }
 
 onMounted(writeExamples);
-onUnmounted(() => {
-  void logger.destroy();
-});
 </script>
 
 <template>
