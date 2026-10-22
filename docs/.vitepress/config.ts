@@ -8,6 +8,7 @@ function themeConfig(locale: 'en' | 'zh') {
   return {
     nav: [
       { text: locale === 'zh' ? '指南' : 'Guide', link: `${p}/guide/introduction` },
+      { text: locale === 'zh' ? 'Playground' : 'Playground', link: `${p}/playground` },
       { text: 'API', link: `${p}/api/` },
       { text: 'GitHub', link: `https://github.com/${REPO}` },
     ],
