@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import type { Formatter } from '../../../src/pipeline/formatter.js';
 import { createJsonFormatter, createLineFormatter } from '../../../src/pipeline/formatter.js';
 import type { LogEntry, LogLevelName } from '../../../src/types.js';
@@ -11,6 +11,7 @@ const message = ref('openDrive("")');
 const level = ref<'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal'>('info');
 const format = ref<'text' | 'json'>('text');
 const lines = ref<string[]>([]);
+const output = ref<HTMLPreElement | null>(null);
 const textFormatter = createLineFormatter();
 const jsonFormatter = createJsonFormatter();
 const levelValues: Record<LogLevelName, number> = {
@@ -45,8 +46,10 @@ function writeEntry(
   lines.value.push(formatter(entry));
 }
 
-function writeLog(): void {
+async function writeLog(): Promise<void> {
   writeEntry(level.value, message.value || (isZh ? '请输入日志内容' : 'Enter a log message'));
+  await nextTick();
+  if (output.value) output.value.scrollTop = output.value.scrollHeight;
 }
 
 function writeExamples(): void {
@@ -97,7 +100,7 @@ onMounted(writeExamples);
         </button>
       </div>
     </div>
-    <pre class="playground-output" aria-live="polite"><code>{{ lines.join('\n') }}</code></pre>
+    <pre ref="output" class="playground-output" aria-live="polite"><code>{{ lines.join('\n') }}</code></pre>
   </section>
 </template>
 
