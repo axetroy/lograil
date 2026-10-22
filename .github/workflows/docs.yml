@@ -1,6 +1,6 @@
 name: Deploy Docs
 
-# Deploys the docs to the Pages root on every push to `main`.
+# Deploys the docs to GitHub Pages on every push to `main`.
 # Release deployments are handled by release.yml.
 
 on:
@@ -8,18 +8,16 @@ on:
     branches:
       - main
 
-# Allow this workflow to push to the `docs` branch.
-permissions:
-  contents: write
-
-# Never run two doc deploys concurrently.
+# Never run two Pages deployments concurrently.
 concurrency:
-  group: docs-deploy
+  group: pages-deploy
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout (full history for tags)
         uses: actions/checkout@v4
@@ -38,17 +36,24 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Build docs (latest, served at root)
-        # Root copy uses base "/<repo>/" so links/assets resolve when served at the
-        # Pages root. This is the "latest" entry point.
+      - name: Build docs
         run: yarn vitepress build docs --base "/${{ github.event.repository.name }}/"
 
-      - name: Deploy latest to docs branch root
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GH_TOKEN }}
-          publish_branch: docs
-          publish_dir: docs/.vitepress/dist
-          destination_dir: .
-          force_orphan: true
-          commit_message: 'docs: update root to ${{ github.sha }}'
+          path: docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
