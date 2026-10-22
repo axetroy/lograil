@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7
+
+### Patch Changes
+
+- da0e778: 0.1.7
+
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Upcoming releases are recorded and versioned with [Changesets](https://changesets.dev/).
@@ -28,7 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - fix(logger): replace same-name transport instead of double-writing (P2-11)
 - fix(otlp): bound failed-batch re-send work to two flush cycles (P1-10)
 - fix(logger): drain promise must not be replaced mid-batch (P1-9)
-- fix(serialize): prevent Object.prototype pollution via __proto__ keys (P1-8)
+- fix(serialize): prevent Object.prototype pollution via **proto** keys (P1-8)
 - chore: remove unused eslint-disable directive in electron.ts
 - fix: normalize W3C trace/span ids in otel-trace plugin
 - fix: electron before-quit/will-quit flush runs exactly once
