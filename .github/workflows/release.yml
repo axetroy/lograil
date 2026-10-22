@@ -108,13 +108,13 @@ jobs:
           publish: yarn release
           commitMode: github-api
 
-  deploy-docs:
-    name: Deploy Docs
+  build-docs:
+    name: Build Docs
     needs: publish
     if: needs.publish.outputs.published == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout (full history for tags)
         uses: actions/checkout@v4
@@ -136,12 +136,26 @@ jobs:
       - name: Build latest docs
         run: yarn vitepress build docs --base "/${{ github.event.repository.name }}/"
 
-      - name: Deploy docs
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ github.token }}
-          publish_branch: docs
-          publish_dir: docs/.vitepress/dist
-          destination_dir: .
-          force_orphan: true
-          commit_message: 'docs: update after release'
+          path: docs/.vitepress/dist
+
+  deploy-docs:
+    name: Deploy Docs
+    needs: [build-docs, publish]
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
