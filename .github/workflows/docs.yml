@@ -1,7 +1,7 @@
 name: Deploy Docs
 
-# Deploys the *latest* docs to the Pages root on every push to `main`.
-# Release docs deployments (including the version list) are handled by release.yml.
+# Deploys the docs to the Pages root on every push to `main`.
+# Release deployments are handled by release.yml.
 
 on:
   push:

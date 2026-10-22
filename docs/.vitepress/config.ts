@@ -81,18 +81,27 @@ function themeConfig(locale: 'en' | 'zh') {
   };
 }
 
-// Inject a tiny redirect: zh-preferring browsers landing on the default (en) locale
-// are sent to the /zh/ locale, preserving the current page path. This implements
-// "default to browser language" for the first visit.
+// Redirect a first visit to the preferred supported locale, preserving the page path.
 function localeRedirectScript(base: string): string {
   return `(function(){
   try {
-    var prefersZh = (navigator.languages || [navigator.language || '']).some(function(l){ return (l||'').toLowerCase().indexOf('zh') === 0; });
-    if (!prefersZh) return;
+    var key = 'lograil-docs-locale-redirected:' + ${JSON.stringify(base)};
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    var languages = navigator.languages || [navigator.language || ''];
+    var preferred = languages.find(function(l){ return /^(zh|en)(-|$)/i.test(l || ''); }) || '';
+    var locale = /^zh(-|$)/i.test(preferred) ? 'zh' : 'en';
     var b = ${JSON.stringify(base)};
-    if (location.pathname.indexOf(b + 'zh') === 0) return;
-    var rest = location.pathname.slice(b.length);
-    location.replace(b + 'zh/' + rest + location.search + location.hash);
+    var path = location.pathname;
+    if (path.indexOf(b) !== 0) return;
+    var rest = path.slice(b.length);
+    var isZh = /^zh(?:\\/|$)/.test(rest);
+    if ((locale === 'zh' && isZh) || (locale === 'en' && !isZh)) return;
+    if (locale === 'zh') {
+      location.replace(b + 'zh/' + rest + location.search + location.hash);
+    } else {
+      location.replace(b + rest.replace(/^zh\\/?/, '') + location.search + location.hash);
+    }
   } catch (e) {}
 })();`;
 }
@@ -104,8 +113,7 @@ export default withMermaid(
     logo: '/logo.svg',
     // Favicon for the browser tab. Note: VitePress does NOT rewrite `head` hrefs
     // with `base`, so the path must be base-prefixed explicitly. `/lograil/logo.svg`
-    // is where public/logo.svg is served, and it exists in both the latest and the
-    // versioned (/<repo>/<tag>/) doc deployments.
+    // is where public/logo.svg is served.
     head: [['link', { rel: 'icon', href: '/lograil/logo.svg', type: 'image/svg+xml' }]],
     lastUpdated: true,
     cleanUrls: true,
