@@ -133,10 +133,6 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
-      - name: Generate versions.json
-        run: |
-          node -e "const cp=require('child_process');const fs=require('fs');const tags=cp.execSync('git tag -l \"v*\" \"lograil@*\"').toString().trim().split('\n').filter(Boolean).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));fs.writeFileSync('docs/public/versions.json',JSON.stringify(tags));console.log('versions:',tags.join(', '));"
-
       - name: Build latest docs
         run: yarn vitepress build docs --base "/${{ github.event.repository.name }}/"
 
